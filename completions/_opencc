@@ -1,0 +1,35 @@
+#compdef opencc
+
+# Completion for opencc - Claude Code environment switcher
+
+_opencc() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+
+  _arguments -C \
+    '1: :_opencc_configs' \
+    '*:: :->claude_args'
+
+  case "$state" in
+    claude_args)
+      # After config name, pass through to claude completions if available
+      _normal
+      ;;
+  esac
+}
+
+_opencc_configs() {
+  # Don't complete when prefix is empty
+  [[ -z "$PREFIX" ]] && return
+
+  local -a configs
+  local cc_dir="$HOME/.cc_envs"
+
+  for f in "$cc_dir"/*.env(N); do
+    configs+=("${f:t:r}")
+  done
+
+  _describe 'configuration' configs
+}
+
+_opencc "$@"

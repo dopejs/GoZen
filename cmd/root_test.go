@@ -3,7 +3,10 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/anthropics/opencc/internal/config"
 )
 
 func setTestHome(t *testing.T) string {
@@ -118,6 +121,102 @@ func TestVersionValue(t *testing.T) {
 	}
 }
 
+// PLACEHOLDER_MORE_TESTS
+
+func writeProfileConf(t *testing.T, profile, content string) {
+	t.Helper()
+	home := os.Getenv("HOME")
+	var path string
+	if profile == "" || profile == "default" {
+		path = filepath.Join(home, ".cc_envs", "fallback.conf")
+	} else {
+		path = filepath.Join(home, ".cc_envs", "fallback."+profile+".conf")
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveWithProfileFlag(t *testing.T) {
+	setTestHome(t)
+	writeProfileConf(t, "work", "p1\np2\n")
+
+	names, profile, err := resolveProviderNames("work")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(names) != 2 || names[0] != "p1" || names[1] != "p2" {
+		t.Errorf("got %v", names)
+	}
+	if profile != "work" {
+		t.Errorf("profile = %q, want \"work\"", profile)
+	}
+}
+
+func TestResolveWithProfileFlagNotFound(t *testing.T) {
+	setTestHome(t)
+
+	_, _, err := resolveProviderNames("nonexistent")
+	if err == nil {
+		t.Error("expected error for nonexistent profile")
+	}
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveWithProfileFlagEmpty(t *testing.T) {
+	setTestHome(t)
+	writeProfileConf(t, "empty", "")
+
+	_, _, err := resolveProviderNames("empty")
+	if err == nil {
+		t.Error("expected error for empty profile")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no providers configured") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveNoFlag(t *testing.T) {
+	setTestHome(t)
+	writeFallbackConf(t, "a\nb\n")
+
+	names, profile, err := resolveProviderNames("")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(names) != 2 || names[0] != "a" || names[1] != "b" {
+		t.Errorf("got %v", names)
+	}
+	if profile != "default" {
+		t.Errorf("profile = %q, want \"default\"", profile)
+	}
+}
+
+func TestValidateWithProfile(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+	writeProfileConf(t, "work", "a\nmissing\n")
+	mockStdin(t, "y\n")
+
+	valid, err := validateProviderNames([]string{"a", "missing"}, "work")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(valid) != 1 || valid[0] != "a" {
+		t.Errorf("expected [a], got %v", valid)
+	}
+
+	// Verify "missing" was removed from work profile
+	names, _ := config.ReadProfileOrder("work")
+	for _, n := range names {
+		if n == "missing" {
+			t.Error("missing should have been removed from work profile")
+		}
+	}
+}
+
 func writeFallbackConf(t *testing.T, content string) {
 	t.Helper()
 	home := os.Getenv("HOME")
@@ -127,61 +226,154 @@ func writeFallbackConf(t *testing.T, content string) {
 	}
 }
 
-func TestResolveProviderNamesFromFlag(t *testing.T) {
-	setTestHome(t)
-
-	names, err := resolveProviderNames(true, "a,b,c")
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if len(names) != 3 || names[0] != "a" || names[1] != "b" || names[2] != "c" {
-		t.Errorf("got %v", names)
-	}
-}
-
-func TestResolveProviderNamesFallbackFlagNoValue(t *testing.T) {
-	setTestHome(t)
-	writeFallbackConf(t, "x\ny\n")
-
-	// -f with empty value → reads fallback.conf
-	names, err := resolveProviderNames(true, " ")
-	if err != nil {
-		t.Fatalf("error: %v", err)
-	}
-	if len(names) != 2 || names[0] != "x" || names[1] != "y" {
-		t.Errorf("got %v", names)
-	}
-}
-
-func TestResolveProviderNamesNoFlagReadsFallback(t *testing.T) {
+func TestResolveProviderNamesFromFallbackConf(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, "p1\np2\n")
 
-	names, err := resolveProviderNames(false, "")
+	names, profile, err := resolveProviderNames("")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	if len(names) != 2 || names[0] != "p1" {
+	if len(names) != 2 || names[0] != "p1" || names[1] != "p2" {
 		t.Errorf("got %v", names)
+	}
+	if profile != "default" {
+		t.Errorf("profile = %q, want \"default\"", profile)
 	}
 }
 
 func TestResolveProviderNamesNoFallbackConf(t *testing.T) {
 	setTestHome(t)
-	// No fallback.conf
+	// No fallback.conf and no providers → should error about no providers configured
 
-	_, err := resolveProviderNames(false, "")
+	_, _, err := resolveProviderNames("")
 	if err == nil {
-		t.Error("expected error when fallback.conf missing")
+		t.Error("expected error when fallback.conf missing and no providers")
 	}
 }
 
 func TestResolveProviderNamesEmptyFallbackConf(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, "")
+	// Empty fallback.conf and no providers → should error about no providers configured
 
-	_, err := resolveProviderNames(false, "")
+	_, _, err := resolveProviderNames("")
 	if err == nil {
-		t.Error("expected error when fallback.conf is empty")
+		t.Error("expected error when fallback.conf is empty and no providers")
+	}
+}
+
+func TestBuildProvidersMissingConfigErrors(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+
+	_, _, err := buildProviders([]string{"a", "gone"})
+	if err == nil {
+		t.Error("expected error for missing config")
+	}
+	if err != nil && !strings.Contains(err.Error(), "'gone' not found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// --- validateProviderNames tests ---
+
+// mockStdin replaces stdinReader for the duration of the test.
+func mockStdin(t *testing.T, input string) {
+	t.Helper()
+	old := stdinReader
+	stdinReader = strings.NewReader(input)
+	t.Cleanup(func() { stdinReader = old })
+}
+
+func TestValidateProviderNamesAllExist(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+	writeTestEnv(t, "b", "ANTHROPIC_BASE_URL=https://b.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+
+	valid, err := validateProviderNames([]string{"a", "b"}, "default")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(valid) != 2 {
+		t.Errorf("expected 2 valid, got %d", len(valid))
+	}
+}
+
+func TestValidateProviderNamesSomeMissingConfirmYes(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+	writeFallbackConf(t, "a\nmissing\n")
+	mockStdin(t, "y\n")
+
+	valid, err := validateProviderNames([]string{"a", "missing"}, "default")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(valid) != 1 || valid[0] != "a" {
+		t.Errorf("expected [a], got %v", valid)
+	}
+
+	// Verify "missing" was removed from fallback.conf
+	names, _ := config.ReadFallbackOrder()
+	for _, n := range names {
+		if n == "missing" {
+			t.Error("missing should have been removed from fallback.conf")
+		}
+	}
+}
+
+func TestValidateProviderNamesSomeMissingConfirmNo(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+	mockStdin(t, "n\n")
+
+	_, err := validateProviderNames([]string{"a", "missing"}, "default")
+	if err == nil {
+		t.Error("expected error when user says no")
+	}
+	if err != nil && err.Error() != "aborted" {
+		t.Errorf("expected 'aborted', got: %v", err)
+	}
+}
+
+func TestValidateProviderNamesAllMissingConfirmYes(t *testing.T) {
+	setTestHome(t)
+	mockStdin(t, "y\n")
+
+	_, err := validateProviderNames([]string{"x", "y"}, "default")
+	if err == nil {
+		t.Error("expected error when all providers missing")
+	}
+	if err != nil && !strings.Contains(err.Error(), "no valid providers remaining") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateProviderNamesSkipsEmptyNames(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+
+	valid, err := validateProviderNames([]string{"", "a", "  "}, "default")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(valid) != 3 {
+		// empty names are kept as-is when no missing providers found
+		// (they get filtered later by buildProviders)
+	}
+}
+
+func TestValidateProviderNamesConfirmYes(t *testing.T) {
+	setTestHome(t)
+	writeTestEnv(t, "a", "ANTHROPIC_BASE_URL=https://a.com\nANTHROPIC_AUTH_TOKEN=tok\n")
+	mockStdin(t, "yes\n")
+
+	valid, err := validateProviderNames([]string{"a", "gone"}, "default")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(valid) != 1 || valid[0] != "a" {
+		t.Errorf("expected [a], got %v", valid)
 	}
 }

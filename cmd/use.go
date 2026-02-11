@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"github.com/anthropics/opencc/internal/envfile"
@@ -13,18 +14,37 @@ import (
 var useCmd = &cobra.Command{
 	Use:               "use <config> [claude args...]",
 	Short:             "Load config and exec claude directly",
-	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completeConfigNames,
+	SilenceUsage:      true,
+	SilenceErrors:     true,
 	RunE:              runUse,
 }
 
 func runUse(cmd *cobra.Command, args []string) error {
+	available := envfile.ConfigNames()
+
+	if len(args) == 0 {
+		fmt.Println("Usage: opencc use <provider> [claude args...]")
+		if len(available) > 0 {
+			fmt.Printf("\nAvailable providers: %s\n", strings.Join(available, ", "))
+		} else {
+			fmt.Println("\nNo providers configured. Run 'opencc config' to set up providers.")
+		}
+		return fmt.Errorf("provider name required")
+	}
+
 	configName := args[0]
 	claudeArgs := args[1:]
 
 	cfg, err := envfile.LoadByName(configName)
 	if err != nil {
-		return fmt.Errorf("configuration '%s' not found: %w", configName, err)
+		fmt.Printf("Provider '%s' not found.\n", configName)
+		if len(available) > 0 {
+			fmt.Printf("Available providers: %s\n", strings.Join(available, ", "))
+		} else {
+			fmt.Println("No providers configured. Run 'opencc config' to set up providers.")
+		}
+		return fmt.Errorf("configuration '%s' not found", configName)
 	}
 
 	// Export all env vars

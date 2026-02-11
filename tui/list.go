@@ -101,7 +101,7 @@ func (m listModel) handleKey(msg tea.KeyMsg) (listModel, tea.Cmd) {
 			m.deleting = true
 		}
 	case "f":
-		return m, func() tea.Msg { return switchToFallbackMsg{} }
+		return m, func() tea.Msg { return switchToProfileListMsg{} }
 	}
 	return m, nil
 }
@@ -112,6 +112,10 @@ func (m listModel) handleDeleteConfirm(msg tea.KeyMsg) (listModel, tea.Cmd) {
 		if m.cursor < len(m.configs) {
 			cfg := m.configs[m.cursor]
 			cfg.Delete()
+			// Remove from all profiles
+			for _, profile := range config.ListProfiles() {
+				config.RemoveFromProfileOrder(profile, cfg.Name)
+			}
 			m.deleting = false
 			return m, m.init()
 		}
@@ -160,7 +164,7 @@ func (m listModel) view(width, height int) string {
 	if m.deleting && m.cursor < len(m.configs) {
 		b.WriteString(errorStyle.Render(fmt.Sprintf("  Delete '%s'? (y/n)", m.configs[m.cursor].Name)))
 	} else {
-		b.WriteString(helpStyle.Render("  a:add  e/enter:edit  d:delete  f:fallback order  q:quit"))
+		b.WriteString(helpStyle.Render("  a:add  e/enter:edit  d:delete  f:fallback profiles  q:quit"))
 	}
 
 	if m.status != "" {

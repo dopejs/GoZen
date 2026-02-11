@@ -102,6 +102,65 @@ fish_comp_dir() {
   echo "$HOME/.config/fish/completions"
 }
 
+# --- First provider setup ---
+
+setup_first_provider() {
+  printf "\n"
+  info "No providers configured yet. Let's set up your first one."
+  printf "  (Press Ctrl+C to skip and configure later with 'opencc config')\n\n"
+
+  # Use /dev/tty for input since stdin may be a pipe
+  if [ ! -t 0 ] && [ -e /dev/tty ]; then
+    _input="/dev/tty"
+  else
+    _input="/dev/stdin"
+  fi
+
+  printf "  Provider name (e.g. work, personal): "
+  read -r _name < "$_input"
+  _name="$(printf '%s' "$_name" | tr -d '[:space:]')"
+  if [ -z "$_name" ]; then
+    err "Name cannot be empty. Run 'opencc config' to set up later."
+    return
+  fi
+
+  printf "  ANTHROPIC_BASE_URL: "
+  read -r _base_url < "$_input"
+  _base_url="$(printf '%s' "$_base_url" | tr -d '[:space:]')"
+  if [ -z "$_base_url" ]; then
+    err "Base URL cannot be empty. Run 'opencc config' to set up later."
+    return
+  fi
+
+  printf "  ANTHROPIC_AUTH_TOKEN: "
+  read -r _token < "$_input"
+  _token="$(printf '%s' "$_token" | tr -d '[:space:]')"
+  if [ -z "$_token" ]; then
+    err "Auth token cannot be empty. Run 'opencc config' to set up later."
+    return
+  fi
+
+  printf "  ANTHROPIC_MODEL (leave empty for default): "
+  read -r _model < "$_input"
+  _model="$(printf '%s' "$_model" | tr -d '[:space:]')"
+
+  # Write .env file
+  _env_path="$CC_ENVS_DIR/${_name}.env"
+  printf "ANTHROPIC_BASE_URL=%s\n" "$_base_url" > "$_env_path"
+  printf "ANTHROPIC_AUTH_TOKEN=%s\n" "$_token" >> "$_env_path"
+  if [ -n "$_model" ]; then
+    printf "ANTHROPIC_MODEL=%s\n" "$_model" >> "$_env_path"
+  fi
+
+  # Write to fallback.conf
+  printf "%s\n" "$_name" > "$CC_ENVS_DIR/fallback.conf"
+
+  printf "\n"
+  ok "Provider '${_name}' created and set as default fallback."
+  printf "  Run 'opencc' to start with this provider\n"
+  printf "  Run 'opencc config' to add more providers\n"
+}
+
 # --- Install ---
 
 do_install() {
@@ -142,13 +201,25 @@ do_install() {
     mkdir -p "$CC_ENVS_DIR"
   fi
 
+  # Create fallback.conf if it doesn't exist
+  if [ ! -f "$CC_ENVS_DIR/fallback.conf" ]; then
+    touch "$CC_ENVS_DIR/fallback.conf"
+  fi
+
   # Install completions
   install_completions
 
   printf "\n"
   ok "opencc ${VERSION} installed!"
-  printf "  Run 'opencc list' to list configurations\n"
-  printf "  Run 'opencc use <name>' to start claude with a configuration\n"
+
+  # Guide first provider setup if no .env files exist
+  _env_count="$(find "$CC_ENVS_DIR" -maxdepth 1 -name '*.env' 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$_env_count" = "0" ]; then
+    setup_first_provider
+  else
+    printf "  Run 'opencc list' to list configurations\n"
+    printf "  Run 'opencc use <name>' to start claude with a configuration\n"
+  fi
 }
 
 install_completions() {

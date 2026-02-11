@@ -10,14 +10,19 @@ import (
 )
 
 type fallbackModel struct {
+	profile    string   // profile name ("default", "work", etc.)
 	allConfigs []string
 	order      []string // current fallback order
 	cursor     int
+	grabbed    bool // true = item is grabbed and arrow keys reorder
 	status     string
 }
 
-func newFallbackModel() fallbackModel {
-	return fallbackModel{}
+func newFallbackModel(profile string) fallbackModel {
+	if profile == "" {
+		profile = "default"
+	}
+	return fallbackModel{profile: profile}
 }
 
 type fallbackLoadedMsg struct {
@@ -26,9 +31,10 @@ type fallbackLoadedMsg struct {
 }
 
 func (m fallbackModel) init() tea.Cmd {
+	profile := m.profile
 	return func() tea.Msg {
 		names := envfile.ConfigNames()
-		order, _ := config.ReadFallbackOrder()
+		order, _ := config.ReadProfileOrder(profile)
 		return fallbackLoadedMsg{allConfigs: names, order: order}
 	}
 }
@@ -48,8 +54,13 @@ func (m fallbackModel) update(msg tea.Msg) (fallbackModel, tea.Cmd) {
 }
 
 func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
+	if m.grabbed {
+		return m.handleGrabbed(msg)
+	}
+
 	switch msg.String() {
 	case "esc", "q":
+		config.WriteProfileOrder(m.profile, m.validOrder())
 		return m, func() tea.Msg { return switchToListMsg{} }
 	case "up", "k":
 		if m.cursor > 0 {
@@ -59,20 +70,11 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 		if m.cursor < len(m.order)-1 {
 			m.cursor++
 		}
-	case "K", "shift+up":
-		// Move up in order
-		if m.cursor > 0 {
-			m.order[m.cursor], m.order[m.cursor-1] = m.order[m.cursor-1], m.order[m.cursor]
-			m.cursor--
-		}
-	case "J", "shift+down":
-		// Move down in order
-		if m.cursor < len(m.order)-1 {
-			m.order[m.cursor], m.order[m.cursor+1] = m.order[m.cursor+1], m.order[m.cursor]
-			m.cursor++
+	case "enter":
+		if len(m.order) > 0 {
+			m.grabbed = true
 		}
 	case "a":
-		// Add a provider not yet in the order
 		for _, name := range m.allConfigs {
 			if !contains(m.order, name) {
 				m.order = append(m.order, name)
@@ -80,7 +82,6 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 			}
 		}
 	case "d", "delete":
-		// Remove from order
 		if m.cursor < len(m.order) {
 			m.order = append(m.order[:m.cursor], m.order[m.cursor+1:]...)
 			if m.cursor >= len(m.order) && m.cursor > 0 {
@@ -88,20 +89,66 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 			}
 		}
 	case "s", "ctrl+s":
-		// Save
-		if err := config.WriteFallbackOrder(m.order); err != nil {
+		m.order = m.validOrder()
+		if err := config.WriteProfileOrder(m.profile, m.order); err != nil {
 			m.status = "Error: " + err.Error()
 		} else {
 			m.status = "Saved!"
+		}
+		if m.cursor >= len(m.order) && m.cursor > 0 {
+			m.cursor = len(m.order) - 1
 		}
 	}
 	return m, nil
 }
 
+func (m fallbackModel) handleGrabbed(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "enter":
+		m.grabbed = false
+	case "up", "k":
+		if m.cursor > 0 {
+			m.order[m.cursor], m.order[m.cursor-1] = m.order[m.cursor-1], m.order[m.cursor]
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(m.order)-1 {
+			m.order[m.cursor], m.order[m.cursor+1] = m.order[m.cursor+1], m.order[m.cursor]
+			m.cursor++
+		}
+	}
+	return m, nil
+}
+
+// validOrder returns order with missing providers removed.
+func (m fallbackModel) validOrder() []string {
+	var valid []string
+	for _, name := range m.order {
+		if contains(m.allConfigs, name) {
+			valid = append(valid, name)
+		}
+	}
+	return valid
+}
+
+// strikethrough applies Unicode combining strikethrough to each rune.
+func strikethrough(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		b.WriteRune(r)
+		b.WriteRune('\u0336')
+	}
+	return b.String()
+}
+
 func (m fallbackModel) view(width, height int) string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("  Fallback Order"))
+	title := "Fallback Order"
+	if m.profile != "" && m.profile != "default" {
+		title = fmt.Sprintf("Fallback Order [%s]", m.profile)
+	}
+	b.WriteString(titleStyle.Render("  " + title))
 	b.WriteString("\n\n")
 
 	if len(m.order) == 0 {
@@ -111,11 +158,24 @@ func (m fallbackModel) view(width, height int) string {
 		for i, name := range m.order {
 			cursor := "  "
 			style := dimStyle
+			missing := !contains(m.allConfigs, name)
 			if i == m.cursor {
-				cursor = "▸ "
-				style = selectedStyle
+				if m.grabbed {
+					cursor = "⇕ "
+					style = grabbedStyle
+				} else {
+					cursor = "▸ "
+					style = selectedStyle
+				}
 			}
-			line := fmt.Sprintf("%s[%d] %s", cursor, i+1, name)
+			label := name
+			if missing {
+				label = strikethrough(name)
+				if i != m.cursor {
+					style = errorStyle
+				}
+			}
+			line := fmt.Sprintf("%s[%d] %s", cursor, i+1, label)
 			b.WriteString(style.Render(line))
 			b.WriteString("\n")
 		}
@@ -139,7 +199,11 @@ func (m fallbackModel) view(width, height int) string {
 		b.WriteString(successStyle.Render("  " + m.status))
 		b.WriteString("\n")
 	}
-	b.WriteString(helpStyle.Render("  j/k:move  J/K:reorder  a:add  d:remove  s:save  esc:back"))
+	if m.grabbed {
+		b.WriteString(helpStyle.Render("  ↑/↓:reorder  enter/esc:drop"))
+	} else {
+		b.WriteString(helpStyle.Render("  ↑/↓:move  enter:grab  a:add  d:remove  s:save  esc:back"))
+	}
 
 	return b.String()
 }

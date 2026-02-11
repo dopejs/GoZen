@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -14,12 +16,14 @@ import (
 	"github.com/anthropics/opencc/internal/config"
 	"github.com/anthropics/opencc/internal/envfile"
 	"github.com/anthropics/opencc/internal/proxy"
+	"github.com/anthropics/opencc/tui"
 	"github.com/spf13/cobra"
 )
 
-var Version = "1.1.1"
+// stdinReader is the reader used for interactive prompts. Tests can replace it.
+var stdinReader io.Reader = os.Stdin
 
-var fallbackFlag string
+var Version = "1.2.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "opencc [claude args...]",
@@ -33,16 +37,15 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&fallbackFlag, "fallback", "f", "", "provider list (comma-separated), or reads fallback.conf if flag present without value")
-	// Make -f work with optional value
+	rootCmd.Flags().StringP("fallback", "f", "", "fallback profile name (use -f without value to pick interactively)")
 	rootCmd.Flags().Lookup("fallback").NoOptDefVal = " "
-
 	rootCmd.AddCommand(useCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
 	rootCmd.AddCommand(upgradeCmd)
+	rootCmd.AddCommand(pickCmd)
 }
 
 func Execute() error {
@@ -50,14 +53,23 @@ func Execute() error {
 }
 
 func runProxy(cmd *cobra.Command, args []string) error {
-	// Determine provider list
-	providerNames, err := resolveProviderNames(cmd.Flags().Changed("fallback"), fallbackFlag)
+	profileFlag, _ := cmd.Flags().GetString("fallback")
+
+	providerNames, profile, err := resolveProviderNames(profileFlag)
 	if err != nil {
 		return err
 	}
 
-	// Build provider list
-	providers, firstModel, err := buildProviders(providerNames)
+	providerNames, err = validateProviderNames(providerNames, profile)
+	if err != nil {
+		return err
+	}
+
+	return startProxy(providerNames, args)
+}
+
+func startProxy(names []string, args []string) error {
+	providers, firstModel, err := buildProviders(names)
 	if err != nil {
 		return err
 	}
@@ -178,27 +190,127 @@ func buildProviders(names []string) ([]*proxy.Provider, string, error) {
 	return providers, firstModel, nil
 }
 
-// resolveProviderNames determines the provider list from flags or fallback.conf.
-func resolveProviderNames(fallbackChanged bool, fallbackValue string) ([]string, error) {
-	var names []string
-
-	if fallbackChanged {
-		if v := strings.TrimSpace(fallbackValue); v != "" {
-			names = strings.Split(v, ",")
-		}
-	}
-
-	if len(names) == 0 {
-		fbNames, err := config.ReadFallbackOrder()
+// resolveProviderNames determines the provider list based on the -f flag value.
+// Returns the provider names and the profile used.
+func resolveProviderNames(profileFlag string) ([]string, string, error) {
+	// -f (no value, NoOptDefVal=" ") → interactive profile picker
+	if profileFlag == " " {
+		profile, err := tui.RunProfilePicker()
 		if err != nil {
-			return nil, fmt.Errorf("no providers specified and fallback.conf not found: %w", err)
+			return nil, "", err
 		}
-		names = fbNames
+		names, err := config.ReadProfileOrder(profile)
+		if err != nil {
+			return nil, "", fmt.Errorf("profile '%s' has no providers configured", profile)
+		}
+		if len(names) == 0 {
+			return nil, "", fmt.Errorf("profile '%s' has no providers configured", profile)
+		}
+		return names, profile, nil
 	}
 
-	if len(names) == 0 {
-		return nil, fmt.Errorf("no providers configured. Run 'opencc config' to set up providers")
+	// -f <name> → use that specific profile
+	if profileFlag != "" {
+		names, err := config.ReadProfileOrder(profileFlag)
+		if err != nil {
+			return nil, "", fmt.Errorf("profile '%s' not found", profileFlag)
+		}
+		if len(names) == 0 {
+			return nil, "", fmt.Errorf("profile '%s' has no providers configured", profileFlag)
+		}
+		return names, profileFlag, nil
 	}
 
-	return names, nil
+	// No flag → existing behavior (default profile, or interactive selection)
+	fbNames, err := config.ReadFallbackOrder()
+	if err == nil && len(fbNames) > 0 {
+		return fbNames, "default", nil
+	}
+
+	// fallback.conf missing or empty — interactive selection
+	names, err := interactiveSelectProviders()
+	if err != nil {
+		return nil, "", err
+	}
+	return names, "default", nil
+}
+
+// interactiveSelectProviders uses TUI to select providers.
+// If no providers exist, launches the create-first editor.
+// Otherwise launches the checkbox picker.
+func interactiveSelectProviders() ([]string, error) {
+	available := envfile.ConfigNames()
+	if len(available) == 0 {
+		// No providers at all — launch TUI editor to create one
+		name, err := tui.RunCreateFirst()
+		if err != nil {
+			return nil, fmt.Errorf("no providers configured")
+		}
+		if name == "" {
+			return nil, fmt.Errorf("no providers configured")
+		}
+		return []string{name}, nil
+	}
+
+	// Providers exist but no fallback.conf — launch picker
+	selected, err := tui.RunPick()
+	if err != nil {
+		return nil, err
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("no providers selected")
+	}
+
+	// Write selection to fallback.conf
+	if err := config.WriteFallbackOrder(selected); err != nil {
+		return nil, fmt.Errorf("failed to save fallback order: %w", err)
+	}
+	fmt.Printf("Saved fallback order: %s\n", strings.Join(selected, ", "))
+
+	return selected, nil
+}
+
+// validateProviderNames checks that each provider .env exists.
+// Prompts user to confirm removal of missing providers from the profile's conf.
+func validateProviderNames(names []string, profile string) ([]string, error) {
+	var valid, missing []string
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		path := filepath.Join(envfile.EnvsPath(), name+".env")
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, name)
+		} else {
+			valid = append(valid, name)
+		}
+	}
+
+	if len(missing) == 0 {
+		return names, nil
+	}
+
+	fmt.Printf("%s provider(s) not found. Continue and remove from profile? (y/n): ", strings.Join(missing, ", "))
+	reader := bufio.NewReader(stdinReader)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("failed to read input: %w", err)
+	}
+
+	answer := strings.TrimSpace(strings.ToLower(line))
+	if answer != "y" && answer != "yes" {
+		return nil, fmt.Errorf("aborted")
+	}
+
+	// Remove missing from profile
+	for _, name := range missing {
+		config.RemoveFromProfileOrder(profile, name)
+	}
+
+	if len(valid) == 0 {
+		return nil, fmt.Errorf("no valid providers remaining. Run 'opencc config' to set up providers")
+	}
+
+	return valid, nil
 }

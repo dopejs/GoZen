@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/anthropics/opencc/internal/config"
 	"github.com/anthropics/opencc/internal/envfile"
 )
 
@@ -160,6 +161,10 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 			m.err = err.Error()
 			return m, nil
 		}
+		// Append to fallback.conf
+		fbOrder, _ := config.ReadFallbackOrder()
+		fbOrder = append(fbOrder, name)
+		config.WriteFallbackOrder(fbOrder)
 	}
 
 	return m, func() tea.Msg { return switchToListMsg{} }

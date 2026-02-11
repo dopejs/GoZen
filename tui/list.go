@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,6 +44,21 @@ func (m listModel) update(msg tea.Msg) (listModel, tea.Cmd) {
 	case configsLoadedMsg:
 		m.configs = msg.configs
 		m.fbOrder = msg.fbOrder
+		// Sort: fallback configs first (by order), then the rest alphabetically
+		sort.Slice(m.configs, func(i, j int) bool {
+			fi, oki := m.fbOrder[m.configs[i].Name]
+			fj, okj := m.fbOrder[m.configs[j].Name]
+			if oki && okj {
+				return fi < fj
+			}
+			if oki {
+				return true
+			}
+			if okj {
+				return false
+			}
+			return m.configs[i].Name < m.configs[j].Name
+		})
 		m.cursor = 0
 		m.deleting = false
 		return m, nil

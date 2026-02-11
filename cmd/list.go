@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/anthropics/opencc/internal/config"
@@ -33,12 +34,28 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Load fallback order for annotation
+	// Load fallback order for sorting
 	fbOrder, _ := config.ReadFallbackOrder()
 	fbMap := make(map[string]int)
 	for i, name := range fbOrder {
 		fbMap[name] = i + 1
 	}
+
+	// Sort: fallback configs first (by order), then the rest alphabetically
+	sort.Slice(configs, func(i, j int) bool {
+		fi, oki := fbMap[configs[i].Name]
+		fj, okj := fbMap[configs[j].Name]
+		if oki && okj {
+			return fi < fj
+		}
+		if oki {
+			return true
+		}
+		if okj {
+			return false
+		}
+		return configs[i].Name < configs[j].Name
+	})
 
 	found := 0
 	for _, cfg := range configs {

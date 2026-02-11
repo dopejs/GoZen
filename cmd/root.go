@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "1.1.0"
+var Version = "1.1.1"
 
 var fallbackFlag string
 
@@ -42,6 +42,7 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(upgradeCmd)
 }
 
 func Execute() error {

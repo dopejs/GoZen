@@ -87,14 +87,21 @@ func (s *Store) SetProvider(name string, p *ProviderConfig) error {
 	return s.saveLocked()
 }
 
-// DeleteProvider removes a provider and removes it from all profiles, then saves.
+// DeleteProvider removes a provider and removes it from all profiles
+// (including routing scenarios), then saves.
 func (s *Store) DeleteProvider(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureConfig()
 	delete(s.config.Providers, name)
-	for profile, order := range s.config.Profiles {
-		s.config.Profiles[profile] = removeString(order, name)
+	for _, pc := range s.config.Profiles {
+		pc.Providers = removeString(pc.Providers, name)
+		for scenario, route := range pc.Routing {
+			route.Providers = removeString(route.Providers, name)
+			if len(route.Providers) == 0 {
+				delete(pc.Routing, scenario)
+			}
+		}
 	}
 	return s.saveLocked()
 }
@@ -143,10 +150,15 @@ func (s *Store) GetProfileOrder(profile string) []string {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Profiles[profile]
+	pc := s.config.Profiles[profile]
+	if pc == nil {
+		return nil
+	}
+	return pc.Providers
 }
 
 // SetProfileOrder sets the provider list for a profile and saves.
+// Preserves existing routing configuration if the profile already exists.
 func (s *Store) SetProfileOrder(profile string, names []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,20 +166,55 @@ func (s *Store) SetProfileOrder(profile string, names []string) error {
 	if names == nil {
 		names = []string{}
 	}
-	s.config.Profiles[profile] = names
+	pc := s.config.Profiles[profile]
+	if pc == nil {
+		pc = &ProfileConfig{}
+		s.config.Profiles[profile] = pc
+	}
+	pc.Providers = names
 	return s.saveLocked()
 }
 
-// RemoveFromProfile removes a provider name from a specific profile and saves.
+// GetProfileConfig returns the full profile configuration.
+func (s *Store) GetProfileConfig(profile string) *ProfileConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Profiles[profile]
+}
+
+// SetProfileConfig sets the full profile configuration and saves.
+func (s *Store) SetProfileConfig(profile string, pc *ProfileConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureConfig()
+	if pc == nil {
+		pc = &ProfileConfig{Providers: []string{}}
+	}
+	s.config.Profiles[profile] = pc
+	return s.saveLocked()
+}
+
+// RemoveFromProfile removes a provider name from a specific profile
+// (both from the main providers list and from all routing scenarios) and saves.
 func (s *Store) RemoveFromProfile(profile, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureConfig()
-	if order, ok := s.config.Profiles[profile]; ok {
-		s.config.Profiles[profile] = removeString(order, name)
-		return s.saveLocked()
+	pc := s.config.Profiles[profile]
+	if pc == nil {
+		return nil
 	}
-	return nil
+	pc.Providers = removeString(pc.Providers, name)
+	for scenario, route := range pc.Routing {
+		route.Providers = removeString(route.Providers, name)
+		if len(route.Providers) == 0 {
+			delete(pc.Routing, scenario)
+		}
+	}
+	return s.saveLocked()
 }
 
 // DeleteProfile deletes a profile. Cannot delete "default".
@@ -216,7 +263,7 @@ func (s *Store) Load() error {
 			cfg.Providers = make(map[string]*ProviderConfig)
 		}
 		if cfg.Profiles == nil {
-			cfg.Profiles = make(map[string][]string)
+			cfg.Profiles = make(map[string]*ProfileConfig)
 		}
 		s.config = &cfg
 		return nil
@@ -242,7 +289,7 @@ func (s *Store) Load() error {
 	// Nothing exists — create empty config
 	s.config = &OpenCCConfig{
 		Providers: make(map[string]*ProviderConfig),
-		Profiles:  make(map[string][]string),
+		Profiles:  make(map[string]*ProfileConfig),
 	}
 	return nil
 }
@@ -305,14 +352,14 @@ func (s *Store) ensureConfig() {
 	if s.config == nil {
 		s.config = &OpenCCConfig{
 			Providers: make(map[string]*ProviderConfig),
-			Profiles:  make(map[string][]string),
+			Profiles:  make(map[string]*ProfileConfig),
 		}
 	}
 	if s.config.Providers == nil {
 		s.config.Providers = make(map[string]*ProviderConfig)
 	}
 	if s.config.Profiles == nil {
-		s.config.Profiles = make(map[string][]string)
+		s.config.Profiles = make(map[string]*ProfileConfig)
 	}
 }
 

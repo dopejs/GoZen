@@ -43,8 +43,8 @@ func TestStoreLoadExisting(t *testing.T) {
 		Providers: map[string]*ProviderConfig{
 			"work": {BaseURL: "https://work.example.com", AuthToken: "tok1", Model: "opus"},
 		},
-		Profiles: map[string][]string{
-			"default": {"work"},
+		Profiles: map[string]*ProfileConfig{
+			"default": {Providers: []string{"work"}},
 		},
 	}
 	dir := filepath.Join(home, ConfigDir)

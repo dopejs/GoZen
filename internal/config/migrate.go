@@ -34,7 +34,7 @@ func MigrateFromLegacy() (*OpenCCConfig, error) {
 	}
 
 	// 2. Read fallback*.conf files → profiles
-	profiles := make(map[string][]string)
+	profiles := make(map[string]*ProfileConfig)
 	confMatches, _ := filepath.Glob(filepath.Join(dir, "fallback*.conf"))
 	for _, path := range confMatches {
 		base := filepath.Base(path)
@@ -57,7 +57,7 @@ func MigrateFromLegacy() (*OpenCCConfig, error) {
 			continue
 		}
 		if len(names) > 0 {
-			profiles[profileName] = names
+			profiles[profileName] = &ProfileConfig{Providers: names}
 		}
 	}
 

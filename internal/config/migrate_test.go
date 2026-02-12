@@ -82,12 +82,12 @@ func TestMigrateFromLegacyFull(t *testing.T) {
 	}
 
 	defaultProfile := cfg.Profiles["default"]
-	if len(defaultProfile) != 2 || defaultProfile[0] != "work" || defaultProfile[1] != "backup" {
+	if defaultProfile == nil || len(defaultProfile.Providers) != 2 || defaultProfile.Providers[0] != "work" || defaultProfile.Providers[1] != "backup" {
 		t.Errorf("default profile = %v", defaultProfile)
 	}
 
 	stagingProfile := cfg.Profiles["staging"]
-	if len(stagingProfile) != 1 || stagingProfile[0] != "backup" {
+	if stagingProfile == nil || len(stagingProfile.Providers) != 1 || stagingProfile.Providers[0] != "backup" {
 		t.Errorf("staging profile = %v", stagingProfile)
 	}
 }
@@ -185,7 +185,7 @@ func TestMigrateFromLegacySkipsComments(t *testing.T) {
 	}
 
 	defaultProfile := cfg.Profiles["default"]
-	if len(defaultProfile) != 1 || defaultProfile[0] != "test" {
+	if defaultProfile == nil || len(defaultProfile.Providers) != 1 || defaultProfile.Providers[0] != "test" {
 		t.Errorf("default profile = %v", defaultProfile)
 	}
 }

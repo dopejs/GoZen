@@ -60,6 +60,16 @@ func ListProfiles() []string {
 	return DefaultStore().ListProfiles()
 }
 
+// GetProfileConfig returns the full profile configuration.
+func GetProfileConfig(profile string) *ProfileConfig {
+	return DefaultStore().GetProfileConfig(profile)
+}
+
+// SetProfileConfig sets the full profile configuration.
+func SetProfileConfig(profile string, pc *ProfileConfig) error {
+	return DefaultStore().SetProfileConfig(profile, pc)
+}
+
 // --- Backward compatibility aliases for the "default" profile ---
 
 // ReadFallbackOrder reads the default profile's provider order.

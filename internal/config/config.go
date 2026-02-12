@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"encoding/json"
+	"os"
+)
 
 const (
 	ConfigDir  = ".opencc"
@@ -44,8 +47,60 @@ func (p *ProviderConfig) ExportToEnv() {
 	}
 }
 
+// Scenario represents a request scenario for routing decisions.
+type Scenario string
+
+const (
+	ScenarioThink      Scenario = "think"
+	ScenarioImage      Scenario = "image"
+	ScenarioLongContext Scenario = "longContext"
+	ScenarioDefault    Scenario = "default"
+)
+
+// ScenarioRoute defines providers and optional model override for a scenario.
+type ScenarioRoute struct {
+	Providers []string `json:"providers"`
+	Model     string   `json:"model,omitempty"`
+}
+
+// ProfileConfig holds a profile's provider list and optional scenario routing.
+type ProfileConfig struct {
+	Providers []string                    `json:"providers"`
+	Routing   map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
+}
+
+// UnmarshalJSON supports both old format (["p1","p2"]) and new format ({providers: [...], routing: {...}}).
+func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
+	// Trim whitespace to check first character
+	for _, b := range data {
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			continue
+		}
+		if b == '[' {
+			// Old format: plain string array
+			var providers []string
+			if err := json.Unmarshal(data, &providers); err != nil {
+				return err
+			}
+			pc.Providers = providers
+			pc.Routing = nil
+			return nil
+		}
+		break
+	}
+
+	// New format: object with providers and optional routing
+	type profileConfigAlias ProfileConfig
+	var alias profileConfigAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	*pc = ProfileConfig(alias)
+	return nil
+}
+
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
 	Providers map[string]*ProviderConfig `json:"providers"`
-	Profiles  map[string][]string        `json:"profiles"`
+	Profiles  map[string]*ProfileConfig  `json:"profiles"`
 }

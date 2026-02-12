@@ -36,9 +36,9 @@ func setupTestServer(t *testing.T) *Server {
 				AuthToken: "sk-backup-token-5678",
 			},
 		},
-		Profiles: map[string][]string{
-			"default": {"test-provider", "backup"},
-			"work":    {"test-provider"},
+		Profiles: map[string]*config.ProfileConfig{
+			"default": {Providers: []string{"test-provider", "backup"}},
+			"work":    {Providers: []string{"test-provider"}},
 		},
 	}
 	data, _ := json.MarshalIndent(cfg, "", "  ")

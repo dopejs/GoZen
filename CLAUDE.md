@@ -48,6 +48,7 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **Commit often**: Each completed task/item should be committed individually, not batched into one large commit.
 - **Pre-release check**: Before tagging a release, check for unpushed commits (`git log origin/main..HEAD`) and push them first.
 - **Update version constant**: Before releasing, update `Version` in `cmd/root.go` to match the release tag.
+- **Update README**: Before releasing, check that `README.md` reflects all new features and changes.
 
 ## Key Conventions
 
@@ -66,3 +67,4 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - v1.1.1: Upgrade command, sorted configs
 - v1.2.0: Fallback profiles, pick command, installer
 - v1.3.0: Web UI, profile assignment on provider add, model autocomplete, CLI name args
+- v1.3.1: Download progress bar, README refresh

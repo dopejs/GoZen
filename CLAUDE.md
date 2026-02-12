@@ -47,6 +47,7 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 
 - **Commit often**: Each completed task/item should be committed individually, not batched into one large commit.
 - **Pre-release check**: Before tagging a release, check for unpushed commits (`git log origin/main..HEAD`) and push them first.
+- **Update version constant**: Before releasing, update `Version` in `cmd/root.go` to match the release tag.
 
 ## Key Conventions
 

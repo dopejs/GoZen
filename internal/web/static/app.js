@@ -388,6 +388,9 @@
         provs.forEach(function(n) {
           html += '<span class="badge badge-teal">' + esc(n) + '</span>';
         });
+        if (p.routing && Object.keys(p.routing).length > 0) {
+          html += '<span class="badge badge-lavender">' + Object.keys(p.routing).length + ' route(s)</span>';
+        }
         html += '</div>';
       } else {
         html += '<div class="card-meta">No providers assigned</div>';
@@ -420,6 +423,7 @@
     document.getElementById("gf-name").value = "";
     document.getElementById("gf-name").disabled = false;
     buildProviderSelector([]);
+    buildRoutingSection(null);
     openModal("profile-modal");
   }
 
@@ -431,6 +435,7 @@
     document.getElementById("gf-name").value = name;
     document.getElementById("gf-name").disabled = true;
     buildProviderSelector(p.providers || []);
+    buildRoutingSection(p.routing || null);
     openModal("profile-modal");
   }
 
@@ -547,17 +552,127 @@
     return result;
   }
 
+  // --- Routing UI ---
+  var SCENARIOS = [
+    { key: "think", label: "Think", desc: "Thinking mode requests" },
+    { key: "image", label: "Image", desc: "Requests with images" },
+    { key: "longContext", label: "Long Context", desc: ">32k chars total" }
+  ];
+
+  function buildRoutingSection(routing) {
+    var container = document.getElementById("gf-routing");
+    container.innerHTML = "";
+    SCENARIOS.forEach(function(s) {
+      var route = routing && routing[s.key] ? routing[s.key] : null;
+      var hasConfig = route && route.providers && route.providers.length > 0;
+
+      var scenario = document.createElement("div");
+      scenario.className = "routing-scenario" + (hasConfig ? " has-config" : "");
+      scenario.dataset.scenario = s.key;
+
+      // Header
+      var header = document.createElement("div");
+      header.className = "routing-scenario-header";
+      header.innerHTML =
+        '<span class="rs-toggle">' + ICONS.chevronDown + '</span>' +
+        '<span class="rs-label">' + esc(s.label) + ' <span style="font-weight:400;color:var(--text-muted);font-size:12px">— ' + esc(s.desc) + '</span></span>' +
+        '<span class="rs-status ' + (hasConfig ? 'configured' : 'not-configured') + '">' +
+        (hasConfig ? 'Configured' : 'Not set') + '</span>';
+      header.addEventListener("click", function() {
+        scenario.classList.toggle("open");
+      });
+
+      // Body
+      var body = document.createElement("div");
+      body.className = "routing-scenario-body";
+
+      // Provider checkboxes
+      var provList = document.createElement("div");
+      provList.className = "routing-providers";
+      var selectedProviders = route ? (route.providers || []) : [];
+
+      allProviderNames.forEach(function(name) {
+        var checked = selectedProviders.indexOf(name) !== -1;
+        var item = document.createElement("div");
+        item.className = "rp-item" + (checked ? " selected" : "");
+        item.dataset.name = name;
+        item.innerHTML =
+          '<div class="ps-checkbox">' + ICONS.check + '</div>' +
+          '<span class="rp-name">' + esc(name) + '</span>';
+        item.addEventListener("click", function() {
+          item.classList.toggle("selected");
+          updateScenarioStatus(scenario);
+        });
+        provList.appendChild(item);
+      });
+      body.appendChild(provList);
+
+      // Model input
+      var modelGroup = document.createElement("div");
+      modelGroup.className = "routing-model-group";
+      modelGroup.innerHTML =
+        '<label>Model Override <span style="font-weight:400;color:var(--text-faint)">(optional, leave empty to use provider mapping)</span></label>' +
+        '<input type="text" class="rs-model-input" placeholder="e.g. claude-opus-4-5" value="' + esc(route ? route.model || '' : '') + '">';
+      body.appendChild(modelGroup);
+
+      scenario.appendChild(header);
+      scenario.appendChild(body);
+      container.appendChild(scenario);
+    });
+  }
+
+  function updateScenarioStatus(scenarioEl) {
+    var selected = scenarioEl.querySelectorAll(".rp-item.selected");
+    var status = scenarioEl.querySelector(".rs-status");
+    if (selected.length > 0) {
+      status.className = "rs-status configured";
+      status.textContent = "Configured";
+      scenarioEl.classList.add("has-config");
+    } else {
+      status.className = "rs-status not-configured";
+      status.textContent = "Not set";
+      scenarioEl.classList.remove("has-config");
+    }
+  }
+
+  function getRoutingConfig() {
+    var routing = {};
+    var hasAny = false;
+    document.querySelectorAll("#gf-routing .routing-scenario").forEach(function(scenario) {
+      var key = scenario.dataset.scenario;
+      var selectedItems = scenario.querySelectorAll(".rp-item.selected");
+      if (selectedItems.length === 0) return;
+
+      var providerNames = [];
+      selectedItems.forEach(function(item) { providerNames.push(item.dataset.name) });
+
+      var modelInput = scenario.querySelector(".rs-model-input");
+      var model = modelInput ? modelInput.value.trim() : "";
+
+      var route = { providers: providerNames };
+      if (model) route.model = model;
+      routing[key] = route;
+      hasAny = true;
+    });
+    return hasAny ? routing : null;
+  }
+
   function submitProfile(e) {
     e.preventDefault();
     var selected = getSelectedProviders();
+    var routing = getRoutingConfig();
 
     var promise;
     if (editingProfile) {
-      promise = api("PUT", "/profiles/" + encodeURIComponent(editingProfile), { providers: selected });
+      var body = { providers: selected };
+      if (routing) body.routing = routing;
+      promise = api("PUT", "/profiles/" + encodeURIComponent(editingProfile), body);
     } else {
       var name = document.getElementById("gf-name").value.trim();
       if (!name) { toast("Name is required", "error"); return; }
-      promise = api("POST", "/profiles", { name: name, providers: selected });
+      var body = { name: name, providers: selected };
+      if (routing) body.routing = routing;
+      promise = api("POST", "/profiles", body);
     }
     promise.then(function() {
       closeModal("profile-modal");
@@ -604,7 +719,9 @@
       var profile = profiles.find(function(p) { return p.name === profileName });
       if (!profile) { done++; return; }
       var updatedProviders = (profile.providers || []).concat(addToProfilesProviderName);
-      api("PUT", "/profiles/" + encodeURIComponent(profileName), { providers: updatedProviders }).then(function() {
+      var body = { providers: updatedProviders };
+      if (profile.routing) body.routing = profile.routing;
+      api("PUT", "/profiles/" + encodeURIComponent(profileName), body).then(function() {
         done++;
         if (done === total) {
           toast("Added to " + total + " profile(s)");

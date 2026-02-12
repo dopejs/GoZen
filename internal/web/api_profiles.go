@@ -7,19 +7,74 @@ import (
 	"github.com/dopejs/opencc/internal/config"
 )
 
+// scenarioRouteResponse is the JSON shape for a scenario route.
+type scenarioRouteResponse struct {
+	Providers []string `json:"providers"`
+	Model     string   `json:"model,omitempty"`
+}
+
 // profileResponse is the JSON shape returned for a single profile.
 type profileResponse struct {
-	Name      string   `json:"name"`
-	Providers []string `json:"providers"`
+	Name      string                                    `json:"name"`
+	Providers []string                                  `json:"providers"`
+	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
 }
 
 type createProfileRequest struct {
-	Name      string   `json:"name"`
-	Providers []string `json:"providers"`
+	Name      string                                    `json:"name"`
+	Providers []string                                  `json:"providers"`
+	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
 }
 
 type updateProfileRequest struct {
-	Providers []string `json:"providers"`
+	Providers []string                                  `json:"providers"`
+	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+}
+
+// profileConfigToResponse converts a ProfileConfig to a profileResponse.
+func profileConfigToResponse(name string, pc *config.ProfileConfig) profileResponse {
+	providers := pc.Providers
+	if providers == nil {
+		providers = []string{}
+	}
+	resp := profileResponse{
+		Name:      name,
+		Providers: providers,
+	}
+	if len(pc.Routing) > 0 {
+		resp.Routing = make(map[config.Scenario]*scenarioRouteResponse)
+		for scenario, route := range pc.Routing {
+			providers := route.Providers
+			if providers == nil {
+				providers = []string{}
+			}
+			resp.Routing[scenario] = &scenarioRouteResponse{
+				Providers: providers,
+				Model:     route.Model,
+			}
+		}
+	}
+	return resp
+}
+
+// routingResponseToConfig converts routing response data to config ScenarioRoutes.
+func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse) map[config.Scenario]*config.ScenarioRoute {
+	if len(routing) == 0 {
+		return nil
+	}
+	result := make(map[config.Scenario]*config.ScenarioRoute)
+	for scenario, route := range routing {
+		if len(route.Providers) > 0 {
+			result[scenario] = &config.ScenarioRoute{
+				Providers: route.Providers,
+				Model:     route.Model,
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 // handleProfiles handles GET /api/v1/profiles and POST /api/v1/profiles.
@@ -59,29 +114,23 @@ func (s *Server) listProfiles(w http.ResponseWriter, r *http.Request) {
 	names := store.ListProfiles()
 	profiles := make([]profileResponse, 0, len(names))
 	for _, name := range names {
-		order := store.GetProfileOrder(name)
-		if order == nil {
-			order = []string{}
+		pc := store.GetProfileConfig(name)
+		if pc == nil {
+			pc = &config.ProfileConfig{Providers: []string{}}
 		}
-		profiles = append(profiles, profileResponse{
-			Name:      name,
-			Providers: order,
-		})
+		profiles = append(profiles, profileConfigToResponse(name, pc))
 	}
 	writeJSON(w, http.StatusOK, profiles)
 }
 
 func (s *Server) getProfile(w http.ResponseWriter, r *http.Request, name string) {
 	store := config.DefaultStore()
-	order := store.GetProfileOrder(name)
-	if order == nil {
+	pc := store.GetProfileConfig(name)
+	if pc == nil {
 		writeError(w, http.StatusNotFound, "profile not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, profileResponse{
-		Name:      name,
-		Providers: order,
-	})
+	writeJSON(w, http.StatusOK, profileConfigToResponse(name, pc))
 }
 
 func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +145,7 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := config.DefaultStore()
-	existing := store.GetProfileOrder(req.Name)
+	existing := store.GetProfileConfig(req.Name)
 	if existing != nil {
 		writeError(w, http.StatusConflict, "profile already exists")
 		return
@@ -107,19 +156,21 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 		providers = []string{}
 	}
 
-	if err := store.SetProfileOrder(req.Name, providers); err != nil {
+	pc := &config.ProfileConfig{
+		Providers: providers,
+		Routing:   routingResponseToConfig(req.Routing),
+	}
+
+	if err := store.SetProfileConfig(req.Name, pc); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, profileResponse{
-		Name:      req.Name,
-		Providers: providers,
-	})
+	writeJSON(w, http.StatusCreated, profileConfigToResponse(req.Name, pc))
 }
 
 func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request, name string) {
 	store := config.DefaultStore()
-	existing := store.GetProfileOrder(name)
+	existing := store.GetProfileConfig(name)
 	if existing == nil {
 		writeError(w, http.StatusNotFound, "profile not found")
 		return
@@ -136,14 +187,14 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request, name stri
 		providers = []string{}
 	}
 
-	if err := store.SetProfileOrder(name, providers); err != nil {
+	existing.Providers = providers
+	existing.Routing = routingResponseToConfig(req.Routing)
+
+	if err := store.SetProfileConfig(name, existing); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, profileResponse{
-		Name:      name,
-		Providers: providers,
-	})
+	writeJSON(w, http.StatusOK, profileConfigToResponse(name, existing))
 }
 
 func (s *Server) deleteProfile(w http.ResponseWriter, r *http.Request, name string) {

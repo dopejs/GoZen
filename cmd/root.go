@@ -83,10 +83,13 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return startProxy(providerNames, args)
+	// Get the full profile config for routing support
+	pc := config.GetProfileConfig(profile)
+
+	return startProxy(providerNames, pc, args)
 }
 
-func startProxy(names []string, args []string) error {
+func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 	providers, err := buildProviders(names)
 	if err != nil {
 		return err
@@ -113,10 +116,22 @@ func startProxy(names []string, args []string) error {
 		logger.Printf("  [%d] %s → %s (model=%s)", i+1, p.Name, p.BaseURL.String(), p.Model)
 	}
 
-	// Start embedded proxy
-	port, err := proxy.StartProxy(providers, "127.0.0.1:0", logger)
-	if err != nil {
-		return fmt.Errorf("failed to start proxy: %w", err)
+	// Start proxy — with routing if configured, otherwise plain
+	var port int
+	if pc != nil && len(pc.Routing) > 0 {
+		routingCfg, err := buildRoutingConfig(pc, providers, logger)
+		if err != nil {
+			return fmt.Errorf("failed to build routing config: %w", err)
+		}
+		port, err = proxy.StartProxyWithRouting(routingCfg, "127.0.0.1:0", logger)
+		if err != nil {
+			return fmt.Errorf("failed to start proxy: %w", err)
+		}
+	} else {
+		port, err = proxy.StartProxy(providers, "127.0.0.1:0", logger)
+		if err != nil {
+			return fmt.Errorf("failed to start proxy: %w", err)
+		}
 	}
 
 	logger.Printf("Proxy listening on 127.0.0.1:%d", port)
@@ -217,6 +232,54 @@ func buildProviders(names []string) ([]*proxy.Provider, error) {
 		return nil, fmt.Errorf("no valid providers")
 	}
 	return providers, nil
+}
+
+// buildRoutingConfig creates a RoutingConfig from a ProfileConfig.
+// Provider instances are shared across scenarios: same name → same *Provider pointer.
+func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Provider, logger *log.Logger) (*proxy.RoutingConfig, error) {
+	// Build a map of all provider instances by name (from default providers)
+	providerMap := make(map[string]*proxy.Provider)
+	for _, p := range defaultProviders {
+		providerMap[p.Name] = p
+	}
+
+	// Also build providers for any names that only appear in routing scenarios
+	for _, route := range pc.Routing {
+		for _, name := range route.Providers {
+			if _, ok := providerMap[name]; !ok {
+				// Need to build this provider
+				ps, err := buildProviders([]string{name})
+				if err != nil {
+					logger.Printf("[routing] skipping unknown provider %q in routing: %v", name, err)
+					continue
+				}
+				providerMap[name] = ps[0]
+			}
+		}
+	}
+
+	// Build scenario routes
+	scenarioRoutes := make(map[config.Scenario]*proxy.ScenarioProviders)
+	for scenario, route := range pc.Routing {
+		var chain []*proxy.Provider
+		for _, name := range route.Providers {
+			if p, ok := providerMap[name]; ok {
+				chain = append(chain, p)
+			}
+		}
+		if len(chain) > 0 {
+			scenarioRoutes[scenario] = &proxy.ScenarioProviders{
+				Providers: chain,
+				Model:     route.Model,
+			}
+			logger.Printf("[routing] scenario %s: %d providers, model=%q", scenario, len(chain), route.Model)
+		}
+	}
+
+	return &proxy.RoutingConfig{
+		DefaultProviders: defaultProviders,
+		ScenarioRoutes:   scenarioRoutes,
+	}, nil
 }
 
 // resolveProviderNames determines the provider list based on the -f flag value.

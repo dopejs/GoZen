@@ -31,5 +31,5 @@ func runPick(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no providers selected")
 	}
 
-	return startProxy(selected, args)
+	return startProxy(selected, nil, args)
 }

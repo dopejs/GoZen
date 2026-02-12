@@ -141,7 +141,9 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 		barWidth := 30
 		filled := int(float64(barWidth) * float64(pr.current) / float64(pr.total))
 		bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
-		fmt.Fprintf(os.Stderr, "\r  %s %5.1f%% %s", bar, pct, formatBytes(pr.current))
+		status := fmt.Sprintf("\r  %s %5.1f%% %s/%s", bar, pct, formatBytes(pr.current), formatBytes(pr.total))
+		// Pad with spaces to clear any leftover characters from previous shorter output
+		fmt.Fprintf(os.Stderr, "%-60s", status)
 	} else {
 		fmt.Fprintf(os.Stderr, "\r  %s downloaded", formatBytes(pr.current))
 	}

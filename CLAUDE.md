@@ -68,3 +68,4 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - v1.2.0: Fallback profiles, pick command, installer
 - v1.3.0: Web UI, profile assignment on provider add, model autocomplete, CLI name args
 - v1.3.1: Download progress bar, README refresh
+- v1.3.2: Fix progress bar display (show downloaded/total size)

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dopejs/opencc/internal/config"
 )
 
 func discardLogger() *log.Logger {
@@ -1064,5 +1066,299 @@ func TestMarkHealthyClearsAuthFailed(t *testing.T) {
 	}
 	if p.Backoff != 0 {
 		t.Errorf("Backoff = %v, want 0 after MarkHealthy", p.Backoff)
+	}
+}
+
+// --- Scenario routing tests ---
+
+func TestRoutingThinkScenarioUsesThinkProviders(t *testing.T) {
+	defaultCalled := false
+	thinkCalled := false
+
+	defaultBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalled = true
+		w.WriteHeader(200)
+	}))
+	defer defaultBackend.Close()
+
+	thinkBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		thinkCalled = true
+		body, _ := io.ReadAll(r.Body)
+		var data map[string]interface{}
+		json.Unmarshal(body, &data)
+		// Model override should be applied
+		if data["model"] != "think-model" {
+			t.Errorf("model = %v, want %q", data["model"], "think-model")
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer thinkBackend.Close()
+
+	u1, _ := url.Parse(defaultBackend.URL)
+	u2, _ := url.Parse(thinkBackend.URL)
+
+	defaultProvider := &Provider{Name: "default-p", BaseURL: u1, Token: "t1", Model: "m1", Healthy: true}
+	thinkProvider := &Provider{Name: "think-p", BaseURL: u2, Token: "t2", Model: "m2", Healthy: true}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{defaultProvider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: []*Provider{thinkProvider},
+				Model:     "think-model",
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if defaultCalled {
+		t.Error("default provider should not have been called for think scenario")
+	}
+	if !thinkCalled {
+		t.Error("think provider should have been called")
+	}
+}
+
+func TestRoutingDefaultScenarioUsesDefaultProviders(t *testing.T) {
+	defaultCalled := false
+
+	defaultBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalled = true
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer defaultBackend.Close()
+
+	u1, _ := url.Parse(defaultBackend.URL)
+	defaultProvider := &Provider{Name: "default-p", BaseURL: u1, Token: "t1", Model: "m1", Healthy: true}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{defaultProvider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: []*Provider{{Name: "think-p", BaseURL: u1, Token: "t2", Healthy: true}},
+				Model:     "think-model",
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !defaultCalled {
+		t.Error("default provider should have been called for non-matching scenario")
+	}
+}
+
+func TestRoutingModelOverrideSkipsMapping(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var data map[string]interface{}
+		json.Unmarshal(body, &data)
+		// Should use the override model, not the provider's sonnet mapping
+		if data["model"] != "override-model" {
+			t.Errorf("model = %v, want %q", data["model"], "override-model")
+		}
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	provider := &Provider{
+		Name: "p1", BaseURL: u, Token: "t",
+		Model: "default-model", SonnetModel: "my-sonnet",
+		Healthy: true,
+	}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{provider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: []*Provider{provider},
+				Model:     "override-model",
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"}}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestRoutingNoRoutingBackwardCompat(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var data map[string]interface{}
+		json.Unmarshal(body, &data)
+		// Should use normal model mapping (sonnet)
+		if data["model"] != "my-sonnet" {
+			t.Errorf("model = %v, want %q", data["model"], "my-sonnet")
+		}
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name: "p1", BaseURL: u, Token: "t",
+		SonnetModel: "my-sonnet", Healthy: true,
+	}}
+
+	// No routing — plain old proxy
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","prompt":"hi"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestRoutingSharedProviderHealth(t *testing.T) {
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer backend1.Close()
+
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer backend2.Close()
+
+	u1, _ := url.Parse(backend1.URL)
+	u2, _ := url.Parse(backend2.URL)
+
+	// Same provider instance shared across default and think scenarios
+	sharedProvider := &Provider{Name: "shared", BaseURL: u1, Token: "t1", Model: "m", Healthy: true}
+	backupProvider := &Provider{Name: "backup", BaseURL: u2, Token: "t2", Model: "m", Healthy: true}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{sharedProvider, backupProvider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: []*Provider{sharedProvider},
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+
+	// First request — default scenario. Provider "shared" will fail (500) and get marked unhealthy.
+	req1 := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
+	w1 := httptest.NewRecorder()
+	srv.ServeHTTP(w1, req1)
+
+	if w1.Code != 200 {
+		t.Errorf("first request status = %d, want 200 (failover to backup)", w1.Code)
+	}
+
+	// Now "shared" is unhealthy. A think scenario request should skip it too.
+	req2 := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"think"}]}`))
+	w2 := httptest.NewRecorder()
+	srv.ServeHTTP(w2, req2)
+
+	// All providers in think scenario are unhealthy → 502
+	if w2.Code != http.StatusBadGateway {
+		t.Errorf("second request status = %d, want 502 (shared provider unhealthy across scenarios)", w2.Code)
+	}
+}
+
+func TestRoutingImageScenario(t *testing.T) {
+	imageCalled := false
+
+	imageBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		imageCalled = true
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer imageBackend.Close()
+
+	u, _ := url.Parse(imageBackend.URL)
+	imageProvider := &Provider{Name: "image-p", BaseURL: u, Token: "t", Healthy: true}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioImage: {Providers: []*Provider{imageProvider}},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"abc"}}]}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	if !imageCalled {
+		t.Error("image provider should have been called")
+	}
+}
+
+func TestRoutingScenarioWithoutModelOverrideUsesNormalMapping(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var data map[string]interface{}
+		json.Unmarshal(body, &data)
+		// No model override → should use provider's normal model mapping
+		if data["model"] != "my-sonnet" {
+			t.Errorf("model = %v, want %q (normal mapping)", data["model"], "my-sonnet")
+		}
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	provider := &Provider{
+		Name: "p1", BaseURL: u, Token: "t",
+		SonnetModel: "my-sonnet", Healthy: true,
+	}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{provider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioImage: {
+				Providers: []*Provider{provider},
+				// No Model override → normal mapping should apply
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{}}]}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
 	}
 }

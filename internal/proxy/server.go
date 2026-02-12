@@ -10,10 +10,25 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dopejs/opencc/internal/config"
 )
+
+// RoutingConfig holds the default provider chain and optional scenario routes.
+type RoutingConfig struct {
+	DefaultProviders []*Provider
+	ScenarioRoutes   map[config.Scenario]*ScenarioProviders
+}
+
+// ScenarioProviders defines the providers and optional model override for a scenario.
+type ScenarioProviders struct {
+	Providers []*Provider
+	Model     string // non-empty → skip model mapping, use this model directly
+}
 
 type ProxyServer struct {
 	Providers []*Provider
+	Routing   *RoutingConfig // optional; nil means use Providers as-is
 	Logger    *log.Logger
 	Client    *http.Client
 }
@@ -21,6 +36,18 @@ type ProxyServer struct {
 func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 	return &ProxyServer{
 		Providers: providers,
+		Logger:    logger,
+		Client: &http.Client{
+			Timeout: 10 * time.Minute,
+		},
+	}
+}
+
+// NewProxyServerWithRouting creates a proxy server with scenario-based routing.
+func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *ProxyServer {
+	return &ProxyServer{
+		Providers: routing.DefaultProviders,
+		Routing:   routing,
 		Logger:    logger,
 		Client: &http.Client{
 			Timeout: 10 * time.Minute,
@@ -36,14 +63,30 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	for _, p := range s.Providers {
+	// Determine provider chain and optional model override from routing
+	providers := s.Providers
+	var modelOverride string
+
+	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
+		scenario, _ := DetectScenarioFromJSON(bodyBytes)
+		if sp, ok := s.Routing.ScenarioRoutes[scenario]; ok {
+			providers = sp.Providers
+			modelOverride = sp.Model
+			s.Logger.Printf("[routing] scenario=%s, providers=%d, model_override=%q",
+				scenario, len(providers), modelOverride)
+		} else if scenario != config.ScenarioDefault {
+			s.Logger.Printf("[routing] scenario=%s (no route configured, using default)", scenario)
+		}
+	}
+
+	for _, p := range providers {
 		if !p.IsHealthy() {
 			s.Logger.Printf("[%s] skipping (unhealthy, backoff %v)", p.Name, p.Backoff)
 			continue
 		}
 
 		s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
-		resp, err := s.forwardRequest(r, p, bodyBytes)
+		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride)
 		if err != nil {
 			s.Logger.Printf("[%s] request error: %v", p.Name, err)
 			p.MarkFailed()
@@ -75,9 +118,15 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "all providers failed", http.StatusBadGateway)
 }
 
-func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte) (*http.Response, error) {
-	// Apply per-provider model mapping
-	modifiedBody := s.applyModelMapping(body, p)
+func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, modelOverride string) (*http.Response, error) {
+	var modifiedBody []byte
+	if modelOverride != "" {
+		// Scenario routing: skip model mapping, use the override model directly
+		modifiedBody = s.applyModelOverride(body, modelOverride, p.Name)
+	} else {
+		// Normal: apply per-provider model mapping
+		modifiedBody = s.applyModelMapping(body, p)
+	}
 
 	targetURL := singleJoiningSlash(p.BaseURL.String(), r.URL.Path)
 	if r.URL.RawQuery != "" {
@@ -133,6 +182,27 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response) {
 	} else {
 		io.Copy(w, resp.Body)
 	}
+}
+
+// applyModelOverride replaces the model in the request body with the given override.
+func (s *ProxyServer) applyModelOverride(body []byte, override string, providerName string) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body
+	}
+
+	originalModel, _ := data["model"].(string)
+	if originalModel == override {
+		return body
+	}
+
+	s.Logger.Printf("[%s] model override: %s → %s", providerName, originalModel, override)
+	data["model"] = override
+	modified, err := json.Marshal(data)
+	if err != nil {
+		return body
+	}
+	return modified
 }
 
 // applyModelMapping detects the model type in the request and maps it to
@@ -223,6 +293,22 @@ func singleJoiningSlash(a, b string) string {
 // StartProxy starts the proxy server and returns the port.
 func StartProxy(providers []*Provider, listenAddr string, logger *log.Logger) (int, error) {
 	srv := NewProxyServer(providers, logger)
+
+	ln, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		return 0, fmt.Errorf("listen: %w", err)
+	}
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	go http.Serve(ln, srv)
+
+	return port, nil
+}
+
+// StartProxyWithRouting starts the proxy server with scenario-based routing.
+func StartProxyWithRouting(routing *RoutingConfig, listenAddr string, logger *log.Logger) (int, error) {
+	srv := NewProxyServerWithRouting(routing, logger)
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {

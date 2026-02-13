@@ -1,7 +1,9 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -322,6 +324,64 @@ func TestProviderConfigExportToEnv(t *testing.T) {
 	// Cleanup
 	for k := range tests {
 		os.Unsetenv(k)
+	}
+}
+
+// --- Profile format compatibility tests ---
+
+func TestUnmarshalProfileOldFormat(t *testing.T) {
+	data := `{"providers":{"p1":{"base_url":"u","auth_token":"t"}},"profiles":{"default":["p1","p2"]}}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	got := cfg.Profiles["default"]
+	if len(got) != 2 || got[0] != "p1" || got[1] != "p2" {
+		t.Errorf("old format: got %v, want [p1 p2]", got)
+	}
+}
+
+func TestUnmarshalProfileNewObjectFormat(t *testing.T) {
+	data := `{"providers":{},"profiles":{"default":{"providers":["p1","p2"]}}}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	got := cfg.Profiles["default"]
+	if len(got) != 2 || got[0] != "p1" || got[1] != "p2" {
+		t.Errorf("new format: got %v, want [p1 p2]", got)
+	}
+}
+
+func TestUnmarshalProfileObjectWithRouting(t *testing.T) {
+	// Config written by feature branch with routing and provider routes
+	data := `{"providers":{},"profiles":{"default":{"providers":[{"name":"p1","model":"m1"},{"name":"p2"}],"routing":{}}}}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(data), &cfg); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	got := cfg.Profiles["default"]
+	if len(got) != 2 || got[0] != "p1" || got[1] != "p2" {
+		t.Errorf("object with routing: got %v, want [p1 p2]", got)
+	}
+}
+
+func TestStoreLoadsNewProfileFormat(t *testing.T) {
+	dir := setTestHome(t)
+	cfgDir := filepath.Join(dir, ".opencc")
+	os.MkdirAll(cfgDir, 0755)
+	// Write config in new object format
+	data := []byte(`{"providers":{"cctq":{"base_url":"u","auth_token":"t"}},"profiles":{"default":{"providers":["cctq"]}}}`)
+	os.WriteFile(filepath.Join(cfgDir, "opencc.json"), data, 0600)
+
+	store := DefaultStore()
+	names := store.ProviderNames()
+	if len(names) != 1 || names[0] != "cctq" {
+		t.Errorf("providers: got %v, want [cctq]", names)
+	}
+	order := store.GetProfileOrder("default")
+	if len(order) != 1 || order[0] != "cctq" {
+		t.Errorf("profile order: got %v, want [cctq]", order)
 	}
 }
 

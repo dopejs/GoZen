@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"encoding/json"
+	"os"
+)
 
 const (
 	ConfigDir  = ".opencc"
@@ -48,4 +51,62 @@ func (p *ProviderConfig) ExportToEnv() {
 type OpenCCConfig struct {
 	Providers map[string]*ProviderConfig `json:"providers"`
 	Profiles  map[string][]string        `json:"profiles"`
+}
+
+// UnmarshalJSON supports both profile formats:
+//   - Old/simple: {"profiles": {"default": ["p1", "p2"]}}
+//   - New/object: {"profiles": {"default": {"providers": ["p1", "p2"]}}}
+func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
+	// Decode providers normally, profiles as raw JSON
+	var raw struct {
+		Providers map[string]*ProviderConfig `json:"providers"`
+		Profiles  map[string]json.RawMessage `json:"profiles"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	c.Providers = raw.Providers
+	c.Profiles = make(map[string][]string, len(raw.Profiles))
+
+	for name, rawProfile := range raw.Profiles {
+		// Try simple format: ["p1", "p2"]
+		var simple []string
+		if err := json.Unmarshal(rawProfile, &simple); err == nil {
+			c.Profiles[name] = simple
+			continue
+		}
+
+		// Try object format: {"providers": ["p1", "p2"], ...}
+		var obj struct {
+			Providers json.RawMessage `json:"providers"`
+		}
+		if err := json.Unmarshal(rawProfile, &obj); err == nil && obj.Providers != nil {
+			// Providers could be ["p1"] or [{"name":"p1","model":"m"}]
+			var names []string
+			if err := json.Unmarshal(obj.Providers, &names); err == nil {
+				c.Profiles[name] = names
+				continue
+			}
+			// Object-style providers: [{"name":"p1"}]
+			var providerRoutes []struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(obj.Providers, &providerRoutes); err == nil {
+				names := make([]string, 0, len(providerRoutes))
+				for _, pr := range providerRoutes {
+					if pr.Name != "" {
+						names = append(names, pr.Name)
+					}
+				}
+				c.Profiles[name] = names
+				continue
+			}
+		}
+
+		// Fallback: empty profile
+		c.Profiles[name] = []string{}
+	}
+
+	return nil
 }

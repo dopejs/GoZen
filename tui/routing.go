@@ -14,6 +14,12 @@ type switchToRoutingMsg struct {
 	profile string
 }
 
+// switchToScenarioEditMsg triggers opening a specific scenario editor from fallback.
+type switchToScenarioEditMsg struct {
+	profile  string
+	scenario config.Scenario
+}
+
 // scenarioEntry represents one scenario row in the routing editor.
 type scenarioEntry struct {
 	scenario   config.Scenario
@@ -494,4 +500,216 @@ func (w *routingWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (w *routingWrapper) View() string {
 	return w.routing.view(0, 0)
+}
+
+// scenarioEditWrapper wraps scenarioEditModel for standalone use from fallback editor.
+type scenarioEditWrapper struct {
+	edit    scenarioEditModel
+	profile string
+}
+
+func (w *scenarioEditWrapper) Init() tea.Cmd {
+	return nil
+}
+
+func (w *scenarioEditWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			// Return to fallback editor
+			return w, func() tea.Msg { return switchToFallbackMsg{profile: w.profile} }
+		case "enter":
+			// Save and return
+			pc := config.GetProfileConfig(w.profile)
+			if pc == nil {
+				pc = &config.ProfileConfig{Providers: []string{}}
+			}
+			if pc.Routing == nil {
+				pc.Routing = make(map[config.Scenario]*config.ScenarioRoute)
+			}
+
+			if len(w.edit.order) == 0 {
+				delete(pc.Routing, w.edit.scenario)
+				if len(pc.Routing) == 0 {
+					pc.Routing = nil
+				}
+			} else {
+				var providerRoutes []*config.ProviderRoute
+				for _, name := range w.edit.order {
+					pr := &config.ProviderRoute{Name: name}
+					if w.edit.providerModels != nil {
+						if model, ok := w.edit.providerModels[name]; ok && model != "" {
+							pr.Model = model
+						}
+					}
+					providerRoutes = append(providerRoutes, pr)
+				}
+				pc.Routing[w.edit.scenario] = &config.ScenarioRoute{
+					Providers: providerRoutes,
+				}
+			}
+			config.SetProfileConfig(w.profile, pc)
+			return w, func() tea.Msg { return switchToFallbackMsg{profile: w.profile} }
+		}
+	}
+
+	// Handle scenario edit updates
+	if w.edit.phase == 1 {
+		// Model editing phase
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc":
+				w.edit.phase = 0
+				w.edit.editingProvider = ""
+				w.edit.modelInput = ""
+			case "enter":
+				if w.edit.editingProvider != "" {
+					if w.edit.providerModels == nil {
+						w.edit.providerModels = make(map[string]string)
+					}
+					trimmed := strings.TrimSpace(w.edit.modelInput)
+					if trimmed != "" {
+						w.edit.providerModels[w.edit.editingProvider] = trimmed
+					} else {
+						delete(w.edit.providerModels, w.edit.editingProvider)
+					}
+				}
+				w.edit.phase = 0
+				w.edit.editingProvider = ""
+				w.edit.modelInput = ""
+			case "backspace":
+				if len(w.edit.modelInput) > 0 {
+					w.edit.modelInput = w.edit.modelInput[:len(w.edit.modelInput)-1]
+				}
+			default:
+				if len(msg.String()) == 1 {
+					w.edit.modelInput += msg.String()
+				}
+			}
+		}
+		return w, nil
+	}
+
+	// Phase 0: provider selection
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "up", "k":
+			if w.edit.cursor > 0 {
+				w.edit.cursor--
+			}
+		case "down", "j":
+			if w.edit.cursor < len(w.edit.allProviders)-1 {
+				w.edit.cursor++
+			}
+		case " ":
+			if w.edit.cursor < len(w.edit.allProviders) {
+				name := w.edit.allProviders[w.edit.cursor]
+				if idx := scenarioOrderIndex(w.edit.order, name); idx >= 0 {
+					w.edit.order = removeFromScenarioOrder(w.edit.order, name)
+					if w.edit.providerModels != nil {
+						delete(w.edit.providerModels, name)
+					}
+				} else {
+					w.edit.order = append(w.edit.order, name)
+				}
+			}
+		case "m":
+			if w.edit.cursor < len(w.edit.allProviders) {
+				name := w.edit.allProviders[w.edit.cursor]
+				if scenarioOrderIndex(w.edit.order, name) >= 0 {
+					w.edit.phase = 1
+					w.edit.editingProvider = name
+					if w.edit.providerModels != nil {
+						w.edit.modelInput = w.edit.providerModels[name]
+					} else {
+						w.edit.modelInput = ""
+					}
+				}
+			}
+		}
+	}
+
+	return w, nil
+}
+
+func (w *scenarioEditWrapper) View() string {
+	var b strings.Builder
+
+	scenarioLabel := string(w.edit.scenario)
+	title := fmt.Sprintf("Edit Scenario: %s", scenarioLabel)
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Background(headerBgColor).
+		Padding(0, 2).
+		Render("🔀 " + title)
+	b.WriteString(header)
+	b.WriteString("\n\n")
+
+	var content strings.Builder
+
+	if w.edit.phase == 0 {
+		content.WriteString(dimStyle.Render(" Space toggle • m edit model • enter save • esc back"))
+		content.WriteString("\n\n")
+
+		for i, name := range w.edit.allProviders {
+			cursor := "  "
+			style := tableRowStyle
+			if i == w.edit.cursor {
+				cursor = "▸ "
+				style = tableSelectedRowStyle
+			}
+
+			idx := scenarioOrderIndex(w.edit.order, name)
+			var checkbox string
+			if idx >= 0 {
+				checkbox = lipgloss.NewStyle().
+					Foreground(successColor).
+					Render(fmt.Sprintf("[%d]", idx+1))
+			} else {
+				checkbox = dimStyle.Render("[ ]")
+			}
+
+			modelInfo := ""
+			if idx >= 0 && w.edit.providerModels != nil {
+				if model, ok := w.edit.providerModels[name]; ok && model != "" {
+					modelInfo = dimStyle.Render(fmt.Sprintf(" (model: %s)", model))
+				}
+			}
+
+			line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, modelInfo)
+			content.WriteString(style.Render(line))
+			if i < len(w.edit.allProviders)-1 {
+				content.WriteString("\n")
+			}
+		}
+	} else {
+		content.WriteString(dimStyle.Render(fmt.Sprintf(" Editing model for: %s", w.edit.editingProvider)))
+		content.WriteString("\n")
+		content.WriteString(dimStyle.Render(" Type model name • enter save • esc cancel"))
+		content.WriteString("\n\n")
+
+		content.WriteString(sectionTitleStyle.Render(" Model Override"))
+		content.WriteString("\n")
+		content.WriteString(dimStyle.Render(" Leave empty to use provider's model mapping"))
+		content.WriteString("\n\n")
+
+		modelDisplay := w.edit.modelInput + "█"
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(accentColor).
+			Render("  " + modelDisplay))
+	}
+
+	contentBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(60).
+		Render(content.String())
+
+	b.WriteString(contentBox)
+	return b.String()
 }

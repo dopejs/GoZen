@@ -396,6 +396,16 @@ func (m configMainWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rm := newRoutingModel(msg.profile)
 		m.subEditor = &routingWrapper{routing: rm}
 		return m, rm.init()
+	case switchToScenarioEditMsg:
+		m.inSubEdit = true
+		em := newScenarioEditModel(msg.scenario, config.ProviderNames(), msg.profile)
+		m.subEditor = &scenarioEditWrapper{edit: em, profile: msg.profile}
+		return m, nil
+	case switchToFallbackMsg:
+		m.inSubEdit = true
+		fm := newFallbackModel(msg.profile)
+		m.subEditor = &fallbackWrapper{fallback: fm}
+		return m, fm.init()
 	}
 
 	var cmd tea.Cmd

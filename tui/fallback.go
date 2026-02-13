@@ -15,28 +15,48 @@ type fallbackModel struct {
 	order      []string // current fallback order (selected providers)
 	cursor     int      // cursor position in allConfigs
 	grabbed    bool     // true = item is grabbed and arrow keys reorder
-	status     string
-	saved      bool     // true = save succeeded, waiting to exit
+
+	// Routing section
+	section         int                                 // 0=default providers, 1=routing scenarios
+	routingCursor   int                                 // cursor in routing scenarios
+	routingExpanded map[config.Scenario]bool            // which scenarios are expanded
+	routingOrder    map[config.Scenario][]string        // provider order per scenario
+	routingModels   map[config.Scenario]map[string]string // per-provider models per scenario
+
+	status string
+	saved  bool // true = save succeeded, waiting to exit
 }
 
 func newFallbackModel(profile string) fallbackModel {
 	if profile == "" {
 		profile = "default"
 	}
-	return fallbackModel{profile: profile}
+	return fallbackModel{
+		profile:         profile,
+		routingExpanded: make(map[config.Scenario]bool),
+		routingOrder:    make(map[config.Scenario][]string),
+		routingModels:   make(map[config.Scenario]map[string]string),
+	}
 }
 
 type fallbackLoadedMsg struct {
 	allConfigs []string
 	order      []string
+	routing    map[config.Scenario]*config.ScenarioRoute
 }
 
 func (m fallbackModel) init() tea.Cmd {
 	profile := m.profile
 	return func() tea.Msg {
 		names := config.ProviderNames()
-		order, _ := config.ReadProfileOrder(profile)
-		return fallbackLoadedMsg{allConfigs: names, order: order}
+		pc := config.GetProfileConfig(profile)
+		var order []string
+		var routing map[config.Scenario]*config.ScenarioRoute
+		if pc != nil {
+			order = pc.Providers
+			routing = pc.Routing
+		}
+		return fallbackLoadedMsg{allConfigs: names, order: order, routing: routing}
 	}
 }
 
@@ -54,6 +74,18 @@ func (m fallbackModel) update(msg tea.Msg) (fallbackModel, tea.Cmd) {
 		m.allConfigs = msg.allConfigs
 		m.order = msg.order
 		m.cursor = 0
+		// Load routing data
+		if msg.routing != nil {
+			for scenario, route := range msg.routing {
+				m.routingOrder[scenario] = route.ProviderNames()
+				m.routingModels[scenario] = make(map[string]string)
+				for _, pr := range route.Providers {
+					if pr.Model != "" {
+						m.routingModels[scenario][pr.Name] = pr.Model
+					}
+				}
+			}
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -81,46 +113,104 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 	case "esc", "q":
 		// Cancel — return without saving
 		return m, func() tea.Msg { return switchToListMsg{} }
+	case "tab":
+		// Switch between sections
+		if m.section == 0 {
+			m.section = 1
+			m.routingCursor = 0
+		} else {
+			m.section = 0
+			m.cursor = 0
+		}
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
+		if m.section == 0 {
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		} else {
+			if m.routingCursor > 0 {
+				m.routingCursor--
+			}
 		}
 	case "down", "j":
-		if m.cursor < len(m.allConfigs)-1 {
-			m.cursor++
+		if m.section == 0 {
+			if m.cursor < len(m.allConfigs)-1 {
+				m.cursor++
+			}
+		} else {
+			if m.routingCursor < len(knownScenarios)-1 {
+				m.routingCursor++
+			}
 		}
 	case " ":
-		// Toggle selection
-		if m.cursor < len(m.allConfigs) {
-			name := m.allConfigs[m.cursor]
-			if idx := m.orderIndex(name); idx > 0 {
-				// Remove from order
-				m.order = removeFromOrder(m.order, name)
-			} else {
-				// Add to end of order
-				m.order = append(m.order, name)
+		if m.section == 0 {
+			// Toggle selection in default providers
+			if m.cursor < len(m.allConfigs) {
+				name := m.allConfigs[m.cursor]
+				if idx := m.orderIndex(name); idx > 0 {
+					// Remove from order
+					m.order = removeFromOrder(m.order, name)
+				} else {
+					// Add to end of order
+					m.order = append(m.order, name)
+				}
 			}
 		}
 	case "enter":
-		// Enter grab mode only if current item is in order
-		if m.cursor < len(m.allConfigs) {
-			name := m.allConfigs[m.cursor]
-			if m.orderIndex(name) > 0 {
-				m.grabbed = true
+		if m.section == 0 {
+			// Enter grab mode only if current item is in order
+			if m.cursor < len(m.allConfigs) {
+				name := m.allConfigs[m.cursor]
+				if m.orderIndex(name) > 0 {
+					m.grabbed = true
+				}
+			}
+		} else {
+			// Toggle scenario expansion or enter scenario editor
+			if m.routingCursor < len(knownScenarios) {
+				scenario := knownScenarios[m.routingCursor].scenario
+				// Enter scenario editor
+				return m, func() tea.Msg {
+					return switchToScenarioEditMsg{
+						profile:  m.profile,
+						scenario: scenario,
+					}
+				}
 			}
 		}
 	case "s", "ctrl+s", "cmd+s":
 		return m.saveAndExit()
-	case "r":
-		// Open routing editor
-		profile := m.profile
-		return m, func() tea.Msg { return switchToRoutingMsg{profile: profile} }
 	}
 	return m, nil
 }
 
 func (m fallbackModel) saveAndExit() (fallbackModel, tea.Cmd) {
-	if err := config.WriteProfileOrder(m.profile, m.order); err != nil {
+	pc := &config.ProfileConfig{
+		Providers: m.order,
+	}
+
+	// Build routing config
+	if len(m.routingOrder) > 0 {
+		pc.Routing = make(map[config.Scenario]*config.ScenarioRoute)
+		for scenario, providerNames := range m.routingOrder {
+			if len(providerNames) == 0 {
+				continue
+			}
+			var providerRoutes []*config.ProviderRoute
+			for _, name := range providerNames {
+				pr := &config.ProviderRoute{Name: name}
+				if models, ok := m.routingModels[scenario]; ok {
+					if model, ok := models[name]; ok && model != "" {
+						pr.Model = model
+					}
+				}
+				providerRoutes = append(providerRoutes, pr)
+			}
+			pc.Routing[scenario] = &config.ScenarioRoute{Providers: providerRoutes}
+		}
+	}
+
+	if err := config.SetProfileConfig(m.profile, pc); err != nil {
 		m.status = "Error: " + err.Error()
 		return m, nil
 	}
@@ -168,6 +258,15 @@ func removeFromOrder(order []string, name string) []string {
 	return result
 }
 
+// RunEditProfile is the standalone entry point for editing a profile.
+func RunEditProfile(profile string) error {
+	fm := newFallbackModel(profile)
+	wrapper := &fallbackWrapper{fallback: fm}
+	p := tea.NewProgram(wrapper, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
 func (m fallbackModel) view(width, height int) string {
 	var b strings.Builder
 
@@ -191,7 +290,12 @@ func (m fallbackModel) view(width, height int) string {
 		content.WriteString(dimStyle.Render("No providers configured.\n"))
 		content.WriteString(dimStyle.Render("Run 'opencc config add provider' to create one."))
 	} else {
-		content.WriteString(sectionTitleStyle.Render(" Select Providers"))
+		// Default Providers Section
+		sectionStyle := sectionTitleStyle
+		if m.section != 0 {
+			sectionStyle = dimStyle
+		}
+		content.WriteString(sectionStyle.Render(" Default Providers"))
 		content.WriteString("\n")
 		content.WriteString(dimStyle.Render(" Space to toggle, Enter to reorder"))
 		content.WriteString("\n\n")
@@ -199,19 +303,12 @@ func (m fallbackModel) view(width, height int) string {
 		for i, name := range m.allConfigs {
 			cursor := "  "
 			style := tableRowStyle
-			orderIdx := m.orderIndex(name)
-
-			if i == m.cursor {
-				if m.grabbed {
-					cursor = "⇕ "
-					style = grabbedStyle
-				} else {
-					cursor = "▸ "
-					style = tableSelectedRowStyle
-				}
+			if m.section == 0 && i == m.cursor {
+				cursor = "▸ "
+				style = tableSelectedRowStyle
 			}
 
-			// Show order number or empty checkbox
+			orderIdx := m.orderIndex(name)
 			var checkbox string
 			if orderIdx > 0 {
 				checkbox = lipgloss.NewStyle().
@@ -221,9 +318,57 @@ func (m fallbackModel) view(width, height int) string {
 				checkbox = dimStyle.Render("[ ]")
 			}
 
-			line := fmt.Sprintf("%s%s %s", cursor, checkbox, name)
+			grabIndicator := ""
+			if m.grabbed && m.section == 0 && i == m.cursor {
+				grabIndicator = " " + lipgloss.NewStyle().
+					Foreground(accentColor).
+					Render("(reordering)")
+			}
+
+			line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, grabIndicator)
 			content.WriteString(style.Render(line))
 			if i < len(m.allConfigs)-1 {
+				content.WriteString("\n")
+			}
+		}
+
+		// Routing Section
+		content.WriteString("\n\n")
+		sectionStyle = sectionTitleStyle
+		if m.section != 1 {
+			sectionStyle = dimStyle
+		}
+		content.WriteString(sectionStyle.Render(" Scenario Routing"))
+		content.WriteString("\n")
+		content.WriteString(dimStyle.Render(" Enter to configure scenario"))
+		content.WriteString("\n\n")
+
+		for i, ks := range knownScenarios {
+			cursor := "  "
+			style := tableRowStyle
+			if m.section == 1 && i == m.routingCursor {
+				cursor = "▸ "
+				style = tableSelectedRowStyle
+			}
+
+			// Check if configured
+			configured := false
+			providerCount := 0
+			if order, ok := m.routingOrder[ks.scenario]; ok && len(order) > 0 {
+				configured = true
+				providerCount = len(order)
+			}
+
+			status := dimStyle.Render("[ ]")
+			if configured {
+				status = lipgloss.NewStyle().
+					Foreground(successColor).
+					Render(fmt.Sprintf("[%d]", providerCount))
+			}
+
+			line := fmt.Sprintf("%s%s %s", cursor, status, ks.label)
+			content.WriteString(style.Render(line))
+			if i < len(knownScenarios)-1 {
 				content.WriteString("\n")
 			}
 		}
@@ -233,88 +378,21 @@ func (m fallbackModel) view(width, height int) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(40).
+		Width(50).
 		Render(content.String())
-	b.WriteString(contentBox)
 
+	b.WriteString(contentBox)
 	b.WriteString("\n\n")
+
 	if m.saved {
 		b.WriteString(successStyle.Render("  ✓ " + m.status))
 	} else {
 		if m.status != "" {
-			statusBox := lipgloss.NewStyle().
-				Foreground(errorColor).
-				Render("  ✗ " + m.status)
-			b.WriteString(statusBox)
+			b.WriteString(errorStyle.Render("  ✗ " + m.status))
 			b.WriteString("\n")
 		}
-		if m.grabbed {
-			b.WriteString(helpStyle.Render("  ↑↓ reorder • enter/esc drop"))
-		} else {
-			b.WriteString(helpStyle.Render("  ↑↓ move • space toggle • enter reorder • r routing • s/" + saveKeyHint() + " save • esc cancel"))
-		}
+		b.WriteString(helpStyle.Render("  tab switch section • s save • esc back"))
 	}
 
 	return b.String()
-}
-
-func contains(ss []string, s string) bool {
-	for _, v := range ss {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// standaloneFallbackModel wraps fallbackModel for standalone use.
-type standaloneFallbackModel struct {
-	fallback  fallbackModel
-	cancelled bool
-}
-
-func newStandaloneFallbackModel(profile string) standaloneFallbackModel {
-	return standaloneFallbackModel{
-		fallback: newFallbackModel(profile),
-	}
-}
-
-func (m standaloneFallbackModel) Init() tea.Cmd {
-	return m.fallback.init()
-}
-
-func (m standaloneFallbackModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
-			m.cancelled = true
-			return m, tea.Quit
-		}
-	case switchToListMsg:
-		// Fallback editor finished — quit
-		return m, tea.Quit
-	}
-
-	var cmd tea.Cmd
-	m.fallback, cmd = m.fallback.update(msg)
-	return m, cmd
-}
-
-func (m standaloneFallbackModel) View() string {
-	return m.fallback.view(0, 0)
-}
-
-// RunEditProfile runs a standalone fallback editor TUI for editing a profile.
-func RunEditProfile(name string) error {
-	m := newStandaloneFallbackModel(name)
-	p := tea.NewProgram(m)
-	result, err := p.Run()
-	if err != nil {
-		return err
-	}
-	sm := result.(standaloneFallbackModel)
-	if sm.cancelled {
-		return fmt.Errorf("cancelled")
-	}
-	return nil
 }

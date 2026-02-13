@@ -84,6 +84,7 @@ func ResetDefaultStore() {
 func (s *Store) GetProvider(name string) *ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	if s.config == nil {
 		return nil
 	}
@@ -94,6 +95,7 @@ func (s *Store) GetProvider(name string) *ProviderConfig {
 func (s *Store) SetProvider(name string, p *ProviderConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	s.ensureConfig()
 	s.config.Providers[name] = p
 	return s.saveLocked()
@@ -103,6 +105,7 @@ func (s *Store) SetProvider(name string, p *ProviderConfig) error {
 func (s *Store) DeleteProvider(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	s.ensureConfig()
 	delete(s.config.Providers, name)
 	for profile, order := range s.config.Profiles {
@@ -115,6 +118,7 @@ func (s *Store) DeleteProvider(name string) error {
 func (s *Store) ProviderNames() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	if s.config == nil {
 		return nil
 	}
@@ -130,6 +134,7 @@ func (s *Store) ProviderNames() []string {
 func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	if s.config == nil {
 		return nil
 	}
@@ -152,6 +157,7 @@ func (s *Store) ExportProviderToEnv(name string) error {
 func (s *Store) GetProfileOrder(profile string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	if s.config == nil {
 		return nil
 	}
@@ -162,6 +168,7 @@ func (s *Store) GetProfileOrder(profile string) []string {
 func (s *Store) SetProfileOrder(profile string, names []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	s.ensureConfig()
 	if names == nil {
 		names = []string{}
@@ -174,6 +181,7 @@ func (s *Store) SetProfileOrder(profile string, names []string) error {
 func (s *Store) RemoveFromProfile(profile, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	s.ensureConfig()
 	if order, ok := s.config.Profiles[profile]; ok {
 		s.config.Profiles[profile] = removeString(order, name)
@@ -189,6 +197,7 @@ func (s *Store) DeleteProfile(profile string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	s.ensureConfig()
 	delete(s.config.Profiles, profile)
 	return s.saveLocked()
@@ -198,6 +207,7 @@ func (s *Store) DeleteProfile(profile string) error {
 func (s *Store) ListProfiles() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reloadIfModified()
 	if s.config == nil {
 		return nil
 	}
@@ -211,13 +221,19 @@ func (s *Store) ListProfiles() []string {
 
 // --- I/O ---
 
-// Load reads the JSON config from disk. If the file doesn't exist, it tries
-// to migrate from the legacy .cc_envs format. If neither exists, it creates
-// an empty config.
-func (s *Store) Load() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// reloadIfModified checks if the config file has been modified since last load
+// and reloads if necessary. Must be called with s.mu held.
+func (s *Store) reloadIfModified() {
+	if info, err := os.Stat(s.path); err == nil {
+		if info.ModTime().After(s.modTime) {
+			// File has been modified, reload (ignore errors to avoid breaking operations)
+			s.loadLocked()
+		}
+	}
+}
 
+// loadLocked is the internal load implementation. Must be called with s.mu held.
+func (s *Store) loadLocked() error {
 	data, err := os.ReadFile(s.path)
 	if err == nil {
 		var cfg OpenCCConfig
@@ -262,6 +278,15 @@ func (s *Store) Load() error {
 	}
 	s.modTime = time.Time{} // zero time for non-existent file
 	return nil
+}
+
+// Load reads the JSON config from disk. If the file doesn't exist, it tries
+// to migrate from the legacy .cc_envs format. If neither exists, it creates
+// an empty config.
+func (s *Store) Load() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadLocked()
 }
 
 // Save writes the config to disk atomically (temp + rename), with 0600 permissions.

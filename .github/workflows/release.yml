@@ -36,14 +36,17 @@ jobs:
         run: |
           go build -ldflags="-s -w" -o opencc .
 
-      - name: Create tarball
+      - name: Create tarball and copy binary
         run: |
           tar -czvf opencc-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opencc
+          cp opencc opencc-${{ matrix.goos }}-${{ matrix.goarch }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: opencc-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: opencc-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          path: |
+            opencc-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            opencc-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: build

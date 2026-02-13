@@ -396,22 +396,22 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
-	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0] != "b" {
+	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0].Name != "b" {
 		t.Errorf("think providers = %v", thinkRoute.Providers)
 	}
-	if thinkRoute.Model != "claude-opus-4-5" {
-		t.Errorf("think model = %q", thinkRoute.Model)
+	if thinkRoute.Providers[0].Model != "claude-opus-4-5" {
+		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
 	imageRoute := pc.Routing[ScenarioImage]
 	if imageRoute == nil {
 		t.Fatal("image route should exist")
 	}
-	if len(imageRoute.Providers) != 1 || imageRoute.Providers[0] != "a" {
+	if len(imageRoute.Providers) != 1 || imageRoute.Providers[0].Name != "a" {
 		t.Errorf("image providers = %v", imageRoute.Providers)
 	}
-	if imageRoute.Model != "" {
-		t.Errorf("image model should be empty, got %q", imageRoute.Model)
+	if imageRoute.Providers[0].Model != "" {
+		t.Errorf("image model should be empty, got %q", imageRoute.Providers[0].Model)
 	}
 }
 
@@ -434,11 +434,15 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 		Providers: []string{"a", "b", "c"},
 		Routing: map[Scenario]*ScenarioRoute{
 			ScenarioThink: {
-				Providers: []string{"c", "a"},
-				Model:     "claude-opus-4-5",
+				Providers: []*ProviderRoute{
+					{Name: "c", Model: "claude-opus-4-5"},
+					{Name: "a"},
+				},
 			},
 			ScenarioLongContext: {
-				Providers: []string{"b"},
+				Providers: []*ProviderRoute{
+					{Name: "b"},
+				},
 			},
 		},
 	}
@@ -467,15 +471,18 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 	}
 
 	thinkRoute := restored.Routing[ScenarioThink]
-	if thinkRoute == nil || thinkRoute.Model != "claude-opus-4-5" {
-		t.Errorf("think route not properly round-tripped")
+	if thinkRoute == nil {
+		t.Fatal("think route should exist")
 	}
-	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0] != "c" {
+	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0].Name != "c" {
 		t.Errorf("think providers = %v", thinkRoute.Providers)
+	}
+	if thinkRoute.Providers[0].Model != "claude-opus-4-5" {
+		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
 	lcRoute := restored.Routing[ScenarioLongContext]
-	if lcRoute == nil || len(lcRoute.Providers) != 1 || lcRoute.Providers[0] != "b" {
+	if lcRoute == nil || len(lcRoute.Providers) != 1 || lcRoute.Providers[0].Name != "b" {
 		t.Errorf("longContext route not properly round-tripped")
 	}
 }
@@ -513,7 +520,7 @@ func TestFullConfigRoundTrip(t *testing.T) {
 	pc := &ProfileConfig{
 		Providers: []string{"p1", "p2"},
 		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []string{"p2"}, Model: "model-x"},
+			ScenarioThink: {Providers: []*ProviderRoute{{Name: "p2", Model: "model-x"}}},
 		},
 	}
 	if err := SetProfileConfig("myprofile", pc); err != nil {
@@ -531,8 +538,8 @@ func TestFullConfigRoundTrip(t *testing.T) {
 	if got.Routing == nil || got.Routing[ScenarioThink] == nil {
 		t.Fatal("routing not preserved")
 	}
-	if got.Routing[ScenarioThink].Model != "model-x" {
-		t.Errorf("model = %q", got.Routing[ScenarioThink].Model)
+	if got.Routing[ScenarioThink].Providers[0].Model != "model-x" {
+		t.Errorf("model = %q", got.Routing[ScenarioThink].Providers[0].Model)
 	}
 }
 
@@ -547,8 +554,8 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 	pc := &ProfileConfig{
 		Providers: []string{"a", "b"},
 		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []string{"a", "b"}, Model: "m1"},
-			ScenarioImage: {Providers: []string{"a"}},
+			ScenarioThink: {Providers: []*ProviderRoute{{Name: "a", Model: "m1"}, {Name: "b", Model: "m1"}}},
+			ScenarioImage: {Providers: []*ProviderRoute{{Name: "a"}}},
 		},
 	}
 	SetProfileConfig("default", pc)
@@ -573,11 +580,11 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 	if got.Routing != nil {
 		if think := got.Routing[ScenarioThink]; think != nil {
 			for _, p := range think.Providers {
-				if p == "a" {
+				if p.Name == "a" {
 					t.Error("provider 'a' should have been removed from think route")
 				}
 			}
-			if len(think.Providers) != 1 || think.Providers[0] != "b" {
+			if len(think.Providers) != 1 || think.Providers[0].Name != "b" {
 				t.Errorf("think providers = %v, want [b]", think.Providers)
 			}
 		}

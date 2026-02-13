@@ -1106,7 +1106,7 @@ func TestRoutingThinkScenarioUsesThinkProviders(t *testing.T) {
 		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
 			config.ScenarioThink: {
 				Providers: []*Provider{thinkProvider},
-				Model:     "think-model",
+				Models:    map[string]string{"think-p": "think-model"},
 			},
 		},
 	}
@@ -1146,7 +1146,7 @@ func TestRoutingDefaultScenarioUsesDefaultProviders(t *testing.T) {
 		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
 			config.ScenarioThink: {
 				Providers: []*Provider{{Name: "think-p", BaseURL: u1, Token: "t2", Healthy: true}},
-				Model:     "think-model",
+				Models:    map[string]string{"think-p": "think-model"},
 			},
 		},
 	}
@@ -1190,7 +1190,7 @@ func TestRoutingModelOverrideSkipsMapping(t *testing.T) {
 		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
 			config.ScenarioThink: {
 				Providers: []*Provider{provider},
-				Model:     "override-model",
+				Models:    map[string]string{"p1": "override-model"},
 			},
 		},
 	}
@@ -1357,7 +1357,7 @@ func TestRoutingLongContextScenario(t *testing.T) {
 		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
 			config.ScenarioLongContext: {
 				Providers: []*Provider{longCtxProvider},
-				Model:     "cheap-model",
+				Models:    map[string]string{"cheap-p": "cheap-model"},
 			},
 		},
 	}
@@ -1418,7 +1418,7 @@ func TestRoutingScenarioFailover(t *testing.T) {
 		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
 			config.ScenarioThink: {
 				Providers: []*Provider{provider1, provider2},
-				Model:     "think-override",
+				Models:    map[string]string{"think-p1": "think-override", "think-p2": "think-override"},
 			},
 		},
 	}

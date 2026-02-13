@@ -505,11 +505,15 @@ func TestCreateProfileWithRouting(t *testing.T) {
 		Providers: []string{"test-provider", "backup"},
 		Routing: map[config.Scenario]*scenarioRouteResponse{
 			config.ScenarioThink: {
-				Providers: []string{"backup", "test-provider"},
-				Model:     "claude-opus-4-5",
+				Providers: []*providerRouteResponse{
+					{Name: "backup", Model: "claude-opus-4-5"},
+					{Name: "test-provider"},
+				},
 			},
 			config.ScenarioImage: {
-				Providers: []string{"test-provider"},
+				Providers: []*providerRouteResponse{
+					{Name: "test-provider"},
+				},
 			},
 		},
 	}
@@ -533,11 +537,11 @@ func TestCreateProfileWithRouting(t *testing.T) {
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
-	if thinkRoute.Model != "claude-opus-4-5" {
-		t.Errorf("think model = %q", thinkRoute.Model)
-	}
-	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0] != "backup" {
+	if len(thinkRoute.Providers) != 2 || thinkRoute.Providers[0].Name != "backup" {
 		t.Errorf("think providers = %v", thinkRoute.Providers)
+	}
+	if thinkRoute.Providers[0].Model != "claude-opus-4-5" {
+		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
 	// Verify persisted via GET
@@ -560,8 +564,9 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 		Providers: []string{"test-provider"},
 		Routing: map[config.Scenario]*scenarioRouteResponse{
 			config.ScenarioLongContext: {
-				Providers: []string{"backup"},
-				Model:     "claude-haiku-4-5",
+				Providers: []*providerRouteResponse{
+					{Name: "backup", Model: "claude-haiku-4-5"},
+				},
 			},
 		},
 	}
@@ -580,8 +585,11 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 	if lcRoute == nil {
 		t.Fatal("longContext route should exist")
 	}
-	if lcRoute.Model != "claude-haiku-4-5" {
-		t.Errorf("model = %q", lcRoute.Model)
+	if len(lcRoute.Providers) != 1 || lcRoute.Providers[0].Name != "backup" {
+		t.Errorf("providers = %v", lcRoute.Providers)
+	}
+	if lcRoute.Providers[0].Model != "claude-haiku-4-5" {
+		t.Errorf("model = %q", lcRoute.Providers[0].Model)
 	}
 }
 
@@ -592,7 +600,7 @@ func TestUpdateProfileClearRouting(t *testing.T) {
 	body1 := updateProfileRequest{
 		Providers: []string{"test-provider"},
 		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []string{"backup"}},
+			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/work", body1)
@@ -621,7 +629,7 @@ func TestListProfilesWithRouting(t *testing.T) {
 	body := updateProfileRequest{
 		Providers: []string{"test-provider", "backup"},
 		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []string{"backup"}, Model: "opus"},
+			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup", Model: "opus"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/default", body)
@@ -657,7 +665,7 @@ func TestCreateProfileWithEmptyRouting(t *testing.T) {
 		Name:      "empty-routes",
 		Providers: []string{"test-provider"},
 		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []string{}},
+			config.ScenarioThink: {Providers: []*providerRouteResponse{}},
 		},
 	}
 	w := doRequest(s, "POST", "/api/v1/profiles", body)

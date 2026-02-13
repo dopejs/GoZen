@@ -354,6 +354,12 @@ func (m configMainWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case switchToRoutingMsg:
 			// Routing editor requested from within fallback editor
 			m.inSubEdit = false
+		case switchToScenarioEditMsg:
+			// Scenario editor requested from within fallback editor
+			m.inSubEdit = false
+		case switchToFallbackMsg:
+			// Return to fallback editor from scenario editor
+			m.inSubEdit = false
 		default:
 			var cmd tea.Cmd
 			m.subEditor, cmd = m.subEditor.Update(msg)

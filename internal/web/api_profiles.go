@@ -7,10 +7,15 @@ import (
 	"github.com/dopejs/opencc/internal/config"
 )
 
+// providerRouteResponse is the JSON shape for a provider route.
+type providerRouteResponse struct {
+	Name  string `json:"name"`
+	Model string `json:"model,omitempty"`
+}
+
 // scenarioRouteResponse is the JSON shape for a scenario route.
 type scenarioRouteResponse struct {
-	Providers []string `json:"providers"`
-	Model     string   `json:"model,omitempty"`
+	Providers []*providerRouteResponse `json:"providers"`
 }
 
 // profileResponse is the JSON shape returned for a single profile.
@@ -44,13 +49,15 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 	if len(pc.Routing) > 0 {
 		resp.Routing = make(map[config.Scenario]*scenarioRouteResponse)
 		for scenario, route := range pc.Routing {
-			providers := route.Providers
-			if providers == nil {
-				providers = []string{}
+			var providerRoutes []*providerRouteResponse
+			for _, pr := range route.Providers {
+				providerRoutes = append(providerRoutes, &providerRouteResponse{
+					Name:  pr.Name,
+					Model: pr.Model,
+				})
 			}
 			resp.Routing[scenario] = &scenarioRouteResponse{
-				Providers: providers,
-				Model:     route.Model,
+				Providers: providerRoutes,
 			}
 		}
 	}
@@ -65,9 +72,15 @@ func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse)
 	result := make(map[config.Scenario]*config.ScenarioRoute)
 	for scenario, route := range routing {
 		if len(route.Providers) > 0 {
+			var providerRoutes []*config.ProviderRoute
+			for _, pr := range route.Providers {
+				providerRoutes = append(providerRoutes, &config.ProviderRoute{
+					Name:  pr.Name,
+					Model: pr.Model,
+				})
+			}
 			result[scenario] = &config.ScenarioRoute{
-				Providers: route.Providers,
-				Model:     route.Model,
+				Providers: providerRoutes,
 			}
 		}
 	}

@@ -621,9 +621,11 @@
 
         var modelValue = checked ? providerModels[name] : '';
         item.innerHTML =
-          '<div class="ps-checkbox">' + ICONS.check + '</div>' +
-          '<span class="rp-name">' + esc(name) + '</span>' +
-          '<input type="text" class="rp-model-input" placeholder="model override" value="' + esc(modelValue) + '">';
+          '<div class="rp-item-header">' +
+            '<div class="ps-checkbox">' + ICONS.check + '</div>' +
+            '<span class="rp-name">' + esc(name) + '</span>' +
+          '</div>' +
+          '<input type="text" class="rp-model-input" placeholder="model override (optional)" value="' + esc(modelValue) + '">';
 
         var checkbox = item.querySelector(".ps-checkbox");
         checkbox.addEventListener("click", function(e) {

@@ -532,8 +532,8 @@ input:disabled{opacity:.5;cursor:not-allowed}
   margin-bottom:10px;
 }
 .routing-providers .rp-item{
-  display:flex;align-items:center;gap:10px;
-  padding:8px 12px;
+  display:flex;flex-direction:column;gap:6px;
+  padding:10px 12px;
   border-bottom:1px solid var(--border);
   transition:background var(--dur) var(--ease);
   user-select:none;
@@ -541,6 +541,9 @@ input:disabled{opacity:.5;cursor:not-allowed}
 .routing-providers .rp-item:last-child{border-bottom:none}
 .routing-providers .rp-item:hover{background:var(--bg-hover)}
 .routing-providers .rp-item.selected{background:var(--teal-dim)}
+.routing-providers .rp-item .rp-item-header{
+  display:flex;align-items:center;gap:10px;
+}
 .routing-providers .rp-item .ps-checkbox{
   width:14px;height:14px;border-radius:3px;flex-shrink:0;
   border:1.5px solid var(--text-faint);
@@ -557,14 +560,14 @@ input:disabled{opacity:.5;cursor:not-allowed}
 }
 .routing-providers .rp-item.selected .ps-checkbox svg{opacity:1}
 .routing-providers .rp-item .rp-name{
-  flex:1;font-size:12px;font-weight:500;color:var(--text-primary);
+  flex:1;font-size:13px;font-weight:500;color:var(--text-primary);
 }
 .routing-providers .rp-item .rp-model-input{
-  width:200px;padding:4px 8px;font-size:11px;
+  width:100%;padding:6px 10px;font-size:12px;
   background:var(--bg-surface);border:1px solid var(--border);
   border-radius:4px;color:var(--text-primary);
   transition:border-color var(--dur) var(--ease);
-  font-family:inherit;
+  font-family:inherit;margin-left:24px;
 }
 .routing-providers .rp-item .rp-model-input:focus{
   outline:none;border-color:var(--border-focus);

@@ -17,13 +17,14 @@ const (
 
 // ProviderConfig holds connection and model settings for a single API provider.
 type ProviderConfig struct {
-	BaseURL        string `json:"base_url"`
-	AuthToken      string `json:"auth_token"`
-	Model          string `json:"model,omitempty"`
-	ReasoningModel string `json:"reasoning_model,omitempty"`
-	HaikuModel     string `json:"haiku_model,omitempty"`
-	OpusModel      string `json:"opus_model,omitempty"`
-	SonnetModel    string `json:"sonnet_model,omitempty"`
+	BaseURL        string            `json:"base_url"`
+	AuthToken      string            `json:"auth_token"`
+	Model          string            `json:"model,omitempty"`
+	ReasoningModel string            `json:"reasoning_model,omitempty"`
+	HaikuModel     string            `json:"haiku_model,omitempty"`
+	OpusModel      string            `json:"opus_model,omitempty"`
+	SonnetModel    string            `json:"sonnet_model,omitempty"`
+	EnvVars        map[string]string `json:"env_vars,omitempty"`
 }
 
 // ExportToEnv sets all ANTHROPIC_* environment variables from this provider config.
@@ -45,16 +46,25 @@ func (p *ProviderConfig) ExportToEnv() {
 	if p.SonnetModel != "" {
 		os.Setenv("ANTHROPIC_DEFAULT_SONNET_MODEL", p.SonnetModel)
 	}
+
+	// Export custom environment variables
+	for k, v := range p.EnvVars {
+		if k != "" && v != "" {
+			os.Setenv(k, v)
+		}
+	}
 }
 
 // Scenario represents a request scenario for routing decisions.
 type Scenario string
 
 const (
-	ScenarioThink      Scenario = "think"
-	ScenarioImage      Scenario = "image"
+	ScenarioThink       Scenario = "think"
+	ScenarioImage       Scenario = "image"
 	ScenarioLongContext Scenario = "longContext"
-	ScenarioDefault    Scenario = "default"
+	ScenarioWebSearch   Scenario = "webSearch"
+	ScenarioBackground  Scenario = "background"
+	ScenarioDefault     Scenario = "default"
 )
 
 // ProviderRoute defines a provider and its optional model override in a scenario.
@@ -124,8 +134,9 @@ func (sr *ScenarioRoute) ModelForProvider(name string) string {
 
 // ProfileConfig holds a profile's provider list and optional scenario routing.
 type ProfileConfig struct {
-	Providers []string                    `json:"providers"`
-	Routing   map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
+	Providers            []string                    `json:"providers"`
+	Routing              map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
+	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
 }
 
 // UnmarshalJSON supports both old format (["p1","p2"]) and new format ({providers: [...], routing: {...}}).
@@ -158,8 +169,16 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Config version history:
+// - Version 1 (implicit, no version field): profiles as string arrays
+// - Version 2 (v1.3.2+): profiles as objects with routing support
+// - Version 3 (v1.4.0+): project bindings support
+const CurrentConfigVersion = 3
+
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
-	Providers map[string]*ProviderConfig `json:"providers"`
-	Profiles  map[string]*ProfileConfig  `json:"profiles"`
+	Version         int                         `json:"version,omitempty"`         // config file version
+	Providers       map[string]*ProviderConfig  `json:"providers"`                 // provider configurations
+	Profiles        map[string]*ProfileConfig   `json:"profiles"`                  // profile configurations
+	ProjectBindings map[string]string           `json:"project_bindings,omitempty"` // directory path -> profile name
 }

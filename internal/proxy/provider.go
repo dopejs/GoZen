@@ -22,6 +22,7 @@ type Provider struct {
 	HaikuModel     string
 	OpusModel      string
 	SonnetModel    string
+	EnvVars        map[string]string
 	Healthy        bool
 	AuthFailed     bool
 	FailedAt       time.Time

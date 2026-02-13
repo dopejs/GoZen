@@ -289,6 +289,17 @@ func (s *Store) loadLocked() error {
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return fmt.Errorf("failed to parse %s: %w", s.path, err)
 		}
+
+		// Check config version
+		if cfg.Version == 0 {
+			// Old config without version field, auto-upgrade to current version
+			cfg.Version = CurrentConfigVersion
+		} else if cfg.Version > CurrentConfigVersion {
+			// Config is newer than this version of opencc can handle
+			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade opencc to the latest version",
+				cfg.Version, CurrentConfigVersion)
+		}
+
 		if cfg.Providers == nil {
 			cfg.Providers = make(map[string]*ProviderConfig)
 		}
@@ -322,6 +333,7 @@ func (s *Store) loadLocked() error {
 
 	// Nothing exists — create empty config
 	s.config = &OpenCCConfig{
+		Version:   CurrentConfigVersion,
 		Providers: make(map[string]*ProviderConfig),
 		Profiles:  make(map[string]*ProfileConfig),
 	}
@@ -399,6 +411,7 @@ func (s *Store) Reload() error {
 func (s *Store) ensureConfig() {
 	if s.config == nil {
 		s.config = &OpenCCConfig{
+			Version:   CurrentConfigVersion,
 			Providers: make(map[string]*ProviderConfig),
 			Profiles:  make(map[string]*ProfileConfig),
 		}
@@ -408,6 +421,13 @@ func (s *Store) ensureConfig() {
 	}
 	if s.config.Profiles == nil {
 		s.config.Profiles = make(map[string]*ProfileConfig)
+	}
+	if s.config.ProjectBindings == nil {
+		s.config.ProjectBindings = make(map[string]string)
+	}
+	// Ensure version is set
+	if s.config.Version == 0 {
+		s.config.Version = CurrentConfigVersion
 	}
 }
 
@@ -431,4 +451,61 @@ func filterProviderRoutes(routes []*ProviderRoute, name string) []*ProviderRoute
 		}
 	}
 	return out
+}
+
+// --- Project Bindings ---
+
+// BindProject binds a directory path to a profile name.
+func (s *Store) BindProject(path string, profile string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	// Verify profile exists
+	if _, ok := s.config.Profiles[profile]; !ok {
+		return fmt.Errorf("profile '%s' does not exist", profile)
+	}
+
+	s.config.ProjectBindings[path] = profile
+	return s.saveLocked()
+}
+
+// UnbindProject removes the binding for a directory path.
+func (s *Store) UnbindProject(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	delete(s.config.ProjectBindings, path)
+	return s.saveLocked()
+}
+
+// GetProjectBinding returns the profile bound to a directory path.
+// Returns empty string if no binding exists.
+func (s *Store) GetProjectBinding(path string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return ""
+	}
+	return s.config.ProjectBindings[path]
+}
+
+// GetAllProjectBindings returns all project bindings.
+func (s *Store) GetAllProjectBindings() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.ProjectBindings == nil {
+		return make(map[string]string)
+	}
+	// Return a copy to avoid concurrent modification
+	bindings := make(map[string]string, len(s.config.ProjectBindings))
+	for k, v := range s.config.ProjectBindings {
+		bindings[k] = v
+	}
+	return bindings
 }

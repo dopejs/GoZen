@@ -152,6 +152,25 @@
             </div>
           </div>
         </div>
+        <div class="form-divider"><span>Environment Variables (Optional)</span></div>
+        <details class="env-vars-section" open>
+          <summary>Custom Environment Variables</summary>
+          <div>
+            <p class="env-hint">Add environment variables that will be set when using this provider. Common examples:</p>
+            <div class="env-presets">
+              <button type="button" class="btn-preset" data-env="CLAUDE_CODE_MAX_OUTPUT_TOKENS" data-value="64000">Max Output Tokens</button>
+              <button type="button" class="btn-preset" data-env="MAX_THINKING_TOKENS" data-value="50000">Max Thinking</button>
+              <button type="button" class="btn-preset" data-env="ANTHROPIC_MAX_CONTEXT_WINDOW" data-value="1000000">Max Context</button>
+              <button type="button" class="btn-preset" data-env="CLAUDE_CODE_EFFORT_LEVEL" data-value="high">Effort Level</button>
+              <button type="button" class="btn-preset" data-env="BASH_DEFAULT_TIMEOUT_MS" data-value="180000">Bash Timeout</button>
+            </div>
+            <div id="env-vars-list"></div>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-add-env">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Variable
+            </button>
+          </div>
+        </details>
         <div class="modal-footer">
           <button type="button" class="btn btn-ghost modal-cancel">Cancel</button>
           <button type="submit" class="btn btn-primary">Save</button>

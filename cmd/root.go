@@ -22,7 +22,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "1.3.2"
+var Version = "1.4.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "opencc [claude args...]",
@@ -46,6 +46,9 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(pickCmd)
 	rootCmd.AddCommand(webCmd)
+	rootCmd.AddCommand(bindCmd)
+	rootCmd.AddCommand(unbindCmd)
+	rootCmd.AddCommand(statusCmd)
 }
 
 func Execute() error {
@@ -224,6 +227,7 @@ func buildProviders(names []string) ([]*proxy.Provider, error) {
 			HaikuModel:     haikuModel,
 			OpusModel:      opusModel,
 			SonnetModel:    sonnetModel,
+			EnvVars:        p.EnvVars,
 			Healthy:        true,
 		})
 	}
@@ -281,8 +285,9 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	}
 
 	return &proxy.RoutingConfig{
-		DefaultProviders: defaultProviders,
-		ScenarioRoutes:   scenarioRoutes,
+		DefaultProviders:     defaultProviders,
+		ScenarioRoutes:       scenarioRoutes,
+		LongContextThreshold: pc.LongContextThreshold,
 	}, nil
 }
 
@@ -317,7 +322,22 @@ func resolveProviderNames(profileFlag string) ([]string, string, error) {
 		return names, profileFlag, nil
 	}
 
-	// No flag → existing behavior (default profile, or interactive selection)
+	// No flag → check for project binding first
+	cwd, err := os.Getwd()
+	if err == nil {
+		cwd = filepath.Clean(cwd)
+		if boundProfile := config.GetProjectBinding(cwd); boundProfile != "" {
+			// Found project binding
+			names, err := config.ReadProfileOrder(boundProfile)
+			if err == nil && len(names) > 0 {
+				return names, boundProfile, nil
+			}
+			// Profile was deleted, fall through to default
+			fmt.Fprintf(os.Stderr, "Warning: Bound profile '%s' not found, using default\n", boundProfile)
+		}
+	}
+
+	// No binding → use default profile
 	fbNames, err := config.ReadFallbackOrder()
 	if err == nil && len(fbNames) > 0 {
 		return fbNames, "default", nil

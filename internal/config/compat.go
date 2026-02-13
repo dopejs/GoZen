@@ -86,3 +86,25 @@ func WriteFallbackOrder(names []string) error {
 func RemoveFromFallbackOrder(name string) error {
 	return RemoveFromProfileOrder("default", name)
 }
+
+// --- Project Bindings convenience functions ---
+
+// BindProject binds a directory path to a profile name.
+func BindProject(path string, profile string) error {
+	return DefaultStore().BindProject(path, profile)
+}
+
+// UnbindProject removes the binding for a directory path.
+func UnbindProject(path string) error {
+	return DefaultStore().UnbindProject(path)
+}
+
+// GetProjectBinding returns the profile bound to a directory path.
+func GetProjectBinding(path string) string {
+	return DefaultStore().GetProjectBinding(path)
+}
+
+// GetAllProjectBindings returns all project bindings.
+func GetAllProjectBindings() map[string]string {
+	return DefaultStore().GetAllProjectBindings()
+}

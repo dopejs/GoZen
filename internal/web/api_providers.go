@@ -9,14 +9,15 @@ import (
 
 // providerResponse is the JSON shape returned for a single provider.
 type providerResponse struct {
-	Name           string `json:"name"`
-	BaseURL        string `json:"base_url"`
-	AuthToken      string `json:"auth_token"`
-	Model          string `json:"model,omitempty"`
-	ReasoningModel string `json:"reasoning_model,omitempty"`
-	HaikuModel     string `json:"haiku_model,omitempty"`
-	OpusModel      string `json:"opus_model,omitempty"`
-	SonnetModel    string `json:"sonnet_model,omitempty"`
+	Name           string            `json:"name"`
+	BaseURL        string            `json:"base_url"`
+	AuthToken      string            `json:"auth_token"`
+	Model          string            `json:"model,omitempty"`
+	ReasoningModel string            `json:"reasoning_model,omitempty"`
+	HaikuModel     string            `json:"haiku_model,omitempty"`
+	OpusModel      string            `json:"opus_model,omitempty"`
+	SonnetModel    string            `json:"sonnet_model,omitempty"`
+	EnvVars        map[string]string `json:"env_vars,omitempty"`
 }
 
 type createProviderRequest struct {
@@ -39,6 +40,7 @@ func toProviderResponse(name string, p *config.ProviderConfig, mask bool) provid
 		HaikuModel:     p.HaikuModel,
 		OpusModel:      p.OpusModel,
 		SonnetModel:    p.SonnetModel,
+		EnvVars:        p.EnvVars,
 	}
 }
 
@@ -161,6 +163,7 @@ func (s *Server) updateProvider(w http.ResponseWriter, r *http.Request, name str
 	existing.HaikuModel = update.HaikuModel
 	existing.OpusModel = update.OpusModel
 	existing.SonnetModel = update.SonnetModel
+	existing.EnvVars = update.EnvVars
 
 	if err := store.SetProvider(name, existing); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

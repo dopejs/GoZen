@@ -681,3 +681,86 @@ func TestCreateProfileWithEmptyRouting(t *testing.T) {
 		t.Errorf("routing with empty providers should be nil, got %v", resp.Routing)
 	}
 }
+
+func TestCreateProviderWithEnvVars(t *testing.T) {
+	s := setupTestServer(t)
+
+	body := createProviderRequest{
+		Name: "env-provider",
+		Config: config.ProviderConfig{
+			BaseURL:   "https://api.example.com",
+			AuthToken: "sk-test-token",
+			Model:     "claude-sonnet-4-5",
+			EnvVars: map[string]string{
+				"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+				"MAX_THINKING_TOKENS":            "50000",
+				"MY_CUSTOM_VAR":                  "custom_value",
+			},
+		},
+	}
+	w := doRequest(s, "POST", "/api/v1/providers", body)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp providerResponse
+	decodeJSON(t, w, &resp)
+	if resp.Name != "env-provider" {
+		t.Errorf("name = %q, want env-provider", resp.Name)
+	}
+	if len(resp.EnvVars) != 3 {
+		t.Errorf("expected 3 env vars, got %d", len(resp.EnvVars))
+	}
+	if resp.EnvVars["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] != "64000" {
+		t.Errorf("CLAUDE_CODE_MAX_OUTPUT_TOKENS = %q", resp.EnvVars["CLAUDE_CODE_MAX_OUTPUT_TOKENS"])
+	}
+	if resp.EnvVars["MY_CUSTOM_VAR"] != "custom_value" {
+		t.Errorf("MY_CUSTOM_VAR = %q", resp.EnvVars["MY_CUSTOM_VAR"])
+	}
+}
+
+func TestUpdateProviderWithEnvVars(t *testing.T) {
+	s := setupTestServer(t)
+
+	// First create a provider
+	createBody := createProviderRequest{
+		Name: "update-env-provider",
+		Config: config.ProviderConfig{
+			BaseURL:   "https://api.example.com",
+			AuthToken: "sk-test-token",
+			EnvVars: map[string]string{
+				"VAR1": "value1",
+			},
+		},
+	}
+	doRequest(s, "POST", "/api/v1/providers", createBody)
+
+	// Update with new env vars
+	updateBody := config.ProviderConfig{
+		BaseURL:   "https://api.example.com",
+		AuthToken: "sk-test-token",
+		EnvVars: map[string]string{
+			"VAR1": "updated_value1",
+			"VAR2": "value2",
+		},
+	}
+	w := doRequest(s, "PUT", "/api/v1/providers/update-env-provider", updateBody)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp providerResponse
+	decodeJSON(t, w, &resp)
+	if len(resp.EnvVars) != 2 {
+		t.Errorf("expected 2 env vars, got %d", len(resp.EnvVars))
+	}
+	if resp.EnvVars["VAR1"] != "updated_value1" {
+		t.Errorf("VAR1 = %q, want updated_value1", resp.EnvVars["VAR1"])
+	}
+	if resp.EnvVars["VAR2"] != "value2" {
+		t.Errorf("VAR2 = %q, want value2", resp.EnvVars["VAR2"])
+	}
+}
+

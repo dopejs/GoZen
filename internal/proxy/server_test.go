@@ -19,6 +19,22 @@ func discardLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
 
+// generateLongTextForTest creates varied text to get realistic token counts.
+// Approximately 5.5 characters per token for English text.
+func generateLongTextForTest(chars int) string {
+	var sb strings.Builder
+	words := []string{"hello", "world", "this", "is", "a", "test", "message", "with", "varied", "content"}
+	wordIndex := 0
+	for sb.Len() < chars {
+		if wordIndex > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(words[wordIndex%len(words)])
+		wordIndex++
+	}
+	return sb.String()
+}
+
 func TestSingleJoiningSlash(t *testing.T) {
 	tests := []struct {
 		a, b, want string
@@ -1362,8 +1378,9 @@ func TestRoutingLongContextScenario(t *testing.T) {
 		},
 	}
 
-	// Build a request with >32k chars
-	longText := strings.Repeat("x", 33000)
+	// Build a request with >32k tokens
+	// Generate varied text to get realistic token count (~5.5 chars per token)
+	longText := generateLongTextForTest(32000 * 6)
 	reqBody := fmt.Sprintf(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"%s"}]}`, longText)
 
 	srv := NewProxyServerWithRouting(routing, discardLogger())
@@ -1519,6 +1536,183 @@ func TestRoutingScenarioWithoutModelOverrideUsesNormalMapping(t *testing.T) {
 	srv := NewProxyServerWithRouting(routing, discardLogger())
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{}}]}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+// TestEnvVarsAppliedAsHeaders tests that env vars are converted to HTTP headers.
+func TestEnvVarsAppliedAsHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify env var headers are present
+		if r.Header.Get("x-env-claude-code-max-output-tokens") != "64000" {
+			t.Errorf("x-env-claude-code-max-output-tokens = %q, want 64000",
+				r.Header.Get("x-env-claude-code-max-output-tokens"))
+		}
+		if r.Header.Get("x-env-max-thinking-tokens") != "50000" {
+			t.Errorf("x-env-max-thinking-tokens = %q, want 50000",
+				r.Header.Get("x-env-max-thinking-tokens"))
+		}
+		if r.Header.Get("x-env-claude-code-effort-level") != "high" {
+			t.Errorf("x-env-claude-code-effort-level = %q, want high",
+				r.Header.Get("x-env-claude-code-effort-level"))
+		}
+		if r.Header.Get("x-env-my-custom-var") != "custom_value" {
+			t.Errorf("x-env-my-custom-var = %q, want custom_value",
+				r.Header.Get("x-env-my-custom-var"))
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "test",
+		BaseURL: u,
+		Token:   "test-token",
+		EnvVars: map[string]string{
+			"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+			"MAX_THINKING_TOKENS":            "50000",
+			"CLAUDE_CODE_EFFORT_LEVEL":       "high",
+			"MY_CUSTOM_VAR":                  "custom_value",
+		},
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+// TestEnvVarsFailoverSwitchesEnvVars tests that failover switches to the second provider's env vars.
+func TestEnvVarsFailoverSwitchesEnvVars(t *testing.T) {
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// First provider fails
+		w.WriteHeader(500)
+	}))
+	defer backend1.Close()
+
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify second provider's env vars are used
+		if r.Header.Get("x-env-claude-code-max-output-tokens") != "32000" {
+			t.Errorf("x-env-claude-code-max-output-tokens = %q, want 32000 (from provider2)",
+				r.Header.Get("x-env-claude-code-max-output-tokens"))
+		}
+		if r.Header.Get("x-env-claude-code-effort-level") != "medium" {
+			t.Errorf("x-env-claude-code-effort-level = %q, want medium (from provider2)",
+				r.Header.Get("x-env-claude-code-effort-level"))
+		}
+		// Provider1's custom var should NOT be present
+		if r.Header.Get("x-env-provider1-var") != "" {
+			t.Errorf("x-env-provider1-var should not be present, got %q",
+				r.Header.Get("x-env-provider1-var"))
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer backend2.Close()
+
+	u1, _ := url.Parse(backend1.URL)
+	u2, _ := url.Parse(backend2.URL)
+	providers := []*Provider{
+		{
+			Name:    "p1",
+			BaseURL: u1,
+			Token:   "token1",
+			EnvVars: map[string]string{
+				"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+				"CLAUDE_CODE_EFFORT_LEVEL":       "high",
+				"PROVIDER1_VAR":                  "p1_value",
+			},
+			Healthy: true,
+		},
+		{
+			Name:    "p2",
+			BaseURL: u2,
+			Token:   "token2",
+			EnvVars: map[string]string{
+				"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "32000",
+				"CLAUDE_CODE_EFFORT_LEVEL":       "medium",
+			},
+			Healthy: true,
+		},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200 (failover)", w.Code)
+	}
+}
+
+// TestEnvVarsEmptyMapNoHeaders tests that empty env vars map doesn't add headers.
+func TestEnvVarsEmptyMapNoHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify no x-env- headers are present
+		for k := range r.Header {
+			if strings.HasPrefix(strings.ToLower(k), "x-env-") {
+				t.Errorf("unexpected header %q", k)
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "test",
+		BaseURL: u,
+		Token:   "test-token",
+		EnvVars: map[string]string{}, // Empty map
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+// TestEnvVarsNilMapNoHeaders tests that nil env vars map doesn't add headers.
+func TestEnvVarsNilMapNoHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify no x-env- headers are present
+		for k := range r.Header {
+			if strings.HasPrefix(strings.ToLower(k), "x-env-") {
+				t.Errorf("unexpected header %q", k)
+			}
+		}
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "test",
+		BaseURL: u,
+		Token:   "test-token",
+		EnvVars: nil, // Nil map
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 

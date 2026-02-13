@@ -33,6 +33,7 @@
     setupNav();
     setupModals();
     setupAutocomplete();
+    setupEnvVars();
     document.getElementById("btn-add-provider").addEventListener("click", openAddProvider);
     document.getElementById("btn-add-profile").addEventListener("click", openAddProfile);
     document.getElementById("provider-form").addEventListener("submit", submitProvider);
@@ -96,6 +97,55 @@
   function closeModal(el) {
     if (typeof el === "string") el = document.getElementById(el);
     el.classList.remove("open");
+  }
+
+  // --- Environment Variables ---
+  function setupEnvVars() {
+    document.getElementById("btn-add-env").addEventListener("click", addEnvVarRow);
+    document.querySelectorAll(".btn-preset").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        addEnvVarRow(btn.dataset.env, btn.dataset.value);
+      });
+    });
+  }
+
+  function addEnvVarRow(key, value) {
+    var container = document.getElementById("env-vars-list");
+    var row = document.createElement("div");
+    row.className = "env-var-item";
+    row.innerHTML =
+      '<input type="text" placeholder="ENV_VAR_NAME" value="' + (key || '') + '">' +
+      '<input type="text" placeholder="value" value="' + (value || '') + '">' +
+      '<button type="button" class="btn-remove-env">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+      '</button>';
+    row.querySelector(".btn-remove-env").addEventListener("click", function() {
+      row.remove();
+    });
+    container.appendChild(row);
+  }
+
+  function getEnvVars() {
+    var envVars = {};
+    document.querySelectorAll("#env-vars-list .env-var-item").forEach(function(row) {
+      var inputs = row.querySelectorAll("input");
+      var key = inputs[0].value.trim();
+      var val = inputs[1].value.trim();
+      if (key && val) {
+        envVars[key] = val;
+      }
+    });
+    return Object.keys(envVars).length > 0 ? envVars : null;
+  }
+
+  function setEnvVars(envVars) {
+    var container = document.getElementById("env-vars-list");
+    container.innerHTML = "";
+    if (envVars) {
+      for (var key in envVars) {
+        addEnvVarRow(key, envVars[key]);
+      }
+    }
   }
 
   // --- Model autocomplete ---
@@ -299,6 +349,7 @@
     document.getElementById("provider-modal-title").textContent = "Add Provider";
     document.getElementById("provider-form").reset();
     document.getElementById("pf-name").disabled = false;
+    setEnvVars(null); // Clear env vars
     openModal("provider-modal");
   }
 
@@ -316,6 +367,10 @@
     document.getElementById("pf-haiku").value = p.haiku_model || "";
     document.getElementById("pf-opus").value = p.opus_model || "";
     document.getElementById("pf-sonnet").value = p.sonnet_model || "";
+
+    // Load env_vars
+    setEnvVars(p.env_vars || {});
+
     openModal("provider-modal");
   }
 
@@ -331,6 +386,7 @@
 
   function submitProvider(e) {
     e.preventDefault();
+
     var cfg = {
       base_url: document.getElementById("pf-base-url").value.trim(),
       auth_token: document.getElementById("pf-token").value,
@@ -340,6 +396,12 @@
       opus_model: document.getElementById("pf-opus").value.trim(),
       sonnet_model: document.getElementById("pf-sonnet").value.trim()
     };
+
+    // Get env vars
+    var envVars = getEnvVars();
+    if (envVars) {
+      cfg.env_vars = envVars;
+    }
 
     var promise;
     if (editingProvider) {

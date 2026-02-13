@@ -178,15 +178,44 @@ do_install() {
   fi
   info "Latest version: ${VERSION}"
 
-  # Download binary
-  ASSET_NAME="opencc-${OS}-${ARCH}"
-  DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
+  # Determine download format based on version
+  # v1.4.0+ uses tar.gz, earlier versions use raw binary
+  VERSION_NUM="$(printf '%s' "$VERSION" | sed 's/^v//')"
+  MAJOR="$(printf '%s' "$VERSION_NUM" | cut -d. -f1)"
+  MINOR="$(printf '%s' "$VERSION_NUM" | cut -d. -f2)"
 
+  USE_TARBALL=0
+  if [ "$MAJOR" -gt 1 ] || { [ "$MAJOR" -eq 1 ] && [ "$MINOR" -ge 4 ]; }; then
+    USE_TARBALL=1
+  fi
+
+  # Download binary or tarball
   TMPDIR="$(mktemp -d)"
   trap 'rm -rf "$TMPDIR"' EXIT
 
-  info "Downloading ${DOWNLOAD_URL}..."
-  fetch "$DOWNLOAD_URL" "${TMPDIR}/opencc"
+  if [ "$USE_TARBALL" -eq 1 ]; then
+    # v1.4.0+: Download tar.gz
+    ASSET_NAME="opencc-${OS}-${ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
+
+    info "Downloading ${DOWNLOAD_URL}..."
+    fetch "$DOWNLOAD_URL" "${TMPDIR}/opencc.tar.gz"
+
+    info "Extracting..."
+    tar -xzf "${TMPDIR}/opencc.tar.gz" -C "${TMPDIR}"
+
+    if [ ! -f "${TMPDIR}/opencc" ]; then
+      err "Binary not found in tarball"
+      exit 1
+    fi
+  else
+    # v1.3.x and earlier: Download raw binary
+    ASSET_NAME="opencc-${OS}-${ARCH}"
+    DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
+
+    info "Downloading ${DOWNLOAD_URL}..."
+    fetch "$DOWNLOAD_URL" "${TMPDIR}/opencc"
+  fi
 
   # Install binary
   chmod +x "${TMPDIR}/opencc"

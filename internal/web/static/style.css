@@ -642,3 +642,103 @@ input:disabled{opacity:.5;cursor:not-allowed}
   .card{flex-direction:column;align-items:flex-start;gap:10px}
   .card-actions{opacity:1;width:100%;justify-content:flex-end}
 }
+
+/* ---- Environment Variables Section ---- */
+.env-vars-section{
+  margin-top:16px;
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  background:var(--bg-surface);
+}
+.env-vars-section summary{
+  padding:12px 16px;
+  cursor:pointer;
+  font-weight:500;
+  color:var(--text-secondary);
+  user-select:none;
+  list-style:none;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.env-vars-section summary::-webkit-details-marker{display:none}
+.env-vars-section summary::before{
+  content:"▶";
+  font-size:10px;
+  transition:transform .2s var(--ease);
+}
+.env-vars-section[open] summary::before{transform:rotate(90deg)}
+.env-vars-section summary:hover{color:var(--text-primary)}
+.env-vars-section[open]{border-color:var(--border-strong)}
+.env-vars-section > div{padding:0 16px 16px}
+.env-hint{
+  font-size:12px;
+  color:var(--text-muted);
+  margin-bottom:12px;
+}
+.env-presets{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-bottom:16px;
+}
+.btn-preset{
+  padding:6px 12px;
+  font-size:11px;
+  font-weight:500;
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  background:var(--bg-elevated);
+  color:var(--text-secondary);
+  cursor:pointer;
+  transition:all .15s var(--ease);
+}
+.btn-preset:hover{
+  border-color:var(--teal);
+  color:var(--teal);
+  background:var(--teal-dim);
+}
+#env-vars-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-bottom:12px;
+}
+.env-var-item{
+  display:grid;
+  grid-template-columns:1fr 1fr auto;
+  gap:8px;
+  align-items:start;
+}
+.env-var-item input{
+  font-size:13px;
+  padding:8px 12px;
+}
+.env-var-item input:first-child{
+  font-family:monospace;
+  font-size:12px;
+}
+.btn-remove-env{
+  padding:8px;
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+  background:var(--bg-elevated);
+  color:var(--text-muted);
+  cursor:pointer;
+  transition:all .15s var(--ease);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.btn-remove-env:hover{
+  border-color:var(--red);
+  color:var(--red);
+  background:var(--red-dim);
+}
+.btn-remove-env svg{width:16px;height:16px}
+.btn-sm{
+  padding:6px 12px;
+  font-size:12px;
+}
+.btn-sm svg{width:14px;height:14px}
+

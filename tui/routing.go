@@ -56,9 +56,11 @@ var knownScenarios = []struct {
 	scenario config.Scenario
 	label    string
 }{
-	{config.ScenarioThink, "think      (thinking mode requests)"},
-	{config.ScenarioImage, "image      (requests with images)"},
-	{config.ScenarioLongContext, "longContext (>32k chars total)"},
+	{config.ScenarioWebSearch, "webSearch   (requests with web_search tools)"},
+	{config.ScenarioThink, "think       (thinking mode requests)"},
+	{config.ScenarioImage, "image       (requests with images)"},
+	{config.ScenarioLongContext, "longContext (exceeds threshold)"},
+	{config.ScenarioBackground, "background  (haiku model requests)"},
 }
 
 func newRoutingModel(profile string) routingModel {

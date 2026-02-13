@@ -16,8 +16,9 @@ import (
 
 // RoutingConfig holds the default provider chain and optional scenario routes.
 type RoutingConfig struct {
-	DefaultProviders []*Provider
-	ScenarioRoutes   map[config.Scenario]*ScenarioProviders
+	DefaultProviders     []*Provider
+	ScenarioRoutes       map[config.Scenario]*ScenarioProviders
+	LongContextThreshold int // threshold for longContext scenario detection
 }
 
 // ScenarioProviders defines the providers and per-provider model overrides for a scenario.
@@ -63,12 +64,23 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
+	// Parse request body to extract session ID
+	var bodyMap map[string]interface{}
+	sessionID := ""
+	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+		sessionID = extractSessionID(bodyMap)
+	}
+
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers
 	var modelOverrides map[string]string
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
-		scenario, _ := DetectScenarioFromJSON(bodyBytes)
+		threshold := s.Routing.LongContextThreshold
+		if threshold <= 0 {
+			threshold = defaultLongContextThreshold
+		}
+		scenario, _ := DetectScenarioFromJSON(bodyBytes, threshold, sessionID)
 		if sp, ok := s.Routing.ScenarioRoutes[scenario]; ok {
 			providers = sp.Providers
 			modelOverrides = sp.Models
@@ -117,6 +129,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		p.MarkHealthy()
 		s.Logger.Printf("[%s] success %d", p.Name, resp.StatusCode)
+
+		// Update session cache with token usage from response
+		s.updateSessionCache(sessionID, resp)
+
 		s.copyResponse(w, resp)
 		return
 	}
@@ -155,6 +171,9 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 	req.Header.Set("x-api-key", p.Token)
 	req.Header.Set("Authorization", "Bearer "+p.Token)
 	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(modifiedBody)))
+
+	// Apply environment variable headers
+	s.applyEnvVarsHeaders(req, p.EnvVars)
 
 	return s.Client.Do(req)
 }
@@ -274,14 +293,42 @@ func (s *ProxyServer) mapModel(original string, body map[string]interface{}, p *
 	return original
 }
 
-// hasThinkingEnabled checks if the request body has thinking mode enabled.
-func hasThinkingEnabled(body map[string]interface{}) bool {
-	thinking, ok := body["thinking"].(map[string]interface{})
-	if !ok {
-		return false
+// updateSessionCache extracts token usage from the response and updates the session cache.
+func (s *ProxyServer) updateSessionCache(sessionID string, resp *http.Response) {
+	if sessionID == "" {
+		return
 	}
-	t, ok := thinking["type"].(string)
-	return ok && t == "enabled"
+
+	// Read response body to extract usage information
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	// Restore body for copyResponse
+	resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	var respData map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &respData); err != nil {
+		return
+	}
+
+	// Extract usage from response
+	usage, ok := respData["usage"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	inputTokens, _ := usage["input_tokens"].(float64)
+	outputTokens, _ := usage["output_tokens"].(float64)
+
+	if inputTokens > 0 || outputTokens > 0 {
+		UpdateSessionUsage(sessionID, &SessionUsage{
+			InputTokens:  int(inputTokens),
+			OutputTokens: int(outputTokens),
+		})
+		s.Logger.Printf("[session] updated cache for %s: input=%d, output=%d",
+			sessionID, int(inputTokens), int(outputTokens))
+	}
 }
 
 func singleJoiningSlash(a, b string) string {
@@ -294,6 +341,25 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
+}
+
+// applyEnvVarsHeaders converts environment variables to HTTP headers.
+// Environment variable names are converted to lowercase and prefixed with "x-env-".
+// For example: CLAUDE_CODE_MAX_OUTPUT_TOKENS -> x-env-claude-code-max-output-tokens
+func (s *ProxyServer) applyEnvVarsHeaders(req *http.Request, envVars map[string]string) {
+	if envVars == nil {
+		return
+	}
+
+	for k, v := range envVars {
+		if k == "" || v == "" {
+			continue
+		}
+		// Convert env var name to HTTP header format
+		// CLAUDE_CODE_MAX_OUTPUT_TOKENS -> x-env-claude-code-max-output-tokens
+		headerName := "x-env-" + strings.ToLower(strings.ReplaceAll(k, "_", "-"))
+		req.Header.Set(headerName, v)
+	}
 }
 
 // StartProxy starts the proxy server and returns the port.

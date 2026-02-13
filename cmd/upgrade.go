@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,9 +57,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Upgrading: %s → %s\n", current, target)
 
-	// Download binary
-	assetName := fmt.Sprintf("opencc-%s-%s", runtime.GOOS, runtime.GOARCH)
-	downloadURL := fmt.Sprintf("https://github.com/dopejs/opencc/releases/download/v%s/%s", target, assetName)
+	// Determine download format based on version
+	// v1.4.0+ uses tar.gz, earlier versions use raw binary
+	useTarball := shouldUseTarball(target)
+
+	var downloadURL string
+	if useTarball {
+		assetName := fmt.Sprintf("opencc-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+		downloadURL = fmt.Sprintf("https://github.com/dopejs/opencc/releases/download/v%s/%s", target, assetName)
+	} else {
+		assetName := fmt.Sprintf("opencc-%s-%s", runtime.GOOS, runtime.GOARCH)
+		downloadURL = fmt.Sprintf("https://github.com/dopejs/opencc/releases/download/v%s/%s", target, assetName)
+	}
 
 	fmt.Printf("Downloading %s...\n", downloadURL)
 	resp, err := http.Get(downloadURL)
@@ -86,7 +97,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	tmpFile.Close()
 
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+	// Extract binary path
+	var binaryPath string
+	if useTarball {
+		// Extract from tar.gz
+		extractedPath, err := extractTarGz(tmpFile.Name())
+		if err != nil {
+			return fmt.Errorf("extraction failed: %w", err)
+		}
+		defer os.Remove(extractedPath)
+		binaryPath = extractedPath
+	} else {
+		binaryPath = tmpFile.Name()
+	}
+
+	if err := os.Chmod(binaryPath, 0755); err != nil {
 		return fmt.Errorf("chmod failed: %w", err)
 	}
 
@@ -97,15 +122,81 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Try direct copy first, fall back to sudo
-	if err := copyFile(tmpFile.Name(), binPath); err != nil {
+	if err := copyFile(binaryPath, binPath); err != nil {
 		fmt.Println("Need elevated privileges, trying sudo...")
-		if sudoErr := exec.Command("sudo", "cp", tmpFile.Name(), binPath).Run(); sudoErr != nil {
+		if sudoErr := exec.Command("sudo", "cp", binaryPath, binPath).Run(); sudoErr != nil {
 			return fmt.Errorf("install failed: %w", sudoErr)
 		}
 	}
 
 	fmt.Printf("Successfully upgraded to %s\n", target)
 	return nil
+}
+
+// shouldUseTarball returns true if the version should use tar.gz format.
+// v1.4.0+ uses tar.gz, earlier versions use raw binary.
+func shouldUseTarball(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return false
+	}
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+
+	return major > 1 || (major == 1 && minor >= 4)
+}
+
+// extractTarGz extracts the opencc binary from a tar.gz file.
+func extractTarGz(tarPath string) (string, error) {
+	f, err := os.Open(tarPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		return "", err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		// Look for the opencc binary
+		if header.Typeflag == tar.TypeReg && (header.Name == "opencc" || strings.HasSuffix(header.Name, "/opencc")) {
+			tmpFile, err := os.CreateTemp("", "opencc-extracted-*")
+			if err != nil {
+				return "", err
+			}
+
+			if _, err := io.Copy(tmpFile, tr); err != nil {
+				tmpFile.Close()
+				os.Remove(tmpFile.Name())
+				return "", err
+			}
+			tmpFile.Close()
+			return tmpFile.Name(), nil
+		}
+	}
+
+	return "", fmt.Errorf("opencc binary not found in archive")
 }
 
 func copyFile(src, dst string) error {

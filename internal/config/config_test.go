@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -14,6 +15,146 @@ func setTestHome(t *testing.T) string {
 	t.Cleanup(func() { ResetDefaultStore() })
 	return dir
 }
+
+func TestConfigVersion(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 1: New config should have current version
+	store := DefaultStore()
+	store.SetProvider("test", &ProviderConfig{
+		BaseURL:   "https://api.test.com",
+		AuthToken: "test-token",
+	})
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("new config version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+}
+
+func TestConfigVersionOldFormat(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write old format config (no version field)
+	oldConfig := `{
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": ["test"]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(oldConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load should succeed and auto-upgrade version
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	provider := store.GetProvider("test")
+	if provider == nil {
+		t.Fatal("expected provider to be loaded")
+	}
+
+	// Save should write version
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("upgraded config version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+}
+
+func TestConfigVersionTooNew(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write config with future version
+	futureConfig := `{
+  "version": 999,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": ["test"]
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(futureConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load should fail with version error
+	ResetDefaultStore()
+	store := &Store{path: configPath}
+	err := store.Load()
+
+	if err == nil {
+		t.Fatal("expected error for future config version")
+	}
+
+	expectedMsg := "config version 999 is newer than supported version"
+	if !contains(err.Error(), expectedMsg) {
+		t.Errorf("error = %q, want to contain %q", err.Error(), expectedMsg)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 
 func TestReadWriteFallbackOrder(t *testing.T) {
 	setTestHome(t)
@@ -594,3 +735,111 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderConfigWithEnvVarsExportToEnv(t *testing.T) {
+	p := &ProviderConfig{
+		BaseURL:   "https://test.com",
+		AuthToken: "tok-test",
+		Model:     "claude-sonnet-4-5",
+		EnvVars: map[string]string{
+			"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+			"CLAUDE_CODE_EFFORT_LEVEL":      "high",
+			"MY_CUSTOM_VAR":                 "custom_value",
+		},
+	}
+
+	p.ExportToEnv()
+
+	// Check base fields
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != "https://test.com" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q", got)
+	}
+	if got := os.Getenv("ANTHROPIC_MODEL"); got != "claude-sonnet-4-5" {
+		t.Errorf("ANTHROPIC_MODEL = %q", got)
+	}
+
+	// Check env vars
+	if got := os.Getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS"); got != "64000" {
+		t.Errorf("CLAUDE_CODE_MAX_OUTPUT_TOKENS = %q", got)
+	}
+	if got := os.Getenv("CLAUDE_CODE_EFFORT_LEVEL"); got != "high" {
+		t.Errorf("CLAUDE_CODE_EFFORT_LEVEL = %q", got)
+	}
+	if got := os.Getenv("MY_CUSTOM_VAR"); got != "custom_value" {
+		t.Errorf("MY_CUSTOM_VAR = %q", got)
+	}
+
+	// Cleanup
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_MODEL")
+	os.Unsetenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
+	os.Unsetenv("CLAUDE_CODE_EFFORT_LEVEL")
+	os.Unsetenv("MY_CUSTOM_VAR")
+}
+
+func TestEnvVarsJSONRoundTrip(t *testing.T) {
+	original := &ProviderConfig{
+		BaseURL:   "https://api.test.com",
+		AuthToken: "token",
+		EnvVars: map[string]string{
+			"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "32000",
+			"CLAUDE_CODE_EFFORT_LEVEL":      "low",
+			"CUSTOM_VAR":                    "value",
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal error: %v", err)
+	}
+
+	var restored ProviderConfig
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	if restored.EnvVars == nil {
+		t.Fatal("EnvVars should not be nil")
+	}
+	if len(restored.EnvVars) != 3 {
+		t.Errorf("expected 3 env vars, got %d", len(restored.EnvVars))
+	}
+	if restored.EnvVars["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] != "32000" {
+		t.Errorf("CLAUDE_CODE_MAX_OUTPUT_TOKENS not preserved")
+	}
+	if restored.EnvVars["CLAUDE_CODE_EFFORT_LEVEL"] != "low" {
+		t.Errorf("CLAUDE_CODE_EFFORT_LEVEL not preserved")
+	}
+	if restored.EnvVars["CUSTOM_VAR"] != "value" {
+		t.Errorf("CUSTOM_VAR not preserved")
+	}
+}
+
+func TestEnvVarsEmptyMap(t *testing.T) {
+	// Test that empty map doesn't export env vars
+	p := &ProviderConfig{
+		BaseURL:   "https://test.com",
+		AuthToken: "token",
+		EnvVars:   map[string]string{},
+	}
+
+	p.ExportToEnv()
+
+	// These should not be set
+	if got := os.Getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS"); got != "" {
+		t.Errorf("CLAUDE_CODE_MAX_OUTPUT_TOKENS should not be set, got %q", got)
+	}
+}
+
+func TestEnvVarsNilMap(t *testing.T) {
+	// Test that nil map doesn't cause panic
+	p := &ProviderConfig{
+		BaseURL:   "https://test.com",
+		AuthToken: "token",
+		EnvVars:   nil,
+	}
+
+	p.ExportToEnv() // Should not panic
+}
+
+

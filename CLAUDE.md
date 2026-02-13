@@ -15,14 +15,14 @@ Go CLI tool for managing multiple Claude API provider configurations with proxy 
 ## Project Structure
 
 ```
-cmd/           # Cobra commands (root, config, pick, web, upgrade)
+cmd/           # Cobra commands (root, config, pick, web, upgrade, bind)
 internal/
   config/      # Config store, types, legacy migration, compat helpers
   daemon/      # Web server daemon management (start/stop, platform-specific)
-  proxy/       # Reverse proxy with failover
+  proxy/       # Reverse proxy with failover, token calculation, session cache
   web/         # HTTP API server + embedded static frontend
     static/    # app.js, index.html, style.css (vanilla JS, no build step)
-tui/           # All TUI models (editor, pick, config_main, fallback, etc.)
+tui/           # All TUI models (editor, pick, config_main, fallback, routing, etc.)
 ```
 
 ## Build & Test
@@ -49,6 +49,7 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **Pre-release check**: Before tagging a release, check for unpushed commits (`git log origin/main..HEAD`) and push them first.
 - **Update version constant**: Before releasing, update `Version` in `cmd/root.go` to match the release tag.
 - **Update README**: Before releasing, check that `README.md` reflects all new features and changes.
+- **No documentation files**: Do NOT create documentation files (*.md) except for planning, architecture design, and README.md updates. Implementation details should be in code comments only.
 
 ## Key Conventions
 
@@ -69,3 +70,4 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - v1.3.0: Web UI, profile assignment on provider add, model autocomplete, CLI name args
 - v1.3.1: Download progress bar, README refresh
 - v1.3.2: Fix progress bar display (show downloaded/total size)
+- v1.4.0: Scenario routing, token calculation, session cache, project bindings

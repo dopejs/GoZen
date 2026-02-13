@@ -21,6 +21,7 @@ const (
 	fieldHaikuModel
 	fieldOpusModel
 	fieldSonnetModel
+	fieldEnvVars // special field - opens env vars editor
 	fieldCount
 )
 
@@ -33,6 +34,9 @@ type editorModel struct {
 	saved       bool   // true = save succeeded, waiting to exit
 	status      string // "Saved" success message
 	createdName string // name of provider after save (for callers)
+	envVars     map[string]string // custom environment variables
+	envVarsEdit bool              // true = editing env vars
+	envVarsModel envVarsEditorModel
 }
 
 func newEditorModel(configName string) editorModel {
@@ -63,10 +67,12 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 	fields[fieldOpusModel].Prompt = "  Opus Model:       "
 	fields[fieldSonnetModel].Placeholder = "claude-sonnet-4-5"
 	fields[fieldSonnetModel].Prompt = "  Sonnet Model:     "
+	// fieldEnvVars is a special field, not a textinput
 
 	m := editorModel{
 		fields:  fields,
 		editing: configName,
+		envVars: make(map[string]string),
 	}
 
 	if configName != "" {
@@ -81,6 +87,12 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 			m.fields[fieldHaikuModel].SetValue(p.HaikuModel)
 			m.fields[fieldOpusModel].SetValue(p.OpusModel)
 			m.fields[fieldSonnetModel].SetValue(p.SonnetModel)
+			// Load env vars
+			if p.EnvVars != nil {
+				for k, v := range p.EnvVars {
+					m.envVars[k] = v
+				}
+			}
 		}
 		// Disable name field when editing
 		m.focus = fieldBaseURL
@@ -109,30 +121,60 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle env vars editor mode
+	if m.envVarsEdit {
+		switch msg := msg.(type) {
+		case envVarsExitMsg:
+			m.envVarsEdit = false
+			m.envVars = msg.envVars
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.envVarsModel, cmd = m.envVarsModel.update(msg)
+			return m, cmd
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
 			return m, func() tea.Msg { return switchToListMsg{} }
 		case "tab", "down":
-			m.fields[m.focus].Blur()
+			if m.focus < fieldEnvVars {
+				m.fields[m.focus].Blur()
+			}
 			m.focus = (m.focus + 1) % fieldCount
 			if m.editing != "" && m.focus == fieldName {
 				m.focus = fieldBaseURL
 			}
-			m.fields[m.focus].Focus()
+			if m.focus < fieldEnvVars {
+				m.fields[m.focus].Focus()
+			}
 			return m, textinput.Blink
 		case "shift+tab", "up":
-			m.fields[m.focus].Blur()
+			if m.focus < fieldEnvVars {
+				m.fields[m.focus].Blur()
+			}
 			m.focus = (m.focus - 1 + fieldCount) % fieldCount
 			if m.editing != "" && m.focus == fieldName {
-				m.focus = fieldSonnetModel
+				m.focus = fieldEnvVars
 			}
-			m.fields[m.focus].Focus()
+			if m.focus < fieldEnvVars {
+				m.fields[m.focus].Focus()
+			}
 			return m, textinput.Blink
-		case "ctrl+s", "cmd+s", "enter":
-			isSaveKey := (isMac && msg.String() == "cmd+s") || (!isMac && msg.String() == "ctrl+s")
-			if m.focus == fieldCount-1 || isSaveKey {
+		case "ctrl+s", "cmd+s":
+			return m.save()
+		case "enter":
+			if m.focus == fieldEnvVars {
+				// Open env vars editor
+				m.envVarsEdit = true
+				m.envVarsModel = newEnvVarsEditorModel(m.envVars)
+				return m, nil
+			}
+			// Enter on last text field = save
+			if m.focus == fieldSonnetModel {
 				return m.save()
 			}
 			// Enter on non-last field = move to next
@@ -141,15 +183,20 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 			if m.editing != "" && m.focus == fieldName {
 				m.focus = fieldBaseURL
 			}
-			m.fields[m.focus].Focus()
+			if m.focus < fieldEnvVars {
+				m.fields[m.focus].Focus()
+			}
 			return m, textinput.Blink
 		}
 	}
 
-	// Update focused field
-	var cmd tea.Cmd
-	m.fields[m.focus], cmd = m.fields[m.focus].Update(msg)
-	return m, cmd
+	// Update focused field (only if it's a textinput field)
+	if m.focus < fieldEnvVars {
+		var cmd tea.Cmd
+		m.fields[m.focus], cmd = m.fields[m.focus].Update(msg)
+		return m, cmd
+	}
+	return m, nil
 }
 
 func (m editorModel) save() (editorModel, tea.Cmd) {
@@ -205,6 +252,14 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 		SonnetModel:    modelValues[4],
 	}
 
+	// Add env vars if any
+	if len(m.envVars) > 0 {
+		p.EnvVars = make(map[string]string)
+		for k, v := range m.envVars {
+			p.EnvVars[k] = v
+		}
+	}
+
 	if err := config.SetProvider(name, p); err != nil {
 		m.err = err.Error()
 		return m, nil
@@ -225,6 +280,11 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 }
 
 func (m editorModel) view(width, height int) string {
+	// If editing env vars, show that view
+	if m.envVarsEdit {
+		return m.envVarsModel.view()
+	}
+
 	var b strings.Builder
 
 	// Header
@@ -249,6 +309,23 @@ func (m editorModel) view(width, height int) string {
 	content.WriteString("\n\n")
 
 	for i := range m.fields {
+		if editorField(i) == fieldEnvVars {
+			// Special handling for env vars field
+			cursor := "  "
+			style := dimStyle
+			if m.focus == fieldEnvVars {
+				cursor = "▸ "
+				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+			}
+			envCount := len(m.envVars)
+			envLabel := fmt.Sprintf("%d configured", envCount)
+			if envCount == 0 {
+				envLabel = "none"
+			}
+			content.WriteString(style.Render(fmt.Sprintf("%sEnv Vars:         [%s] (enter to edit)", cursor, envLabel)))
+			content.WriteString("\n")
+			continue
+		}
 		if m.editing != "" && editorField(i) == fieldName {
 			content.WriteString(dimStyle.Render(fmt.Sprintf("  Name:             %s", m.editing)))
 			content.WriteString("\n")
@@ -379,4 +456,231 @@ func RunEditProvider(name string) error {
 		return fmt.Errorf("cancelled")
 	}
 	return nil
+}
+
+// envVarsExitMsg signals that the env vars editor is done.
+type envVarsExitMsg struct {
+	envVars map[string]string
+}
+
+// envVarsEditorModel is a sub-editor for managing key-value environment variables.
+type envVarsEditorModel struct {
+	entries     []envVarEntry
+	cursor      int
+	phase       int // 0=list, 1=edit key, 2=edit value
+	keyInput    string
+	valueInput  string
+	editingIdx  int // index being edited, -1 for new
+}
+
+type envVarEntry struct {
+	key   string
+	value string
+}
+
+func newEnvVarsEditorModel(envVars map[string]string) envVarsEditorModel {
+	var entries []envVarEntry
+	for k, v := range envVars {
+		entries = append(entries, envVarEntry{key: k, value: v})
+	}
+	// Sort entries by key for consistent display
+	for i := 0; i < len(entries); i++ {
+		for j := i + 1; j < len(entries); j++ {
+			if entries[i].key > entries[j].key {
+				entries[i], entries[j] = entries[j], entries[i]
+			}
+		}
+	}
+	return envVarsEditorModel{
+		entries:    entries,
+		editingIdx: -1,
+	}
+}
+
+func (m envVarsEditorModel) update(msg tea.Msg) (envVarsEditorModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if m.phase == 1 {
+			// Editing key
+			return m.updateKeyEdit(msg)
+		}
+		if m.phase == 2 {
+			// Editing value
+			return m.updateValueEdit(msg)
+		}
+		// Phase 0: list view
+		return m.updateList(msg)
+	}
+	return m, nil
+}
+
+func (m envVarsEditorModel) updateList(msg tea.KeyMsg) (envVarsEditorModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		// Return to provider editor with current env vars
+		envVars := make(map[string]string)
+		for _, e := range m.entries {
+			if e.key != "" && e.value != "" {
+				envVars[e.key] = e.value
+			}
+		}
+		return m, func() tea.Msg { return envVarsExitMsg{envVars: envVars} }
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(m.entries) {
+			m.cursor++
+		}
+	case "enter":
+		if m.cursor == len(m.entries) {
+			// Add new entry
+			m.phase = 1
+			m.editingIdx = -1
+			m.keyInput = ""
+			m.valueInput = ""
+		} else {
+			// Edit existing entry
+			m.phase = 1
+			m.editingIdx = m.cursor
+			m.keyInput = m.entries[m.cursor].key
+			m.valueInput = m.entries[m.cursor].value
+		}
+	case "d", "x":
+		// Delete entry
+		if m.cursor < len(m.entries) {
+			m.entries = append(m.entries[:m.cursor], m.entries[m.cursor+1:]...)
+			if m.cursor >= len(m.entries) && m.cursor > 0 {
+				m.cursor--
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m envVarsEditorModel) updateKeyEdit(msg tea.KeyMsg) (envVarsEditorModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.phase = 0
+		m.keyInput = ""
+		m.valueInput = ""
+	case "enter", "tab":
+		if m.keyInput != "" {
+			m.phase = 2 // Move to value editing
+		}
+	case "backspace":
+		if len(m.keyInput) > 0 {
+			m.keyInput = m.keyInput[:len(m.keyInput)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.keyInput += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m envVarsEditorModel) updateValueEdit(msg tea.KeyMsg) (envVarsEditorModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.phase = 0
+		m.keyInput = ""
+		m.valueInput = ""
+	case "enter":
+		// Save the entry
+		if m.keyInput != "" {
+			entry := envVarEntry{key: m.keyInput, value: m.valueInput}
+			if m.editingIdx >= 0 {
+				m.entries[m.editingIdx] = entry
+			} else {
+				m.entries = append(m.entries, entry)
+				m.cursor = len(m.entries) - 1
+			}
+		}
+		m.phase = 0
+		m.keyInput = ""
+		m.valueInput = ""
+	case "backspace":
+		if len(m.valueInput) > 0 {
+			m.valueInput = m.valueInput[:len(m.valueInput)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			m.valueInput += msg.String()
+		}
+	}
+	return m, nil
+}
+
+func (m envVarsEditorModel) view() string {
+	var b strings.Builder
+
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(primaryColor).
+		Background(headerBgColor).
+		Padding(0, 2).
+		Render("🔧 Environment Variables")
+	b.WriteString(header)
+	b.WriteString("\n\n")
+
+	var content strings.Builder
+
+	if m.phase == 1 {
+		// Key editing
+		content.WriteString(sectionTitleStyle.Render(" Enter Variable Name"))
+		content.WriteString("\n")
+		content.WriteString(dimStyle.Render(" e.g. CLAUDE_CODE_MAX_OUTPUT_TOKENS"))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.keyInput + "█"))
+		content.WriteString("\n\n")
+		content.WriteString(helpStyle.Render("  enter/tab next • esc cancel"))
+	} else if m.phase == 2 {
+		// Value editing
+		content.WriteString(sectionTitleStyle.Render(fmt.Sprintf(" Enter Value for %s", m.keyInput)))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.valueInput + "█"))
+		content.WriteString("\n\n")
+		content.WriteString(helpStyle.Render("  enter save • esc cancel"))
+	} else {
+		// List view
+		content.WriteString(sectionTitleStyle.Render(" Custom Environment Variables"))
+		content.WriteString("\n")
+		content.WriteString(dimStyle.Render(" These are passed as x-env-* headers to the proxy"))
+		content.WriteString("\n\n")
+
+		for i, e := range m.entries {
+			cursor := "  "
+			style := tableRowStyle
+			if i == m.cursor {
+				cursor = "▸ "
+				style = tableSelectedRowStyle
+			}
+			line := fmt.Sprintf("%s%s = %s", cursor, e.key, e.value)
+			content.WriteString(style.Render(line))
+			content.WriteString("\n")
+		}
+
+		// Add new entry option
+		cursor := "  "
+		style := dimStyle
+		if m.cursor == len(m.entries) {
+			cursor = "▸ "
+			style = tableSelectedRowStyle
+		}
+		content.WriteString(style.Render(cursor + "[+ Add new variable]"))
+		content.WriteString("\n\n")
+		content.WriteString(helpStyle.Render("  ↑↓ move • enter edit/add • d delete • esc done"))
+	}
+
+	contentBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Padding(0, 1).
+		Width(60).
+		Render(content.String())
+	b.WriteString(contentBox)
+
+	return b.String()
 }

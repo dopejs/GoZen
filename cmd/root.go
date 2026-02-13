@@ -245,15 +245,15 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 
 	// Also build providers for any names that only appear in routing scenarios
 	for _, route := range pc.Routing {
-		for _, name := range route.Providers {
-			if _, ok := providerMap[name]; !ok {
+		for _, pr := range route.Providers {
+			if _, ok := providerMap[pr.Name]; !ok {
 				// Need to build this provider
-				ps, err := buildProviders([]string{name})
+				ps, err := buildProviders([]string{pr.Name})
 				if err != nil {
-					logger.Printf("[routing] skipping unknown provider %q in routing: %v", name, err)
+					logger.Printf("[routing] skipping unknown provider %q in routing: %v", pr.Name, err)
 					continue
 				}
-				providerMap[name] = ps[0]
+				providerMap[pr.Name] = ps[0]
 			}
 		}
 	}
@@ -262,17 +262,21 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	scenarioRoutes := make(map[config.Scenario]*proxy.ScenarioProviders)
 	for scenario, route := range pc.Routing {
 		var chain []*proxy.Provider
-		for _, name := range route.Providers {
-			if p, ok := providerMap[name]; ok {
+		models := make(map[string]string)
+		for _, pr := range route.Providers {
+			if p, ok := providerMap[pr.Name]; ok {
 				chain = append(chain, p)
+				if pr.Model != "" {
+					models[pr.Name] = pr.Model
+				}
 			}
 		}
 		if len(chain) > 0 {
 			scenarioRoutes[scenario] = &proxy.ScenarioProviders{
 				Providers: chain,
-				Model:     route.Model,
+				Models:    models,
 			}
-			logger.Printf("[routing] scenario %s: %d providers, model=%q", scenario, len(chain), route.Model)
+			logger.Printf("[routing] scenario %s: %d providers, %d model overrides", scenario, len(chain), len(models))
 		}
 	}
 

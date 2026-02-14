@@ -1,17 +1,17 @@
 #!/bin/sh
 set -eu
 
-# opencc deploy script - builds binaries for GitHub Releases
+# GoZen deploy script - builds binaries for GitHub Releases
 # Usage:
 #   ./deploy.sh                Build for current platform
 #   ./deploy.sh --all          Build for all supported platforms
 #
-# Binaries are placed in dist/ with naming: opencc-<os>-<arch>
+# Binaries are placed in dist/ with naming: zen-<os>-<arch>
 # Upload them to GitHub Releases. install.sh will download them by this name.
 
 VERSION="$(grep 'var Version' cmd/root.go | sed 's/.*"\(.*\)"/\1/')"
 DIST_DIR="dist"
-PROJECT="opencc"
+PROJECT="zen"
 
 info()  { printf "\033[1;34m==>\033[0m %s\n" "$1"; }
 ok()    { printf "\033[1;32m==>\033[0m %s\n" "$1"; }

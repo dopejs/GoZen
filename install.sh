@@ -1,14 +1,14 @@
 #!/bin/sh
 set -eu
 
-# opencc installer - download and install from GitHub Releases
+# GoZen installer - download and install from GitHub Releases
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall
 
-REPO="dopejs/opencc"
-BIN_TARGET="/usr/local/bin/opencc"
-CC_ENVS_DIR="$HOME/.cc_envs"
+REPO="dopejs/gozen"
+BIN_TARGET="/usr/local/bin/zen"
+ZEN_DIR="$HOME/.zen"
 
 # --- Helpers ---
 
@@ -107,7 +107,7 @@ fish_comp_dir() {
 setup_first_provider() {
   printf "\n"
   info "No providers configured yet. Let's set up your first one."
-  printf "  (Press Ctrl+C to skip and configure later with 'opencc config')\n\n"
+  printf "  (Press Ctrl+C to skip and configure later with 'zen config')\n\n"
 
   # Use /dev/tty for input since stdin may be a pipe
   if [ ! -t 0 ] && [ -e /dev/tty ]; then
@@ -120,7 +120,7 @@ setup_first_provider() {
   read -r _name < "$_input"
   _name="$(printf '%s' "$_name" | tr -d '[:space:]')"
   if [ -z "$_name" ]; then
-    err "Name cannot be empty. Run 'opencc config' to set up later."
+    err "Name cannot be empty. Run 'zen config' to set up later."
     return
   fi
 
@@ -128,7 +128,7 @@ setup_first_provider() {
   read -r _base_url < "$_input"
   _base_url="$(printf '%s' "$_base_url" | tr -d '[:space:]')"
   if [ -z "$_base_url" ]; then
-    err "Base URL cannot be empty. Run 'opencc config' to set up later."
+    err "Base URL cannot be empty. Run 'zen config' to set up later."
     return
   fi
 
@@ -136,7 +136,7 @@ setup_first_provider() {
   read -r _token < "$_input"
   _token="$(printf '%s' "$_token" | tr -d '[:space:]')"
   if [ -z "$_token" ]; then
-    err "Auth token cannot be empty. Run 'opencc config' to set up later."
+    err "Auth token cannot be empty. Run 'zen config' to set up later."
     return
   fi
 
@@ -144,21 +144,53 @@ setup_first_provider() {
   read -r _model < "$_input"
   _model="$(printf '%s' "$_model" | tr -d '[:space:]')"
 
-  # Write .env file
-  _env_path="$CC_ENVS_DIR/${_name}.env"
-  printf "ANTHROPIC_BASE_URL=%s\n" "$_base_url" > "$_env_path"
-  printf "ANTHROPIC_AUTH_TOKEN=%s\n" "$_token" >> "$_env_path"
-  if [ -n "$_model" ]; then
-    printf "ANTHROPIC_MODEL=%s\n" "$_model" >> "$_env_path"
-  fi
-
-  # Write to fallback.conf
-  printf "%s\n" "$_name" > "$CC_ENVS_DIR/fallback.conf"
+  # Use zen config add provider to create the provider
+  "$BIN_TARGET" config add provider "$_name" --base-url "$_base_url" --auth-token "$_token" ${_model:+--model "$_model"} 2>/dev/null || {
+    # Fallback: write directly to config
+    _env_path="$ZEN_DIR/${_name}.env"
+    printf "ANTHROPIC_BASE_URL=%s\n" "$_base_url" > "$_env_path"
+    printf "ANTHROPIC_AUTH_TOKEN=%s\n" "$_token" >> "$_env_path"
+    if [ -n "$_model" ]; then
+      printf "ANTHROPIC_MODEL=%s\n" "$_model" >> "$_env_path"
+    fi
+  }
 
   printf "\n"
   ok "Provider '${_name}' created and set as default fallback."
-  printf "  Run 'opencc' to start with this provider\n"
-  printf "  Run 'opencc config' to add more providers\n"
+  printf "  Run 'zen' to start with this provider\n"
+  printf "  Run 'zen config' to add more providers\n"
+}
+
+# --- Legacy cleanup ---
+
+cleanup_legacy() {
+  SUDO="$(need_sudo)"
+
+  # Remove old /usr/local/bin/opencc binary
+  if [ -f "/usr/local/bin/opencc" ]; then
+    info "Removing legacy /usr/local/bin/opencc binary..."
+    $SUDO rm -f "/usr/local/bin/opencc"
+  fi
+
+  # Remove old completion files
+  if command -v zsh >/dev/null 2>&1; then
+    zdir="$(zsh_comp_dir)"
+    if [ -n "$zdir" ] && [ -f "$zdir/_opencc" ]; then
+      $SUDO rm -f "$zdir/_opencc"
+    fi
+  fi
+
+  if command -v bash >/dev/null 2>&1; then
+    bdir="$(bash_comp_dir)"
+    if [ -n "$bdir" ] && [ -f "$bdir/opencc" ]; then
+      $SUDO rm -f "$bdir/opencc"
+    fi
+  fi
+
+  fdir="$(fish_comp_dir)"
+  if [ -f "$fdir/opencc.fish" ]; then
+    rm -f "$fdir/opencc.fish"
+  fi
 }
 
 # --- Install ---
@@ -195,32 +227,32 @@ do_install() {
 
   if [ "$USE_TARBALL" -eq 1 ]; then
     # v1.4.0+: Download tar.gz
-    ASSET_NAME="opencc-${OS}-${ARCH}.tar.gz"
+    ASSET_NAME="zen-${OS}-${ARCH}.tar.gz"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
 
     info "Downloading ${DOWNLOAD_URL}..."
-    fetch "$DOWNLOAD_URL" "${TMPDIR}/opencc.tar.gz"
+    fetch "$DOWNLOAD_URL" "${TMPDIR}/zen.tar.gz"
 
     info "Extracting..."
-    tar -xzf "${TMPDIR}/opencc.tar.gz" -C "${TMPDIR}"
+    tar -xzf "${TMPDIR}/zen.tar.gz" -C "${TMPDIR}"
 
-    if [ ! -f "${TMPDIR}/opencc" ]; then
+    if [ ! -f "${TMPDIR}/zen" ]; then
       err "Binary not found in tarball"
       exit 1
     fi
   else
     # v1.3.x and earlier: Download raw binary
-    ASSET_NAME="opencc-${OS}-${ARCH}"
+    ASSET_NAME="zen-${OS}-${ARCH}"
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
 
     info "Downloading ${DOWNLOAD_URL}..."
-    fetch "$DOWNLOAD_URL" "${TMPDIR}/opencc"
+    fetch "$DOWNLOAD_URL" "${TMPDIR}/zen"
   fi
 
   # Install binary
-  chmod +x "${TMPDIR}/opencc"
-  info "Installing opencc to ${BIN_TARGET}"
-  $SUDO cp "${TMPDIR}/opencc" "$BIN_TARGET"
+  chmod +x "${TMPDIR}/zen"
+  info "Installing zen to ${BIN_TARGET}"
+  $SUDO cp "${TMPDIR}/zen" "$BIN_TARGET"
   $SUDO chmod +x "$BIN_TARGET"
 
   # On macOS, ad-hoc codesign to clear com.apple.provenance
@@ -231,18 +263,23 @@ do_install() {
 
   ok "Installed ${BIN_TARGET}"
 
+  # Clean up legacy opencc installation
+  cleanup_legacy
+
   # Restart web daemon if it was running before upgrade
-  # Check all PID files (legacy web.pid + hash-based web-*.pid)
+  # Check all PID files (both old ~/.opencc and new ~/.zen)
   _was_running=0
-  for pidfile in "$HOME/.opencc"/web*.pid; do
-    [ -f "$pidfile" ] || continue
-    _web_pid="$(cat "$pidfile" 2>/dev/null)"
-    if [ -n "$_web_pid" ] && kill -0 "$_web_pid" 2>/dev/null; then
-      _was_running=1
-      info "Stopping web daemon (PID ${_web_pid})..."
-      kill "$_web_pid" 2>/dev/null || true
-      rm -f "$pidfile"
-    fi
+  for _pid_dir in "$HOME/.zen" "$HOME/.opencc"; do
+    for pidfile in "$_pid_dir"/web*.pid; do
+      [ -f "$pidfile" ] || continue
+      _web_pid="$(cat "$pidfile" 2>/dev/null)"
+      if [ -n "$_web_pid" ] && kill -0 "$_web_pid" 2>/dev/null; then
+        _was_running=1
+        info "Stopping web daemon (PID ${_web_pid})..."
+        kill "$_web_pid" 2>/dev/null || true
+        rm -f "$pidfile"
+      fi
+    done
   done
   if [ "$_was_running" = "1" ]; then
     sleep 1
@@ -251,30 +288,24 @@ do_install() {
     ok "Web daemon restarted."
   fi
 
-  # Create envs dir
-  if [ ! -d "$CC_ENVS_DIR" ]; then
-    info "Creating ${CC_ENVS_DIR}"
-    mkdir -p "$CC_ENVS_DIR"
-  fi
-
-  # Create fallback.conf if it doesn't exist
-  if [ ! -f "$CC_ENVS_DIR/fallback.conf" ]; then
-    touch "$CC_ENVS_DIR/fallback.conf"
+  # Create zen dir
+  if [ ! -d "$ZEN_DIR" ]; then
+    info "Creating ${ZEN_DIR}"
+    mkdir -p "$ZEN_DIR"
   fi
 
   # Install completions
   install_completions
 
   printf "\n"
-  ok "opencc ${VERSION} installed!"
+  ok "GoZen ${VERSION} installed!"
 
-  # Guide first provider setup if no .env files exist
-  _env_count="$(find "$CC_ENVS_DIR" -maxdepth 1 -name '*.env' 2>/dev/null | wc -l | tr -d ' ')"
-  if [ "$_env_count" = "0" ]; then
+  # Check if config exists
+  if [ ! -f "$ZEN_DIR/zen.json" ] && [ ! -f "$HOME/.opencc/opencc.json" ]; then
     setup_first_provider
   else
-    printf "  Run 'opencc list' to list configurations\n"
-    printf "  Run 'opencc use <name>' to start claude with a configuration\n"
+    printf "  Run 'zen list' to list configurations\n"
+    printf "  Run 'zen use <name>' to start claude with a configuration\n"
   fi
 }
 
@@ -285,11 +316,11 @@ install_completions() {
   if command -v zsh >/dev/null 2>&1; then
     zdir="$(zsh_comp_dir)"
     if [ -n "$zdir" ]; then
-      info "Installing zsh completion to $zdir/_opencc"
-      "$BIN_TARGET" completion zsh > /tmp/_opencc_comp
+      info "Installing zsh completion to $zdir/_zen"
+      "$BIN_TARGET" completion zsh > /tmp/_zen_comp
       $SUDO mkdir -p "$zdir"
-      $SUDO cp /tmp/_opencc_comp "$zdir/_opencc"
-      rm -f /tmp/_opencc_comp
+      $SUDO cp /tmp/_zen_comp "$zdir/_zen"
+      rm -f /tmp/_zen_comp
       rm -f "$HOME"/.zcompdump*
       ok "zsh completion installed"
     fi
@@ -299,10 +330,10 @@ install_completions() {
   if command -v bash >/dev/null 2>&1; then
     bdir="$(bash_comp_dir)"
     if [ -n "$bdir" ]; then
-      info "Installing bash completion to $bdir/opencc"
-      "$BIN_TARGET" completion bash > /tmp/_opencc_bash_comp
-      $SUDO cp /tmp/_opencc_bash_comp "$bdir/opencc"
-      rm -f /tmp/_opencc_bash_comp
+      info "Installing bash completion to $bdir/zen"
+      "$BIN_TARGET" completion bash > /tmp/_zen_bash_comp
+      $SUDO cp /tmp/_zen_bash_comp "$bdir/zen"
+      rm -f /tmp/_zen_bash_comp
       ok "bash completion installed"
     fi
   fi
@@ -310,9 +341,9 @@ install_completions() {
   # fish
   if command -v fish >/dev/null 2>&1; then
     fdir="$(fish_comp_dir)"
-    info "Installing fish completion to $fdir/opencc.fish"
+    info "Installing fish completion to $fdir/zen.fish"
     mkdir -p "$fdir"
-    "$BIN_TARGET" completion fish > "$fdir/opencc.fish"
+    "$BIN_TARGET" completion fish > "$fdir/zen.fish"
     ok "fish completion installed"
   fi
 }
@@ -321,38 +352,56 @@ install_completions() {
 
 do_uninstall() {
   SUDO="$(need_sudo)"
-  info "Uninstalling opencc..."
+  info "Uninstalling zen..."
 
   if [ -f "$BIN_TARGET" ]; then
     $SUDO rm -f "$BIN_TARGET"
     ok "Removed $BIN_TARGET"
   fi
 
+  # Also remove legacy binary if it exists
+  if [ -f "/usr/local/bin/opencc" ]; then
+    $SUDO rm -f "/usr/local/bin/opencc"
+    ok "Removed /usr/local/bin/opencc (legacy)"
+  fi
+
   if command -v zsh >/dev/null 2>&1; then
     zdir="$(zsh_comp_dir)"
+    if [ -n "$zdir" ] && [ -f "$zdir/_zen" ]; then
+      $SUDO rm -f "$zdir/_zen"
+      ok "Removed $zdir/_zen"
+    fi
     if [ -n "$zdir" ] && [ -f "$zdir/_opencc" ]; then
       $SUDO rm -f "$zdir/_opencc"
-      ok "Removed $zdir/_opencc"
+      ok "Removed $zdir/_opencc (legacy)"
     fi
   fi
 
   if command -v bash >/dev/null 2>&1; then
     bdir="$(bash_comp_dir)"
+    if [ -n "$bdir" ] && [ -f "$bdir/zen" ]; then
+      $SUDO rm -f "$bdir/zen"
+      ok "Removed $bdir/zen"
+    fi
     if [ -n "$bdir" ] && [ -f "$bdir/opencc" ]; then
       $SUDO rm -f "$bdir/opencc"
-      ok "Removed $bdir/opencc"
+      ok "Removed $bdir/opencc (legacy)"
     fi
   fi
 
   fdir="$(fish_comp_dir)"
+  if [ -f "$fdir/zen.fish" ]; then
+    rm -f "$fdir/zen.fish"
+    ok "Removed $fdir/zen.fish"
+  fi
   if [ -f "$fdir/opencc.fish" ]; then
     rm -f "$fdir/opencc.fish"
-    ok "Removed $fdir/opencc.fish"
+    ok "Removed $fdir/opencc.fish (legacy)"
   fi
 
   printf "\n"
-  ok "opencc has been uninstalled"
-  info "~/.cc_envs/ was preserved (your configurations)"
+  ok "GoZen has been uninstalled"
+  info "~/.zen/ was preserved (your configurations)"
 }
 
 # --- Main ---

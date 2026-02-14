@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh
 解除安裝：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/uninstall.sh | sh
 ```
 
 ## 快速開始

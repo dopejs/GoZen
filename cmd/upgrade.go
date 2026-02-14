@@ -145,36 +145,6 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully upgraded to %s\n", target)
 
-	// If running as the legacy "opencc" binary, inform user about the rename
-	if strings.HasSuffix(binPath, "/opencc") || strings.HasSuffix(binPath, "\\opencc.exe") {
-		fmt.Println()
-		fmt.Println("╭──────────────────────────────────────────────────────────╮")
-		fmt.Println("│  opencc has been renamed to zen (GoZen)                  │")
-		fmt.Println("│                                                          │")
-		fmt.Println("│  To complete the migration, run:                         │")
-		fmt.Println("│  curl -fsSL https://raw.githubusercontent.com/           │")
-		fmt.Println("│    dopejs/gozen/main/install.sh | sh                     │")
-		fmt.Println("│                                                          │")
-		fmt.Println("│  This will install the 'zen' command and remove          │")
-		fmt.Println("│  the old 'opencc' binary.                                │")
-		fmt.Println("│  Your config will be migrated automatically.             │")
-		fmt.Println("╰──────────────────────────────────────────────────────────╯")
-	} else {
-		// Running as zen — clean up legacy opencc binary if it exists
-		legacyBin := "/usr/local/bin/opencc"
-		if runtime.GOOS != "windows" {
-			if _, err := os.Stat(legacyBin); err == nil {
-				fmt.Printf("Removing legacy binary %s...\n", legacyBin)
-				if err := os.Remove(legacyBin); err != nil {
-					// Try sudo
-					if sudoErr := exec.Command("sudo", "rm", "-f", legacyBin).Run(); sudoErr != nil {
-						fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", legacyBin, sudoErr)
-					}
-				}
-			}
-		}
-	}
-
 	// Restart web daemon if it was running
 	if _, running := daemon.IsRunning(); running {
 		if err := restartWebDaemon(); err != nil {

@@ -354,6 +354,52 @@ do_uninstall() {
   SUDO="$(need_sudo)"
   info "Uninstalling zen..."
 
+  # Stop web daemon if running (check both ~/.zen and ~/.opencc PID files)
+  for _pid_dir in "$HOME/.zen" "$HOME/.opencc"; do
+    for pidfile in "$_pid_dir"/web*.pid; do
+      [ -f "$pidfile" ] || continue
+      _web_pid="$(cat "$pidfile" 2>/dev/null)"
+      if [ -n "$_web_pid" ] && kill -0 "$_web_pid" 2>/dev/null; then
+        info "Stopping web daemon (PID ${_web_pid})..."
+        kill "$_web_pid" 2>/dev/null || true
+      fi
+      rm -f "$pidfile"
+    done
+  done
+
+  # Remove system services
+  # macOS launchd
+  for _label in "com.dopejs.zen-web" "com.dopejs.opencc-web"; do
+    _plist="$HOME/Library/LaunchAgents/${_label}.plist"
+    if [ -f "$_plist" ]; then
+      launchctl unload "$_plist" 2>/dev/null || true
+      rm -f "$_plist"
+      ok "Removed launchd service ${_label}"
+    fi
+  done
+
+  # Linux systemd
+  for _svc in "zen-web.service" "opencc-web.service"; do
+    _unit="$HOME/.config/systemd/user/${_svc}"
+    if [ -f "$_unit" ]; then
+      systemctl --user stop "$_svc" 2>/dev/null || true
+      systemctl --user disable "$_svc" 2>/dev/null || true
+      rm -f "$_unit"
+      systemctl --user daemon-reload 2>/dev/null || true
+      ok "Removed systemd service ${_svc}"
+    fi
+  done
+
+  # Windows scheduled tasks
+  if command -v schtasks >/dev/null 2>&1; then
+    for _task in "zen-web" "opencc-web"; do
+      schtasks /query /tn "$_task" >/dev/null 2>&1 && {
+        schtasks /delete /tn "$_task" /f 2>/dev/null || true
+        ok "Removed scheduled task ${_task}"
+      }
+    done
+  fi
+
   if [ -f "$BIN_TARGET" ]; then
     $SUDO rm -f "$BIN_TARGET"
     ok "Removed $BIN_TARGET"

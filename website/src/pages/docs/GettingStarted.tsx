@@ -22,7 +22,7 @@ export default function GettingStarted() {
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.uninstallDesc")}
         </p>
-        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall" />
+        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/uninstall.sh | sh" />
       </section>
 
       <section className="mb-10">

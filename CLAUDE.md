@@ -1,4 +1,4 @@
-# OpenCC - Claude Code Environment Switcher
+# GoZen - Claude Code Environment Switcher
 
 ## Project Overview
 
@@ -10,7 +10,7 @@ Go CLI tool for managing multiple Claude API provider configurations with proxy 
 - **TUI**: Bubble Tea (charmbracelet/bubbletea) + Lip Gloss
 - **Web**: Embedded static files (HTML/CSS/JS, no framework), Go HTTP server
 - **CLI**: Cobra
-- **Config**: JSON store at `~/.opencc/opencc.json`
+- **Config**: JSON store at `~/.zen/zen.json`
 
 ## Project Structure
 
@@ -20,6 +20,7 @@ internal/
   config/      # Config store, types, legacy migration, compat helpers
   daemon/      # Web server daemon management (start/stop, platform-specific)
   proxy/       # Reverse proxy with failover, token calculation, session cache
+  update/      # Non-blocking version update checker with 24h cache
   web/         # HTTP API server + embedded static frontend
     static/    # app.js, index.html, style.css (vanilla JS, no build step)
 tui/           # All TUI models (editor, pick, config_main, fallback, routing, etc.)
@@ -37,8 +38,8 @@ go test ./...
 Push a git tag to trigger GitHub Actions release workflow:
 
 ```sh
-git tag v1.x.0
-git push origin v1.x.0
+git tag v2.x.0
+git push origin v2.x.0
 ```
 
 Do NOT use `gh release create` — the CI pipeline handles release creation automatically.
@@ -73,6 +74,7 @@ When modifying `OpenCCConfig` or its nested types in a way that changes the JSON
 - Web API routes: `/api/v1/providers`, `/api/v1/profiles`, `/api/v1/health`, `/api/v1/reload`
 - Web frontend uses vanilla JS (no build tools), CSS custom properties for theming
 - Model IDs in autocomplete must be verified against official Anthropic docs
+- Environment variable prefix: `GOZEN_` (e.g., `GOZEN_WEB_DAEMON`)
 
 ## Version History
 
@@ -86,3 +88,6 @@ When modifying `OpenCCConfig` or its nested types in a way that changes the JSON
 - v1.4.0: Scenario routing, token calculation, session cache, project bindings
 - v1.5.0: Dashboard TUI, project binding CLI support, centralized CLI list
 - v1.5.1: Fix symlink dedup in bindings, Web UI dropdown style, --port restriction, config v3→v5 migration, SQLite log storage
+- v1.5.2: Allow reinstalling same version in upgrade command
+- v1.5.3: Per-binary PID files to avoid multi-binary conflicts
+- v2.0.0: Rename to GoZen (opencc → zen), config migration from ~/.opencc/ to ~/.zen/, non-blocking version update check

@@ -1,4 +1,4 @@
-# opencc
+# GoZen
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
@@ -7,71 +7,72 @@ Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutac
 ## Características
 
 - **Soporte multi-CLI** — Compatible con Claude Code, Codex y OpenCode, configurable por proyecto
-- **Gestión multi-configuración** — Gestiona todas las configuraciones de API en `~/.opencc/opencc.json`
+- **Gestión multi-configuración** — Gestiona todas las configuraciones de API en `~/.zen/zen.json`
 - **Conmutación por fallos del proxy** — Proxy HTTP integrado que cambia automáticamente a proveedores de respaldo cuando el principal no está disponible
 - **Enrutamiento por escenarios** — Enrutamiento inteligente basado en características de la solicitud (thinking, image, longContext, etc.)
 - **Vinculación de proyectos** — Vincula directorios a perfiles y CLIs específicos para configuración automática por proyecto
 - **Variables de entorno** — Configura variables de entorno específicas por CLI a nivel de proveedor
 - **Interfaz TUI** — Interfaz de terminal interactiva con modos Dashboard y legado
 - **Interfaz web de gestión** — Gestión visual desde el navegador para proveedores, perfiles y vinculaciones de proyectos
-- **Autoactualización** — Actualización con un solo comando vía `opencc upgrade` con coincidencia de versiones semver
+- **Verificación de actualizaciones** — Verificación automática no bloqueante de nuevas versiones al iniciar (caché de 24h)
+- **Autoactualización** — Actualización con un solo comando vía `zen upgrade` con coincidencia de versiones semver
 - **Autocompletado de Shell** — Compatible con zsh / bash / fish
 
 ## Instalación
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh
 ```
 
 Desinstalar:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall
 ```
 
 ## Inicio rápido
 
 ```sh
 # Abrir la interfaz TUI y crear el primer proveedor
-opencc config
+zen config
 
 # Iniciar (usando el perfil predeterminado)
-opencc
+zen
 
 # Usar un perfil específico
-opencc -p work
+zen -p work
 
 # Usar un CLI específico
-opencc --cli codex
+zen --cli codex
 ```
 
 ## Referencia de comandos
 
 | Comando | Descripción |
 |---------|-------------|
-| `opencc` | Iniciar CLI (usando vinculación de proyecto o configuración predeterminada) |
-| `opencc -p <profile>` | Iniciar con un perfil específico |
-| `opencc -p` | Seleccionar perfil interactivamente |
-| `opencc --cli <cli>` | Usar un CLI específico (claude/codex/opencode) |
-| `opencc use <provider>` | Usar directamente un proveedor específico (sin proxy) |
-| `opencc pick` | Seleccionar interactivamente un proveedor para iniciar |
-| `opencc list` | Listar todos los proveedores y perfiles |
-| `opencc config` | Abrir la interfaz TUI de configuración |
-| `opencc config --legacy` | Usar la interfaz TUI legada |
-| `opencc bind <profile>` | Vincular el directorio actual a un perfil |
-| `opencc bind --cli <cli>` | Vincular el directorio actual a un CLI específico |
-| `opencc unbind` | Eliminar la vinculación del directorio actual |
-| `opencc status` | Mostrar el estado de vinculación del directorio actual |
-| `opencc web start` | Iniciar la interfaz web de gestión |
-| `opencc web open` | Abrir la interfaz web en el navegador |
-| `opencc web stop` | Detener el servidor web |
-| `opencc web restart` | Reiniciar el servidor web |
-| `opencc upgrade` | Actualizar a la última versión |
-| `opencc version` | Mostrar versión |
+| `zen` | Iniciar CLI (usando vinculación de proyecto o configuración predeterminada) |
+| `zen -p <profile>` | Iniciar con un perfil específico |
+| `zen -p` | Seleccionar perfil interactivamente |
+| `zen --cli <cli>` | Usar un CLI específico (claude/codex/opencode) |
+| `zen use <provider>` | Usar directamente un proveedor específico (sin proxy) |
+| `zen pick` | Seleccionar interactivamente un proveedor para iniciar |
+| `zen list` | Listar todos los proveedores y perfiles |
+| `zen config` | Abrir la interfaz TUI de configuración |
+| `zen config --legacy` | Usar la interfaz TUI legada |
+| `zen bind <profile>` | Vincular el directorio actual a un perfil |
+| `zen bind --cli <cli>` | Vincular el directorio actual a un CLI específico |
+| `zen unbind` | Eliminar la vinculación del directorio actual |
+| `zen status` | Mostrar el estado de vinculación del directorio actual |
+| `zen web start` | Iniciar la interfaz web de gestión |
+| `zen web open` | Abrir la interfaz web en el navegador |
+| `zen web stop` | Detener el servidor web |
+| `zen web restart` | Reiniciar el servidor web |
+| `zen upgrade` | Actualizar a la última versión |
+| `zen version` | Mostrar versión |
 
 ## Soporte multi-CLI
 
-opencc es compatible con tres CLIs de asistentes de programación con IA:
+zen es compatible con tres CLIs de asistentes de programación con IA:
 
 | CLI | Descripción | Formato de API |
 |-----|-------------|----------------|
@@ -83,23 +84,23 @@ opencc es compatible con tres CLIs de asistentes de programación con IA:
 
 ```sh
 # Vía TUI
-opencc config  # Settings → Default CLI
+zen config  # Settings → Default CLI
 
 # Vía Web UI
-opencc web open  # Página de Settings
+zen web open  # Página de Settings
 ```
 
 ### CLI por proyecto
 
 ```sh
 cd ~/work/project
-opencc bind --cli codex  # Usar Codex para este directorio
+zen bind --cli codex  # Usar Codex para este directorio
 ```
 
 ### Usar otro CLI temporalmente
 
 ```sh
-opencc --cli opencode  # Usar OpenCode para esta sesión
+zen --cli opencode  # Usar OpenCode para esta sesión
 ```
 
 ## Gestión de perfiles
@@ -128,13 +129,13 @@ Un perfil es una lista ordenada de proveedores utilizada para conmutación por f
 
 ```sh
 # Usar perfil predeterminado
-opencc
+zen
 
 # Usar un perfil específico
-opencc -p work
+zen -p work
 
 # Selección interactiva
-opencc -p
+zen -p
 ```
 
 ## Vinculación de proyectos
@@ -145,19 +146,19 @@ Vincula directorios a perfiles y/o CLIs específicos para configuración automá
 cd ~/work/company-project
 
 # Vincular perfil
-opencc bind work-profile
+zen bind work-profile
 
 # Vincular CLI
-opencc bind --cli codex
+zen bind --cli codex
 
 # Vincular ambos
-opencc bind work-profile --cli codex
+zen bind work-profile --cli codex
 
 # Ver estado
-opencc status
+zen status
 
 # Eliminar vinculación
-opencc unbind
+zen unbind
 ```
 
 **Prioridad**: Argumentos de línea de comandos > Vinculación de proyecto > Predeterminado global
@@ -165,7 +166,7 @@ opencc unbind
 ## Interfaz TUI de configuración
 
 ```sh
-opencc config
+zen config
 ```
 
 v1.5 introduce una nueva interfaz Dashboard:
@@ -185,16 +186,16 @@ Usa `--legacy` para cambiar a la interfaz legada.
 
 ```sh
 # Iniciar (se ejecuta en segundo plano, puerto 19840)
-opencc web start
+zen web start
 
 # Abrir en el navegador
-opencc web open
+zen web open
 
 # Detener
-opencc web stop
+zen web stop
 
 # Reiniciar
-opencc web restart
+zen web restart
 ```
 
 Funcionalidades de la interfaz web:
@@ -277,15 +278,15 @@ Ejemplo de configuración:
 
 | Archivo | Descripción |
 |---------|-------------|
-| `~/.opencc/opencc.json` | Archivo de configuración principal |
-| `~/.opencc/proxy.log` | Registro del proxy |
-| `~/.opencc/web.log` | Registro del servidor web |
+| `~/.zen/zen.json` | Archivo de configuración principal |
+| `~/.zen/proxy.log` | Registro del proxy |
+| `~/.zen/web.log` | Registro del servidor web |
 
 ### Ejemplo de configuración completa
 
 ```json
 {
-  "version": 5,
+  "version": 6,
   "default_profile": "default",
   "default_cli": "claude",
   "web_port": 19840,
@@ -317,22 +318,24 @@ Ejemplo de configuración:
 
 ```sh
 # Última versión
-opencc upgrade
+zen upgrade
 
 # Versión específica
-opencc upgrade 1.5
-opencc upgrade 1.5.0
+zen upgrade 2.1
+zen upgrade 2.1.0
 ```
 
 ## Migración desde versiones anteriores
 
-Si usabas anteriormente el formato `~/.cc_envs/`, opencc migrará automáticamente a `~/.opencc/opencc.json`.
+GoZen migra automáticamente las configuraciones de versiones anteriores:
+- `~/.opencc/opencc.json` → `~/.zen/zen.json` (desde OpenCC v1.x)
+- `~/.cc_envs/` → `~/.zen/zen.json` (desde formato legado)
 
 ## Desarrollo
 
 ```sh
 # Compilar
-go build -o opencc .
+go build -o zen .
 
 # Probar
 go test ./...
@@ -341,8 +344,8 @@ go test ./...
 Publicación: Empuja un tag y GitHub Actions compilará automáticamente.
 
 ```sh
-git tag v1.5.1
-git push origin v1.5.1
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ## License

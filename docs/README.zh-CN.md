@@ -1,4 +1,4 @@
-# opencc
+# GoZen
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md)
 
@@ -7,71 +7,72 @@
 ## 功能
 
 - **多 CLI 支持** — 支持 Claude Code、Codex、OpenCode 三种 CLI，可按项目配置
-- **多配置管理** — 在 `~/.opencc/opencc.json` 中统一管理所有 API 配置
+- **多配置管理** — 在 `~/.zen/zen.json` 中统一管理所有 API 配置
 - **代理故障转移** — 内置 HTTP 代理，当主 provider 不可用时自动切换到备用
 - **场景路由** — 根据请求特征（thinking、image、longContext 等）智能路由
 - **项目绑定** — 将目录绑定到特定 profile 和 CLI，实现项目级自动配置
 - **环境变量配置** — 在 provider 级别为每个 CLI 单独配置环境变量
 - **TUI 配置界面** — 交互式终端界面，支持 Dashboard 和传统两种模式
 - **Web 管理界面** — 浏览器可视化管理 provider、profile 和项目绑定
-- **自更新** — `opencc upgrade` 一键升级，支持 semver 版本匹配
+- **版本更新检查** — 启动时自动非阻塞检查新版本（24 小时缓存）
+- **自更新** — `zen upgrade` 一键升级，支持 semver 版本匹配
 - **Shell 补全** — 支持 zsh / bash / fish
 
 ## 安装
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh
 ```
 
 卸载：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall
 ```
 
 ## 快速开始
 
 ```sh
 # 打开 TUI 配置界面，创建第一个 provider
-opencc config
+zen config
 
 # 启动（使用默认 profile）
-opencc
+zen
 
 # 使用指定 profile
-opencc -p work
+zen -p work
 
 # 使用指定 CLI
-opencc --cli codex
+zen --cli codex
 ```
 
 ## 命令一览
 
 | 命令 | 说明 |
 |------|------|
-| `opencc` | 启动 CLI（使用项目绑定或默认配置） |
-| `opencc -p <profile>` | 使用指定 profile 启动 |
-| `opencc -p` | 交互选择 profile |
-| `opencc --cli <cli>` | 使用指定 CLI（claude/codex/opencode） |
-| `opencc use <provider>` | 直接使用指定 provider（无代理） |
-| `opencc pick` | 交互选择 provider 启动 |
-| `opencc list` | 列出所有 provider 和 profile |
-| `opencc config` | 打开 TUI 配置界面 |
-| `opencc config --legacy` | 使用传统 TUI 界面 |
-| `opencc bind <profile>` | 绑定当前目录到 profile |
-| `opencc bind --cli <cli>` | 绑定当前目录使用指定 CLI |
-| `opencc unbind` | 解除当前目录绑定 |
-| `opencc status` | 显示当前目录绑定状态 |
-| `opencc web start` | 启动 Web 管理界面 |
-| `opencc web open` | 在浏览器中打开 Web 界面 |
-| `opencc web stop` | 停止 Web 服务 |
-| `opencc web restart` | 重启 Web 服务 |
-| `opencc upgrade` | 升级到最新版本 |
-| `opencc version` | 显示版本 |
+| `zen` | 启动 CLI（使用项目绑定或默认配置） |
+| `zen -p <profile>` | 使用指定 profile 启动 |
+| `zen -p` | 交互选择 profile |
+| `zen --cli <cli>` | 使用指定 CLI（claude/codex/opencode） |
+| `zen use <provider>` | 直接使用指定 provider（无代理） |
+| `zen pick` | 交互选择 provider 启动 |
+| `zen list` | 列出所有 provider 和 profile |
+| `zen config` | 打开 TUI 配置界面 |
+| `zen config --legacy` | 使用传统 TUI 界面 |
+| `zen bind <profile>` | 绑定当前目录到 profile |
+| `zen bind --cli <cli>` | 绑定当前目录使用指定 CLI |
+| `zen unbind` | 解除当前目录绑定 |
+| `zen status` | 显示当前目录绑定状态 |
+| `zen web start` | 启动 Web 管理界面 |
+| `zen web open` | 在浏览器中打开 Web 界面 |
+| `zen web stop` | 停止 Web 服务 |
+| `zen web restart` | 重启 Web 服务 |
+| `zen upgrade` | 升级到最新版本 |
+| `zen version` | 显示版本 |
 
 ## 多 CLI 支持
 
-opencc 支持三种 AI 编程助手 CLI：
+zen 支持三种 AI 编程助手 CLI：
 
 | CLI | 说明 | API 格式 |
 |-----|------|---------|
@@ -83,23 +84,23 @@ opencc 支持三种 AI 编程助手 CLI：
 
 ```sh
 # 通过 TUI
-opencc config  # Settings → Default CLI
+zen config  # Settings → Default CLI
 
 # 通过 Web UI
-opencc web open  # Settings 页面
+zen web open  # Settings 页面
 ```
 
 ### 按项目配置 CLI
 
 ```sh
 cd ~/work/project
-opencc bind --cli codex  # 该目录使用 Codex
+zen bind --cli codex  # 该目录使用 Codex
 ```
 
 ### 临时使用其他 CLI
 
 ```sh
-opencc --cli opencode  # 本次使用 OpenCode
+zen --cli opencode  # 本次使用 OpenCode
 ```
 
 ## Profile 管理
@@ -128,13 +129,13 @@ Profile 是一组 provider 的有序列表，用于故障转移。
 
 ```sh
 # 使用默认 profile
-opencc
+zen
 
 # 使用指定 profile
-opencc -p work
+zen -p work
 
 # 交互选择
-opencc -p
+zen -p
 ```
 
 ## 项目绑定
@@ -145,19 +146,19 @@ opencc -p
 cd ~/work/company-project
 
 # 绑定 profile
-opencc bind work-profile
+zen bind work-profile
 
 # 绑定 CLI
-opencc bind --cli codex
+zen bind --cli codex
 
 # 同时绑定
-opencc bind work-profile --cli codex
+zen bind work-profile --cli codex
 
 # 查看状态
-opencc status
+zen status
 
 # 解除绑定
-opencc unbind
+zen unbind
 ```
 
 **优先级**：命令行参数 > 项目绑定 > 全局默认
@@ -165,7 +166,7 @@ opencc unbind
 ## TUI 配置界面
 
 ```sh
-opencc config
+zen config
 ```
 
 v1.5 提供全新 Dashboard 界面：
@@ -185,16 +186,16 @@ v1.5 提供全新 Dashboard 界面：
 
 ```sh
 # 启动（后台运行，端口 19840）
-opencc web start
+zen web start
 
 # 打开浏览器
-opencc web open
+zen web open
 
 # 停止
-opencc web stop
+zen web stop
 
 # 重启
-opencc web restart
+zen web restart
 ```
 
 Web UI 功能：
@@ -277,15 +278,15 @@ Web UI 功能：
 
 | 文件 | 说明 |
 |------|------|
-| `~/.opencc/opencc.json` | 主配置文件 |
-| `~/.opencc/proxy.log` | 代理日志 |
-| `~/.opencc/web.log` | Web 服务日志 |
+| `~/.zen/zen.json` | 主配置文件 |
+| `~/.zen/proxy.log` | 代理日志 |
+| `~/.zen/web.log` | Web 服务日志 |
 
 ### 完整配置示例
 
 ```json
 {
-  "version": 5,
+  "version": 6,
   "default_profile": "default",
   "default_cli": "claude",
   "web_port": 19840,
@@ -317,22 +318,24 @@ Web UI 功能：
 
 ```sh
 # 最新版本
-opencc upgrade
+zen upgrade
 
 # 指定版本
-opencc upgrade 1.5
-opencc upgrade 1.5.0
+zen upgrade 2.1
+zen upgrade 2.1.0
 ```
 
 ## 从旧版迁移
 
-如果之前使用 `~/.cc_envs/` 格式，opencc 会自动迁移到 `~/.opencc/opencc.json`。
+GoZen 会自动从旧版本迁移配置：
+- `~/.opencc/opencc.json` → `~/.zen/zen.json`（从 OpenCC v1.x 迁移）
+- `~/.cc_envs/` → `~/.zen/zen.json`（从旧格式迁移）
 
 ## 开发
 
 ```sh
 # 构建
-go build -o opencc .
+go build -o zen .
 
 # 测试
 go test ./...
@@ -341,8 +344,8 @@ go test ./...
 发布：打 tag 后 GitHub Actions 自动构建。
 
 ```sh
-git tag v1.5.1
-git push origin v1.5.1
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ## License

@@ -122,10 +122,24 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Try direct copy first, fall back to sudo
+	usedSudo := false
 	if err := copyFile(binaryPath, binPath); err != nil {
 		fmt.Println("Need elevated privileges, trying sudo...")
 		if sudoErr := exec.Command("sudo", "cp", binaryPath, binPath).Run(); sudoErr != nil {
 			return fmt.Errorf("install failed: %w", sudoErr)
+		}
+		usedSudo = true
+	}
+
+	// On macOS, re-sign the binary to clear com.apple.provenance
+	// so Gatekeeper won't kill the downloaded binary
+	if runtime.GOOS == "darwin" {
+		codesignArgs := []string{"codesign", "--force", "--sign", "-", binPath}
+		if usedSudo {
+			codesignArgs = append([]string{"sudo"}, codesignArgs...)
+		}
+		if err := exec.Command(codesignArgs[0], codesignArgs[1:]...).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: ad-hoc codesign failed: %v\n", err)
 		}
 	}
 

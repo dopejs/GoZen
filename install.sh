@@ -222,6 +222,13 @@ do_install() {
   info "Installing opencc to ${BIN_TARGET}"
   $SUDO cp "${TMPDIR}/opencc" "$BIN_TARGET"
   $SUDO chmod +x "$BIN_TARGET"
+
+  # On macOS, ad-hoc codesign to clear com.apple.provenance
+  # so Gatekeeper won't kill the downloaded binary
+  if [ "$OS" = "darwin" ] && command -v codesign >/dev/null 2>&1; then
+    $SUDO codesign --force --sign - "$BIN_TARGET" 2>/dev/null || true
+  fi
+
   ok "Installed ${BIN_TARGET}"
 
   # Create envs dir

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
+	"github.com/dopejs/gozen/internal/update"
 	"github.com/dopejs/gozen/tui"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +26,8 @@ var stdinReader io.Reader = os.Stdin
 
 var Version = "2.0.0"
 
+var updateChecker *update.Checker
+
 var rootCmd = &cobra.Command{
 	Use:   "zen [cli args...]",
 	Short: "Multi-CLI environment switcher with proxy failover",
@@ -33,7 +36,23 @@ var rootCmd = &cobra.Command{
 	DisableFlagParsing: false,
 	SilenceUsage:       true,
 	SilenceErrors:      true,
-	RunE:               runProxy,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Skip update check for commands where it's not useful
+		name := cmd.Name()
+		if name == "upgrade" || name == "version" || name == "completion" {
+			return
+		}
+		updateChecker = update.NewChecker(Version)
+		updateChecker.Start()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if updateChecker != nil {
+			if msg := updateChecker.Notification(); msg != "" {
+				fmt.Fprint(os.Stderr, msg)
+			}
+		}
+	},
+	RunE: runProxy,
 }
 
 var cliFlag string

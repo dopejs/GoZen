@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,14 +29,6 @@ type LaunchModel struct {
 	selectedCLI     string
 	width           int
 	height          int
-
-	// Styles
-	titleStyle    lipgloss.Style
-	labelStyle    lipgloss.Style
-	itemStyle     lipgloss.Style
-	selectedStyle lipgloss.Style
-	helpStyle     lipgloss.Style
-	boxStyle      lipgloss.Style
 }
 
 // NewLaunchModel creates a new launch wizard.
@@ -70,27 +63,6 @@ func NewLaunchModel() LaunchModel {
 		cliCursor:       cliIdx,
 		selectedProfile: defaultProfile,
 		selectedCLI:     defaultCLI,
-		titleStyle: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("14")).
-			MarginBottom(1),
-		labelStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")).
-			MarginBottom(1),
-		itemStyle: lipgloss.NewStyle().
-			PaddingLeft(2).
-			Foreground(lipgloss.Color("7")),
-		selectedStyle: lipgloss.NewStyle().
-			PaddingLeft(0).
-			Foreground(lipgloss.Color("14")).
-			Bold(true),
-		helpStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8")).
-			MarginTop(2),
-		boxStyle: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("8")).
-			Padding(1, 2),
 	}
 }
 
@@ -147,82 +119,128 @@ func (m LaunchModel) Update(msg tea.Msg) (LaunchModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m LaunchModel) View() string {
-	// Use global layout dimensions
-	contentWidth, _, leftPadding, topPadding := LayoutDimensions(m.width, m.height)
-
-	title := m.titleStyle.Render("Launch")
-
-	// Calculate box widths - each box takes ~45% of content width
-	boxWidth := contentWidth * 42 / 100
-	if boxWidth < 30 {
-		boxWidth = 30
+	// Layout: 2 padding on each side, content fills the rest
+	sidePadding := 2
+	contentWidth := m.width - sidePadding*2
+	if contentWidth < 40 {
+		contentWidth = 40
 	}
 
-	// Profile list
-	profileLabel := m.labelStyle.Render("Select Profile:")
-	var profileList string
+	// Each pane takes half width, minus 1 for the divider
+	paneWidth := (contentWidth - 1) / 2
+
+	// Calculate pane height (reserve 1 for help bar)
+	paneHeight := m.height - 2
+	if paneHeight < 10 {
+		paneHeight = 10
+	}
+
+	// Styles
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("14"))
+
+	labelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8"))
+
+	itemStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("7"))
+
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("14")).
+		Bold(true)
+
+	dimStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8"))
+
+	// Build left pane (Profiles)
+	var leftContent strings.Builder
+	leftContent.WriteString(titleStyle.Render("Select Profile"))
+	leftContent.WriteString("\n")
+	leftContent.WriteString(labelStyle.Render("Choose a profile to use"))
+	leftContent.WriteString("\n\n")
+
 	for i, p := range m.profiles {
 		line := p
 		pc := config.GetProfileConfig(p)
 		if pc != nil && len(pc.Providers) > 0 {
-			line += fmt.Sprintf(" (%d providers)", len(pc.Providers))
+			line += dimStyle.Render(fmt.Sprintf(" (%d providers)", len(pc.Providers)))
 		}
 
 		if i == m.profileCursor {
 			if !m.focusOnCLI {
-				profileList += m.selectedStyle.Render("> "+line) + "\n"
+				leftContent.WriteString(selectedStyle.Render("> " + line))
 			} else {
-				profileList += m.itemStyle.Render("* "+line) + "\n"
+				leftContent.WriteString(itemStyle.Render("* " + line))
 			}
 		} else {
-			profileList += m.itemStyle.Render("  "+line) + "\n"
+			leftContent.WriteString(itemStyle.Render("  " + line))
 		}
+		leftContent.WriteString("\n")
 	}
-	profileBox := m.boxStyle.Width(boxWidth).Render(profileLabel + "\n" + profileList)
 
-	// CLI list
-	cliLabel := m.labelStyle.Render("Select CLI:")
+	// Build right pane (CLI)
+	var rightContent strings.Builder
+	rightContent.WriteString(titleStyle.Render("Select CLI"))
+	rightContent.WriteString("\n")
+	rightContent.WriteString(labelStyle.Render("Choose which CLI to launch"))
+	rightContent.WriteString("\n\n")
+
 	cliDescriptions := map[string]string{
-		"claude":   "Claude Code (Anthropic)",
-		"codex":    "Codex CLI (OpenAI)",
+		"claude":   "Claude Code",
+		"codex":    "Codex CLI",
 		"opencode": "OpenCode",
 	}
-	var cliList string
 	for i, c := range m.clis {
 		line := c
 		if desc, ok := cliDescriptions[c]; ok {
-			line += " - " + desc
+			line = desc + dimStyle.Render(" ("+c+")")
 		}
 
 		if i == m.cliCursor {
 			if m.focusOnCLI {
-				cliList += m.selectedStyle.Render("> "+line) + "\n"
+				rightContent.WriteString(selectedStyle.Render("> " + line))
 			} else {
-				cliList += m.itemStyle.Render("* "+line) + "\n"
+				rightContent.WriteString(itemStyle.Render("* " + line))
 			}
 		} else {
-			cliList += m.itemStyle.Render("  "+line) + "\n"
+			rightContent.WriteString(itemStyle.Render("  " + line))
+		}
+		rightContent.WriteString("\n")
+	}
+
+	// Style panes with padding
+	paneStyle := lipgloss.NewStyle().
+		Width(paneWidth).
+		Height(paneHeight).
+		Padding(1, 2)
+
+	leftPane := paneStyle.Render(leftContent.String())
+	rightPane := paneStyle.Render(rightContent.String())
+
+	// Thick vertical divider
+	dividerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+	var divider strings.Builder
+	for i := 0; i < paneHeight; i++ {
+		divider.WriteString(dividerStyle.Render("┃"))
+		if i < paneHeight-1 {
+			divider.WriteString("\n")
 		}
 	}
-	cliBox := m.boxStyle.Width(boxWidth).Render(cliLabel + "\n" + cliList)
 
-	// Help
-	help := m.helpStyle.Render("[Tab] switch  [Enter] launch  [Esc] back")
+	// Join panes with divider
+	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, divider.String(), rightPane)
 
-	// Layout
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		"",
-		lipgloss.JoinHorizontal(lipgloss.Top, profileBox, "  ", cliBox),
-		help,
-	)
+	// Add side padding
+	paddedContent := lipgloss.NewStyle().
+		PaddingLeft(sidePadding).
+		Render(mainContent)
 
-	// Apply padding
-	paddingStyle := lipgloss.NewStyle().
-		PaddingLeft(leftPadding).
-		PaddingTop(topPadding)
+	// Help bar at bottom
+	helpBar := RenderHelpBar("Tab/←→ switch pane • ↑↓ navigate • Enter launch • Esc back", m.width)
 
-	return paddingStyle.Render(content)
+	return paddedContent + "\n" + helpBar
 }
 
 // Refresh reloads profiles and CLIs.

@@ -2,6 +2,8 @@
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md)
 
+> **Go Zen** — 进入禅意般的心流编程状态。**Goes Env** — 无缝环境切换。谐音"够禅"。
+
 多 CLI 环境切换器，支持 Claude Code、Codex、OpenCode，带 API 代理自动故障转移。
 
 ## 功能

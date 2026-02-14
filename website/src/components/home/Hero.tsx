@@ -34,6 +34,10 @@ export function Hero() {
           <span className="mt-3 block">{t("hero.title")}</span>
         </h1>
 
+        <p className="mx-auto mb-2 max-w-2xl text-sm italic text-text-muted">
+          {t("hero.tagline")}
+        </p>
+
         <p className="mx-auto mb-10 max-w-2xl text-lg text-text-secondary">
           {t("hero.subtitle")}
         </p>

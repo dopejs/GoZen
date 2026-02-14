@@ -6,6 +6,7 @@
   },
   "hero": {
     "title": "多 CLI 环境切换器",
+    "tagline": "Go Zen — 进入禅意般的心流编程状态。Goes Env — 无缝环境切换。谐音「够禅」。",
     "subtitle": "统一管理 Claude Code、Codex、OpenCode 配置，带 API 代理自动故障转移",
     "install": "安装",
     "getDocs": "查看文档",

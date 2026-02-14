@@ -2,6 +2,8 @@
 
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
+> **Go Zen** — entra en un estado de flujo zen para programar. **Goes Env** — cambio de entorno fluido.
+
 Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutación automática por fallos en el proxy de API.
 
 ## Características

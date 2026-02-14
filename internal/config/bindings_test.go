@@ -168,6 +168,86 @@ func TestProjectBindingPersistence(t *testing.T) {
 	}
 }
 
+func TestProjectBindingSymlinkDedup(t *testing.T) {
+	home := setTestHome(t)
+
+	// Create a test profile
+	err := SetProfileConfig("sym-profile", &ProfileConfig{
+		Providers: []string{"test-provider"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a real directory and a symlink pointing to it
+	realDir := filepath.Join(home, "real-project")
+	if err := os.MkdirAll(realDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(home, "link-project")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	// Resolve realDir so comparison works on systems where tmpdir is itself a symlink
+	// (e.g. macOS /var -> /private/var)
+	resolvedRealDir, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(realDir) error: %v", err)
+	}
+
+	// Bind via the real path
+	err = BindProject(realDir, "sym-profile", "claude")
+	if err != nil {
+		t.Fatalf("BindProject(realDir) error: %v", err)
+	}
+
+	// Lookup via the symlink path should find the same binding
+	binding := GetProjectBinding(linkDir)
+	if binding == nil {
+		t.Fatal("GetProjectBinding(linkDir) returned nil, expected to find binding via symlink")
+	}
+	if binding.Profile != "sym-profile" {
+		t.Errorf("binding.Profile = %q, want %q", binding.Profile, "sym-profile")
+	}
+
+	// Rebind via the symlink path should update, not duplicate
+	err = BindProject(linkDir, "sym-profile", "codex")
+	if err != nil {
+		t.Fatalf("BindProject(linkDir) error: %v", err)
+	}
+
+	allBindings := GetAllProjectBindings()
+	count := 0
+	for p := range allBindings {
+		if p == resolvedRealDir {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 binding for resolvedRealDir, got %d (bindings: %v)", count, allBindings)
+	}
+
+	// Verify the CLI was updated
+	binding = GetProjectBinding(realDir)
+	if binding == nil {
+		t.Fatal("GetProjectBinding(realDir) returned nil after rebind")
+	}
+	if binding.CLI != "codex" {
+		t.Errorf("binding.CLI = %q, want %q after rebind via symlink", binding.CLI, "codex")
+	}
+
+	// Unbind via symlink should remove the binding
+	err = UnbindProject(linkDir)
+	if err != nil {
+		t.Fatalf("UnbindProject(linkDir) error: %v", err)
+	}
+	binding = GetProjectBinding(realDir)
+	if binding != nil {
+		t.Error("GetProjectBinding(realDir) should be nil after unbind via symlink")
+	}
+}
+
 func TestConfigVersionWithBindings(t *testing.T) {
 	home := setTestHome(t)
 	configPath := filepath.Join(home, ConfigDir, ConfigFile)

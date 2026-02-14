@@ -11,11 +11,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var configLegacyUI bool
+
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage providers and profiles",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		err := tui.RunConfigMain()
+		if configLegacyUI {
+			err := tui.RunConfigMain()
+			if err != nil && err.Error() == "cancelled" {
+				return nil
+			}
+			return err
+		}
+		_, err := tui.RunNewApp()
 		if err != nil && err.Error() == "cancelled" {
 			return nil
 		}
@@ -184,8 +193,9 @@ func deleteGroup(name string) error {
 		}
 	}
 
-	if name == "default" {
-		fmt.Println("Cannot delete the default profile.")
+	defaultProfile := config.GetDefaultProfile()
+	if name == defaultProfile {
+		fmt.Printf("Cannot delete the default profile '%s'.\n", defaultProfile)
 		return nil
 	}
 
@@ -326,6 +336,8 @@ func editGroup(name string) error {
 }
 
 func init() {
+	configCmd.Flags().BoolVar(&configLegacyUI, "legacy", false, "use legacy TUI interface")
+
 	configAddCmd.AddCommand(configAddProviderCmd)
 	configAddCmd.AddCommand(configAddGroupCmd)
 

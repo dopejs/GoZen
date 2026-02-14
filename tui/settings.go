@@ -1,0 +1,180 @@
+package tui
+
+import (
+	"fmt"
+	"strconv"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/opencc/tui/components"
+)
+
+// SettingsModel is the global settings screen.
+type SettingsModel struct {
+	form     components.FormModel
+	width    int
+	height   int
+	profiles []string
+	saved    bool
+	err      string
+
+	// Styles
+	titleStyle  lipgloss.Style
+	helpStyle   lipgloss.Style
+	statusStyle lipgloss.Style
+}
+
+// SettingsSavedMsg is sent when settings are saved.
+type SettingsSavedMsg struct{}
+
+// SettingsCancelledMsg is sent when settings are cancelled.
+type SettingsCancelledMsg struct{}
+
+// NewSettingsModel creates a new settings screen.
+func NewSettingsModel() SettingsModel {
+	profiles := config.ListProfiles()
+	currentProfile := config.GetDefaultProfile()
+	currentCLI := config.GetDefaultCLI()
+	currentPort := config.GetWebPort()
+
+	fields := []components.Field{
+		{
+			Key:     "default_cli",
+			Label:   "Default CLI",
+			Type:    components.FieldSelect,
+			Value:   currentCLI,
+			Options: []string{"claude", "codex", "opencode"},
+		},
+		{
+			Key:     "default_profile",
+			Label:   "Default Profile",
+			Type:    components.FieldSelect,
+			Value:   currentProfile,
+			Options: profiles,
+		},
+		{
+			Key:         "web_port",
+			Label:       "Web UI Port",
+			Type:        components.FieldText,
+			Value:       strconv.Itoa(currentPort),
+			Placeholder: "19840",
+		},
+	}
+
+	form := components.NewForm(fields)
+
+	return SettingsModel{
+		form:     form,
+		profiles: profiles,
+		titleStyle: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("14")).
+			MarginBottom(1),
+		helpStyle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			MarginTop(1),
+		statusStyle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("10")),
+	}
+}
+
+// Init implements tea.Model.
+func (m SettingsModel) Init() tea.Cmd {
+	return m.form.Init()
+}
+
+// Update implements tea.Model.
+func (m SettingsModel) Update(msg tea.Msg) (SettingsModel, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.form.SetSize(msg.Width-4, msg.Height-10)
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+s":
+			return m, m.save()
+		case "esc":
+			return m, func() tea.Msg { return SettingsCancelledMsg{} }
+		}
+	}
+
+	var cmd tea.Cmd
+	m.form, cmd = m.form.Update(msg)
+	return m, cmd
+}
+
+func (m SettingsModel) save() tea.Cmd {
+	values := m.form.GetValues()
+
+	// Validate and save default CLI
+	if cli := values["default_cli"]; cli != "" {
+		if err := config.SetDefaultCLI(cli); err != nil {
+			m.err = err.Error()
+			return nil
+		}
+	}
+
+	// Validate and save default profile
+	if profile := values["default_profile"]; profile != "" {
+		if err := config.SetDefaultProfile(profile); err != nil {
+			m.err = err.Error()
+			return nil
+		}
+	}
+
+	// Validate and save web port
+	if portStr := values["web_port"]; portStr != "" {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			m.err = "Invalid port number"
+			return nil
+		}
+		if port < 1024 || port > 65535 {
+			m.err = "Port must be between 1024 and 65535"
+			return nil
+		}
+		if err := config.SetWebPort(port); err != nil {
+			m.err = err.Error()
+			return nil
+		}
+	}
+
+	m.saved = true
+	return func() tea.Msg { return SettingsSavedMsg{} }
+}
+
+// View implements tea.Model.
+func (m SettingsModel) View() string {
+	title := m.titleStyle.Render("Settings")
+
+	formView := m.form.View()
+
+	help := m.helpStyle.Render("[Tab] next  [Shift+Tab] prev  [Ctrl+S] save  [Esc] back")
+
+	var status string
+	if m.saved {
+		status = m.statusStyle.Render("Settings saved!")
+	}
+	if m.err != "" {
+		status = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: " + m.err)
+	}
+
+	content := fmt.Sprintf("%s\n\n%s\n%s", title, formView, help)
+	if status != "" {
+		content += "\n" + status
+	}
+
+	return content
+}
+
+// Refresh reloads settings from config.
+func (m *SettingsModel) Refresh() {
+	m.profiles = config.ListProfiles()
+	m.form.SetValue("default_cli", config.GetDefaultCLI())
+	m.form.SetValue("default_profile", config.GetDefaultProfile())
+	m.form.SetValue("web_port", strconv.Itoa(config.GetWebPort()))
+	m.saved = false
+	m.err = ""
+}

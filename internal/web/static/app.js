@@ -26,6 +26,7 @@
   var allProviderNames = [];
   var editingProvider = null;
   var editingProfile = null;
+  var settings = null;
 
   // --- Init ---
   document.addEventListener("DOMContentLoaded", init);
@@ -36,6 +37,7 @@
     setupAutocomplete();
     setupEnvVars();
     setupLogs();
+    setupSettings();
     document.getElementById("btn-add-provider").addEventListener("click", openAddProvider);
     document.getElementById("btn-add-profile").addEventListener("click", openAddProfile);
     document.getElementById("provider-form").addEventListener("submit", submitProvider);
@@ -48,6 +50,7 @@
     loadHealth();
     loadProviders();
     loadProfiles();
+    loadSettings();
   }
 
   // --- Navigation (hash-based routing) ---
@@ -78,6 +81,10 @@
     // Load logs when switching to logs tab
     if (tab === "logs") {
       loadLogs();
+    }
+    // Load settings when switching to settings tab
+    if (tab === "settings") {
+      loadSettings();
     }
   }
 
@@ -964,5 +971,70 @@
     if (code >= 400 && code < 500) return 'status-4xx';
     if (code >= 500) return 'status-5xx';
     return '';
+  }
+
+  // --- Settings ---
+  function setupSettings() {
+    document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
+  }
+
+  function loadSettings() {
+    fetch(API + "/settings")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        settings = data;
+        renderSettings(data);
+      })
+      .catch(function(err) {
+        console.error("Failed to load settings:", err);
+      });
+  }
+
+  function renderSettings(data) {
+    // Default CLI
+    var cliSelect = document.getElementById("settings-default-cli");
+    cliSelect.value = data.default_cli || "claude";
+
+    // Default Profile
+    var profileSelect = document.getElementById("settings-default-profile");
+    profileSelect.innerHTML = "";
+    (data.profiles || []).forEach(function(p) {
+      var opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      if (p === data.default_profile) opt.selected = true;
+      profileSelect.appendChild(opt);
+    });
+
+    // Web Port
+    document.getElementById("settings-web-port").value = data.web_port || 19840;
+  }
+
+  function saveSettings(e) {
+    e.preventDefault();
+
+    var payload = {
+      default_cli: document.getElementById("settings-default-cli").value,
+      default_profile: document.getElementById("settings-default-profile").value,
+      web_port: parseInt(document.getElementById("settings-web-port").value, 10)
+    };
+
+    fetch(API + "/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || "Failed to save"); });
+        return r.json();
+      })
+      .then(function(data) {
+        settings = data;
+        renderSettings(data);
+        showToast("Settings saved", "success");
+      })
+      .catch(function(err) {
+        showToast(err.message, "error");
+      });
   }
 })();

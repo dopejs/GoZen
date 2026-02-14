@@ -10,7 +10,8 @@ import (
 	"text/template"
 )
 
-const launchdLabel = "com.dopejs.opencc-web"
+const launchdLabel = "com.dopejs.zen-web"
+const legacyLaunchdLabel = "com.dopejs.opencc-web"
 
 func launchdPlistPath() string {
 	home, _ := os.UserHomeDir()
@@ -39,7 +40,7 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <string>{{.LogPath}}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>OPENCC_WEB_DAEMON</key>
+    <key>GOZEN_WEB_DAEMON</key>
     <string>1</string>
   </dict>
 </dict>
@@ -48,6 +49,13 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 
 // EnableService installs and loads the launchd plist on macOS.
 func EnableService() error {
+	// Clean up legacy opencc-web plist if it exists
+	legacyPlistPath := filepath.Join(filepath.Dir(launchdPlistPath()), legacyLaunchdLabel+".plist")
+	if _, err := os.Stat(legacyPlistPath); err == nil {
+		exec.Command("launchctl", "unload", legacyPlistPath).Run()
+		os.Remove(legacyPlistPath)
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot determine executable path: %w", err)

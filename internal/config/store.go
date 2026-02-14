@@ -12,17 +12,17 @@ import (
 
 // --- Path helpers ---
 
-// ConfigDirPath returns ~/.opencc
+// ConfigDirPath returns ~/.zen
 func ConfigDirPath() string {
 	return filepath.Join(os.Getenv("HOME"), ConfigDir)
 }
 
-// ConfigFilePath returns ~/.opencc/opencc.json
+// ConfigFilePath returns ~/.zen/zen.json
 func ConfigFilePath() string {
 	return filepath.Join(ConfigDirPath(), ConfigFile)
 }
 
-// LogPath returns ~/.opencc/proxy.log
+// LogPath returns ~/.zen/proxy.log
 func LogPath() string {
 	return filepath.Join(ConfigDirPath(), "proxy.log")
 }
@@ -30,6 +30,16 @@ func LogPath() string {
 // legacyDirPath returns ~/.cc_envs
 func legacyDirPath() string {
 	return filepath.Join(os.Getenv("HOME"), LegacyDir)
+}
+
+// legacyOpenCCDirPath returns ~/.opencc
+func legacyOpenCCDirPath() string {
+	return filepath.Join(os.Getenv("HOME"), LegacyOpenCCDir)
+}
+
+// legacyOpenCCFilePath returns ~/.opencc/opencc.json
+func legacyOpenCCFilePath() string {
+	return filepath.Join(legacyOpenCCDirPath(), LegacyOpenCCFile)
 }
 
 // --- Store ---
@@ -370,8 +380,8 @@ func (s *Store) loadLocked() error {
 
 		// Check config version
 		if cfg.Version > CurrentConfigVersion {
-			// Config is newer than this version of opencc can handle
-			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade opencc to the latest version",
+			// Config is newer than this version of zen can handle
+			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade zen to the latest version",
 				cfg.Version, CurrentConfigVersion)
 		}
 		if cfg.Version < CurrentConfigVersion {
@@ -397,7 +407,20 @@ func (s *Store) loadLocked() error {
 		return fmt.Errorf("failed to read %s: %w", s.path, err)
 	}
 
-	// JSON doesn't exist — try legacy migration
+	// Try migrating from legacy ~/.opencc/ directory
+	legacyOpenCCPath := legacyOpenCCFilePath()
+	if _, statErr := os.Stat(legacyOpenCCPath); statErr == nil {
+		cfg, migrateErr := MigrateFromOpenCC()
+		if migrateErr != nil {
+			return fmt.Errorf("migration from ~/.opencc failed: %w", migrateErr)
+		}
+		if cfg != nil {
+			s.config = cfg
+			return s.saveLocked()
+		}
+	}
+
+	// JSON doesn't exist — try legacy migration from ~/.cc_envs
 	legacyDir := legacyDirPath()
 	if info, statErr := os.Stat(legacyDir); statErr == nil && info.IsDir() {
 		cfg, migrateErr := MigrateFromLegacy()
@@ -449,7 +472,7 @@ func (s *Store) saveLocked() error {
 	}
 	data = append(data, '\n')
 
-	tmp, err := os.CreateTemp(dir, "opencc-*.json")
+	tmp, err := os.CreateTemp(dir, "zen-*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

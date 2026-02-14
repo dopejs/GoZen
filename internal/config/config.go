@@ -6,9 +6,13 @@ import (
 )
 
 const (
-	ConfigDir  = ".opencc"
-	ConfigFile = "opencc.json"
+	ConfigDir  = ".zen"
+	ConfigFile = "zen.json"
 	LegacyDir  = ".cc_envs"
+
+	// LegacyOpenCCDir is the old config directory name used before the GoZen rename.
+	LegacyOpenCCDir  = ".opencc"
+	LegacyOpenCCFile = "opencc.json"
 
 	DefaultWebPort = 19840
 	WebPidFile     = "web.pid"
@@ -233,7 +237,8 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 3 (v1.4.0+): project bindings support
 // - Version 4 (v1.5.0+): default profile and web port settings
 // - Version 5 (v1.5.0+): project bindings with CLI support
-const CurrentConfigVersion = 5
+// - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
+const CurrentConfigVersion = 6
 
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {

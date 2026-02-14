@@ -2,6 +2,8 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,4 +127,64 @@ func parseLegacyConfFile(path string) ([]string, error) {
 		names = append(names, line)
 	}
 	return names, scanner.Err()
+}
+
+// MigrateFromOpenCC reads the legacy ~/.opencc/opencc.json and converts it
+// to the new config format. Also copies auxiliary files (logs, PID files, DB)
+// from ~/.opencc/ to ~/.zen/.
+func MigrateFromOpenCC() (*OpenCCConfig, error) {
+	oldPath := legacyOpenCCFilePath()
+	data, err := os.ReadFile(oldPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+
+	cfg.Version = CurrentConfigVersion
+
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[string]*ProviderConfig)
+	}
+	if cfg.Profiles == nil {
+		cfg.Profiles = make(map[string]*ProfileConfig)
+	}
+
+	// Copy auxiliary files from ~/.opencc/ to ~/.zen/
+	newDir := ConfigDirPath()
+	if err := os.MkdirAll(newDir, 0755); err != nil {
+		return nil, err
+	}
+
+	oldDir := legacyOpenCCDirPath()
+	auxiliaryFiles := []string{"proxy.log", "web.log", "*.pid", "*.db"}
+	for _, pattern := range auxiliaryFiles {
+		matches, _ := filepath.Glob(filepath.Join(oldDir, pattern))
+		for _, src := range matches {
+			dst := filepath.Join(newDir, filepath.Base(src))
+			copyFile(src, dst)
+		}
+	}
+
+	return &cfg, nil
+}
+
+// copyFile copies a single file from src to dst, ignoring errors.
+func copyFile(src, dst string) {
+	in, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer out.Close()
+
+	io.Copy(out, in)
 }

@@ -471,7 +471,7 @@ func TestConfigDirPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	got := ConfigDirPath()
-	if got != dir+"/.opencc" {
+	if got != dir+"/.zen" {
 		t.Errorf("ConfigDirPath() = %q", got)
 	}
 }
@@ -480,7 +480,7 @@ func TestConfigFilePath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	got := ConfigFilePath()
-	if got != dir+"/.opencc/opencc.json" {
+	if got != dir+"/.zen/zen.json" {
 		t.Errorf("ConfigFilePath() = %q", got)
 	}
 }
@@ -489,7 +489,7 @@ func TestLogPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	got := LogPath()
-	if got != dir+"/.opencc/proxy.log" {
+	if got != dir+"/.zen/proxy.log" {
 		t.Errorf("LogPath() = %q", got)
 	}
 }
@@ -1113,5 +1113,70 @@ func TestOpenCCConfigMarshalRoundTrip(t *testing.T) {
 
 	if cfg2.ProjectBindings["/a"] == nil || cfg2.ProjectBindings["/a"].Profile != "prof1" {
 		t.Errorf("round-trip failed: /a = %+v", cfg2.ProjectBindings["/a"])
+	}
+}
+
+func TestMigrateFromOpenCC(t *testing.T) {
+	home := setTestHome(t)
+
+	// Create legacy ~/.opencc/opencc.json with v5 config
+	legacyDir := filepath.Join(home, ".opencc")
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	v5Config := `{
+  "version": 5,
+  "providers": {
+    "main": {
+      "base_url": "https://api.example.com",
+      "auth_token": "tok-123"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["main"]
+    }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(legacyDir, "opencc.json"), []byte(v5Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an auxiliary file to verify it gets copied
+	if err := os.WriteFile(filepath.Join(legacyDir, "proxy.log"), []byte("log data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load should migrate from ~/.opencc/ to ~/.zen/
+	store := DefaultStore()
+
+	// Verify provider was loaded
+	if p := store.GetProvider("main"); p == nil {
+		t.Fatal("expected provider 'main' to be loaded after migration")
+	}
+
+	// Verify new config file exists at ~/.zen/zen.json
+	newConfigPath := filepath.Join(home, ".zen", "zen.json")
+	data, err := os.ReadFile(newConfigPath)
+	if err != nil {
+		t.Fatalf("new config file should exist: %v", err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("migrated config version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+
+	// Verify auxiliary file was copied
+	logData, err := os.ReadFile(filepath.Join(home, ".zen", "proxy.log"))
+	if err != nil {
+		t.Fatalf("proxy.log should have been copied: %v", err)
+	}
+	if string(logData) != "log data" {
+		t.Errorf("proxy.log content = %q, want %q", string(logData), "log data")
 	}
 }

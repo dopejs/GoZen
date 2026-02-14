@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -403,3 +405,153 @@ func TestValidateProviderNamesConfirmYes(t *testing.T) {
 		t.Errorf("expected [a], got %v", valid)
 	}
 }
+
+// --- CLI type and environment tests ---
+
+func TestGetCLIType(t *testing.T) {
+	tests := []struct {
+		cliBin   string
+		expected CLIType
+	}{
+		{"claude", CLIClaude},
+		{"codex", CLICodex},
+		{"opencode", CLIOpenCode},
+		{"", CLIClaude},       // default
+		{"unknown", CLIClaude}, // fallback to default
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.cliBin, func(t *testing.T) {
+			got := GetCLIType(tt.cliBin)
+			if got != tt.expected {
+				t.Errorf("GetCLIType(%q) = %q, want %q", tt.cliBin, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetCLIClientFormat(t *testing.T) {
+	tests := []struct {
+		cliType  CLIType
+		expected string
+	}{
+		{CLIClaude, config.ProviderTypeAnthropic},
+		{CLICodex, config.ProviderTypeOpenAI},
+		{CLIOpenCode, config.ProviderTypeAnthropic},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.cliType), func(t *testing.T) {
+			got := GetCLIClientFormat(tt.cliType)
+			if got != tt.expected {
+				t.Errorf("GetCLIClientFormat(%q) = %q, want %q", tt.cliType, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSetupCLIEnvironment_Claude(t *testing.T) {
+	// Clear env vars before test
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+	os.Unsetenv("OPENAI_BASE_URL")
+	os.Unsetenv("OPENAI_API_KEY")
+
+	logger := discardLogger()
+	proxyURL := "http://127.0.0.1:12345"
+
+	setupCLIEnvironment("claude", proxyURL, logger)
+
+	// Claude should set Anthropic env vars
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
+	}
+	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "opencc-proxy" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "opencc-proxy")
+	}
+
+	// OpenAI env vars should not be set
+	if got := os.Getenv("OPENAI_BASE_URL"); got != "" {
+		t.Errorf("OPENAI_BASE_URL should not be set for Claude, got %q", got)
+	}
+}
+
+func TestSetupCLIEnvironment_Codex(t *testing.T) {
+	// Clear env vars before test
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+	os.Unsetenv("OPENAI_BASE_URL")
+	os.Unsetenv("OPENAI_API_KEY")
+
+	logger := discardLogger()
+	proxyURL := "http://127.0.0.1:12345"
+
+	setupCLIEnvironment("codex", proxyURL, logger)
+
+	// Codex should set OpenAI env vars
+	if got := os.Getenv("OPENAI_BASE_URL"); got != proxyURL {
+		t.Errorf("OPENAI_BASE_URL = %q, want %q", got, proxyURL)
+	}
+	if got := os.Getenv("OPENAI_API_KEY"); got != "opencc-proxy" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "opencc-proxy")
+	}
+
+	// Anthropic env vars should not be set
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != "" {
+		t.Errorf("ANTHROPIC_BASE_URL should not be set for Codex, got %q", got)
+	}
+}
+
+func TestSetupCLIEnvironment_OpenCode(t *testing.T) {
+	// Clear env vars before test
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_API_KEY")
+	os.Unsetenv("OPENAI_BASE_URL")
+	os.Unsetenv("OPENAI_API_KEY")
+
+	logger := discardLogger()
+	proxyURL := "http://127.0.0.1:12345"
+
+	setupCLIEnvironment("opencode", proxyURL, logger)
+
+	// OpenCode should set both Anthropic and OpenAI env vars
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
+	}
+	if got := os.Getenv("ANTHROPIC_API_KEY"); got != "opencc-proxy" {
+		t.Errorf("ANTHROPIC_API_KEY = %q, want %q", got, "opencc-proxy")
+	}
+	if got := os.Getenv("OPENAI_BASE_URL"); got != proxyURL {
+		t.Errorf("OPENAI_BASE_URL = %q, want %q", got, proxyURL)
+	}
+	if got := os.Getenv("OPENAI_API_KEY"); got != "opencc-proxy" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "opencc-proxy")
+	}
+}
+
+func TestSetupCLIEnvironment_UnknownCLI(t *testing.T) {
+	// Clear env vars before test
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+	os.Unsetenv("OPENAI_BASE_URL")
+	os.Unsetenv("OPENAI_API_KEY")
+
+	logger := discardLogger()
+	proxyURL := "http://127.0.0.1:12345"
+
+	// Unknown CLI should default to Claude behavior
+	setupCLIEnvironment("some-unknown-cli", proxyURL, logger)
+
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
+	}
+	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "opencc-proxy" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "opencc-proxy")
+	}
+}
+
+// discardLogger returns a logger that discards all output.
+func discardLogger() *log.Logger {
+	return log.New(io.Discard, "", 0)
+}
+

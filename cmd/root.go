@@ -145,13 +145,9 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 
 	logger.Printf("Proxy listening on 127.0.0.1:%d", port)
 
-	// Set environment for claude — proxy handles model mapping per-provider
-	os.Setenv("ANTHROPIC_BASE_URL", fmt.Sprintf("http://127.0.0.1:%d", port))
-	os.Setenv("ANTHROPIC_AUTH_TOKEN", "opencc-proxy")
-
-	// Merge env_vars from all providers to Claude Code
+	// Merge env_vars from all providers to CLI
 	// For ANTHROPIC_MAX_CONTEXT_WINDOW, use the minimum value across all providers
-	// This ensures Claude Code respects the most restrictive provider's limit
+	// This ensures the CLI respects the most restrictive provider's limit
 	mergedEnvVars := mergeProviderEnvVars(providers)
 	for k, v := range mergedEnvVars {
 		os.Setenv(k, v)
@@ -163,6 +159,10 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 	if cliBin == "" {
 		cliBin = "claude"
 	}
+
+	// Set environment variables based on CLI type
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	setupCLIEnvironment(cliBin, proxyURL, logger)
 
 	// Find CLI binary
 	cliPath, err := exec.LookPath(cliBin)
@@ -500,3 +500,64 @@ func validateProviderNames(names []string, profile string) ([]string, error) {
 
 	return valid, nil
 }
+
+// CLIType represents the type of CLI being used.
+type CLIType string
+
+const (
+	CLIClaude   CLIType = "claude"
+	CLICodex    CLIType = "codex"
+	CLIOpenCode CLIType = "opencode"
+)
+
+// GetCLIType returns the CLI type from the binary name.
+func GetCLIType(cliBin string) CLIType {
+	switch cliBin {
+	case "codex":
+		return CLICodex
+	case "opencode":
+		return CLIOpenCode
+	default:
+		return CLIClaude
+	}
+}
+
+// GetCLIClientFormat returns the API format used by the CLI.
+func GetCLIClientFormat(cliType CLIType) string {
+	switch cliType {
+	case CLICodex:
+		return config.ProviderTypeOpenAI
+	default:
+		// Claude Code and OpenCode use Anthropic format by default
+		return config.ProviderTypeAnthropic
+	}
+}
+
+// setupCLIEnvironment sets the appropriate environment variables for the CLI.
+func setupCLIEnvironment(cliBin string, proxyURL string, logger *log.Logger) {
+	cliType := GetCLIType(cliBin)
+
+	switch cliType {
+	case CLICodex:
+		// Codex uses OpenAI environment variables
+		os.Setenv("OPENAI_BASE_URL", proxyURL)
+		os.Setenv("OPENAI_API_KEY", "opencc-proxy")
+		logger.Printf("Setting Codex env: OPENAI_BASE_URL=%s", proxyURL)
+
+	case CLIOpenCode:
+		// OpenCode supports multiple providers, set both
+		// It will use the appropriate one based on the model prefix
+		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)
+		os.Setenv("ANTHROPIC_API_KEY", "opencc-proxy")
+		os.Setenv("OPENAI_BASE_URL", proxyURL)
+		os.Setenv("OPENAI_API_KEY", "opencc-proxy")
+		logger.Printf("Setting OpenCode env: ANTHROPIC_BASE_URL=%s, OPENAI_BASE_URL=%s", proxyURL, proxyURL)
+
+	default:
+		// Claude Code uses Anthropic environment variables
+		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)
+		os.Setenv("ANTHROPIC_AUTH_TOKEN", "opencc-proxy")
+		logger.Printf("Setting Claude env: ANTHROPIC_BASE_URL=%s", proxyURL)
+	}
+}
+

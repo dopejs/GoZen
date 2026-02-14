@@ -39,11 +39,12 @@ func main() {
 	// Step 2: Download and install zen
 	downloadZen()
 
-	// Step 3: Stop opencc web daemon
-	stopDaemon(oldDir, newDir)
-
-	// Step 4: Remove opencc web system service
+	// Step 3: Remove opencc web system service (before stopping daemon,
+	// otherwise the service may auto-restart the daemon)
 	removed := removeService()
+
+	// Step 4: Stop opencc web daemon
+	stopDaemon(oldDir, newDir)
 
 	// Re-enable service under new name if old one existed
 	if removed {
@@ -212,10 +213,53 @@ func downloadZen() {
 	fmt.Println("done")
 }
 
-// --- Step 3: Stop daemon ---
+// --- Step 3: Remove service (platform-specific, before stopping daemon) ---
+
+func removeService() bool {
+	step(3, 5, "Removing opencc web system service ... ")
+
+	removed := false
+
+	switch runtime.GOOS {
+	case "darwin":
+		home, _ := os.UserHomeDir()
+		plist := filepath.Join(home, "Library", "LaunchAgents", "com.dopejs.opencc-web.plist")
+		if _, err := os.Stat(plist); err == nil {
+			exec.Command("launchctl", "unload", plist).Run()
+			os.Remove(plist)
+			removed = true
+		}
+
+	case "linux":
+		home, _ := os.UserHomeDir()
+		unit := filepath.Join(home, ".config", "systemd", "user", "opencc-web.service")
+		if _, err := os.Stat(unit); err == nil {
+			exec.Command("systemctl", "--user", "stop", "opencc-web.service").Run()
+			exec.Command("systemctl", "--user", "disable", "opencc-web.service").Run()
+			os.Remove(unit)
+			exec.Command("systemctl", "--user", "daemon-reload").Run()
+			removed = true
+		}
+
+	case "windows":
+		if err := exec.Command("schtasks", "/query", "/tn", "opencc-web").Run(); err == nil {
+			exec.Command("schtasks", "/delete", "/tn", "opencc-web", "/f").Run()
+			removed = true
+		}
+	}
+
+	if removed {
+		fmt.Println("done")
+	} else {
+		fmt.Println("not found")
+	}
+	return removed
+}
+
+// --- Step 4: Stop daemon ---
 
 func stopDaemon(oldDir, newDir string) {
-	step(3, 5, "Stopping opencc web daemon ... ")
+	step(4, 5, "Stopping opencc web daemon ... ")
 
 	stopped := false
 	for _, dir := range []string{oldDir, newDir} {
@@ -251,57 +295,13 @@ func stopDaemon(oldDir, newDir string) {
 	}
 }
 
-// --- Step 4: Remove service (platform-specific) ---
-
-func removeService() bool {
-	step(4, 5, "Removing opencc web system service ... ")
-
-	removed := false
-
-	switch runtime.GOOS {
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.dopejs.opencc-web.plist")
-		if _, err := os.Stat(plist); err == nil {
-			exec.Command("launchctl", "unload", plist).Run()
-			os.Remove(plist)
-			removed = true
-		}
-
-	case "linux":
-		home, _ := os.UserHomeDir()
-		unit := filepath.Join(home, ".config", "systemd", "user", "opencc-web.service")
-		if _, err := os.Stat(unit); err == nil {
-			exec.Command("systemctl", "--user", "stop", "opencc-web.service").Run()
-			exec.Command("systemctl", "--user", "disable", "opencc-web.service").Run()
-			os.Remove(unit)
-			exec.Command("systemctl", "--user", "daemon-reload").Run()
-			removed = true
-		}
-
-	case "windows":
-		// Check if task exists by trying to query it
-		if err := exec.Command("schtasks", "/query", "/tn", "opencc-web").Run(); err == nil {
-			exec.Command("schtasks", "/delete", "/tn", "opencc-web", "/f").Run()
-			removed = true
-		}
-	}
-
-	if removed {
-		fmt.Println("done")
-	} else {
-		fmt.Println("not found")
-	}
-	return removed
-}
-
 func reEnableService() {
 	zenPath := "/usr/local/bin/zen"
 	if runtime.GOOS == "windows" {
 		zenPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "zen", "zen.exe")
 	}
 	if _, err := os.Stat(zenPath); err == nil {
-		exec.Command(zenPath, "web", "start").Run()
+		exec.Command(zenPath, "web", "enable").Run()
 	}
 }
 
@@ -326,7 +326,8 @@ func removeSelf() {
 	}
 
 	if err := os.Remove(exe); err != nil {
-		// Try sudo
+		// Try sudo — newline so password prompt doesn't collide with step prefix
+		fmt.Println()
 		if sudoErr := exec.Command("sudo", "rm", "-f", exe).Run(); sudoErr != nil {
 			fmt.Printf("please delete %s manually\n", exe)
 			return

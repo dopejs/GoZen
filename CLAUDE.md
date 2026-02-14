@@ -48,7 +48,7 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **Commit often**: Each completed task/item should be committed individually, not batched into one large commit. After finishing a feature or fix, commit immediately before moving to the next task.
 - **Pre-release check**: Before tagging a release, check for unpushed commits (`git log origin/main..HEAD`) and push them first.
 - **Update version constant**: Before releasing, update `Version` in `cmd/root.go` to match the release tag.
-- **Update README**: Before releasing, check that `README.md` reflects all new features and changes.
+- **Update README**: Before releasing, check that `README.md` reflects all new features and changes. **All four language versions must be updated together**: `README.md` (English), `docs/README.zh-CN.md` (简体中文), `docs/README.zh-TW.md` (繁體中文), `docs/README.es.md` (Español).
 - **No summary/explanation docs**: Do NOT create markdown files to summarize or explain completed work. No "implementation notes", no "changes summary", no "feature documentation". The commit message and code comments are sufficient.
 - **Keep planning docs**: Architecture planning and design docs should be kept for context across sessions. Store them in a `docs/` folder if needed.
 - **No example files**: Do NOT create example config files (*.json, *.yaml, etc.) in the repository root. Examples belong in README.md or `docs/`.

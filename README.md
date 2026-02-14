@@ -1,109 +1,111 @@
 # opencc
 
-多 CLI 环境切换器，支持 Claude Code、Codex、OpenCode，带 API 代理自动故障转移。
+[简体中文](docs/README.zh-CN.md) | [繁體中文](docs/README.zh-TW.md) | [Español](docs/README.es.md)
 
-## 功能
+Multi-CLI environment switcher for Claude Code, Codex, and OpenCode with API proxy auto-failover.
 
-- **多 CLI 支持** — 支持 Claude Code、Codex、OpenCode 三种 CLI，可按项目配置
-- **多配置管理** — 在 `~/.opencc/opencc.json` 中统一管理所有 API 配置
-- **代理故障转移** — 内置 HTTP 代理，当主 provider 不可用时自动切换到备用
-- **场景路由** — 根据请求特征（thinking、image、longContext 等）智能路由
-- **项目绑定** — 将目录绑定到特定 profile 和 CLI，实现项目级自动配置
-- **环境变量配置** — 在 provider 级别为每个 CLI 单独配置环境变量
-- **TUI 配置界面** — 交互式终端界面，支持 Dashboard 和传统两种模式
-- **Web 管理界面** — 浏览器可视化管理 provider、profile 和项目绑定
-- **自更新** — `opencc upgrade` 一键升级，支持 semver 版本匹配
-- **Shell 补全** — 支持 zsh / bash / fish
+## Features
 
-## 安装
+- **Multi-CLI Support** — Supports Claude Code, Codex, and OpenCode, configurable per project
+- **Multi-Config Management** — Manage all API configurations in `~/.opencc/opencc.json`
+- **Proxy Failover** — Built-in HTTP proxy that automatically switches to backup providers when the primary is unavailable
+- **Scenario Routing** — Intelligent routing based on request characteristics (thinking, image, longContext, etc.)
+- **Project Bindings** — Bind directories to specific profiles and CLIs for project-level auto-configuration
+- **Environment Variables** — Configure CLI-specific environment variables at the provider level
+- **TUI Config Interface** — Interactive terminal UI with Dashboard and legacy modes
+- **Web Management UI** — Browser-based visual management for providers, profiles, and project bindings
+- **Self-Update** — One-command upgrade via `opencc upgrade` with semver version matching
+- **Shell Completion** — Supports zsh / bash / fish
+
+## Installation
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh
 ```
 
-卸载：
+Uninstall:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh -s -- --uninstall
 ```
 
-## 快速开始
+## Quick Start
 
 ```sh
-# 打开 TUI 配置界面，创建第一个 provider
+# Open the TUI config interface and create your first provider
 opencc config
 
-# 启动（使用默认 profile）
+# Launch (using default profile)
 opencc
 
-# 使用指定 profile
+# Use a specific profile
 opencc -p work
 
-# 使用指定 CLI
+# Use a specific CLI
 opencc --cli codex
 ```
 
-## 命令一览
+## Command Reference
 
-| 命令 | 说明 |
-|------|------|
-| `opencc` | 启动 CLI（使用项目绑定或默认配置） |
-| `opencc -p <profile>` | 使用指定 profile 启动 |
-| `opencc -p` | 交互选择 profile |
-| `opencc --cli <cli>` | 使用指定 CLI（claude/codex/opencode） |
-| `opencc use <provider>` | 直接使用指定 provider（无代理） |
-| `opencc pick` | 交互选择 provider 启动 |
-| `opencc list` | 列出所有 provider 和 profile |
-| `opencc config` | 打开 TUI 配置界面 |
-| `opencc config --legacy` | 使用传统 TUI 界面 |
-| `opencc bind <profile>` | 绑定当前目录到 profile |
-| `opencc bind --cli <cli>` | 绑定当前目录使用指定 CLI |
-| `opencc unbind` | 解除当前目录绑定 |
-| `opencc status` | 显示当前目录绑定状态 |
-| `opencc web start` | 启动 Web 管理界面 |
-| `opencc web open` | 在浏览器中打开 Web 界面 |
-| `opencc web stop` | 停止 Web 服务 |
-| `opencc upgrade` | 升级到最新版本 |
-| `opencc version` | 显示版本 |
+| Command | Description |
+|---------|-------------|
+| `opencc` | Launch CLI (using project binding or default config) |
+| `opencc -p <profile>` | Launch with a specific profile |
+| `opencc -p` | Interactively select a profile |
+| `opencc --cli <cli>` | Use a specific CLI (claude/codex/opencode) |
+| `opencc use <provider>` | Directly use a specific provider (no proxy) |
+| `opencc pick` | Interactively select a provider to launch |
+| `opencc list` | List all providers and profiles |
+| `opencc config` | Open the TUI config interface |
+| `opencc config --legacy` | Use the legacy TUI interface |
+| `opencc bind <profile>` | Bind current directory to a profile |
+| `opencc bind --cli <cli>` | Bind current directory to a specific CLI |
+| `opencc unbind` | Remove binding for current directory |
+| `opencc status` | Show binding status for current directory |
+| `opencc web start` | Start the Web management UI |
+| `opencc web open` | Open the Web UI in browser |
+| `opencc web stop` | Stop the Web server |
+| `opencc upgrade` | Upgrade to the latest version |
+| `opencc version` | Show version |
 
-## 多 CLI 支持
+## Multi-CLI Support
 
-opencc 支持三种 AI 编程助手 CLI：
+opencc supports three AI coding assistant CLIs:
 
-| CLI | 说明 | API 格式 |
-|-----|------|---------|
-| `claude` | Claude Code（默认） | Anthropic Messages API |
+| CLI | Description | API Format |
+|-----|-------------|------------|
+| `claude` | Claude Code (default) | Anthropic Messages API |
 | `codex` | OpenAI Codex CLI | OpenAI Chat Completions API |
 | `opencode` | OpenCode | Anthropic / OpenAI |
 
-### 设置默认 CLI
+### Set Default CLI
 
 ```sh
-# 通过 TUI
+# Via TUI
 opencc config  # Settings → Default CLI
 
-# 通过 Web UI
-opencc web open  # Settings 页面
+# Via Web UI
+opencc web open  # Settings page
 ```
 
-### 按项目配置 CLI
+### Per-Project CLI
 
 ```sh
 cd ~/work/project
-opencc bind --cli codex  # 该目录使用 Codex
+opencc bind --cli codex  # Use Codex for this directory
 ```
 
-### 临时使用其他 CLI
+### Temporary CLI Override
 
 ```sh
-opencc --cli opencode  # 本次使用 OpenCode
+opencc --cli opencode  # Use OpenCode for this session
 ```
 
-## Profile 管理
+## Profile Management
 
-Profile 是一组 provider 的有序列表，用于故障转移。
+A profile is an ordered list of providers used for failover.
 
-### 配置示例
+### Configuration Example
 
 ```json
 {
@@ -121,86 +123,86 @@ Profile 是一组 provider 的有序列表，用于故障转移。
 }
 ```
 
-### 使用 Profile
+### Using Profiles
 
 ```sh
-# 使用默认 profile
+# Use default profile
 opencc
 
-# 使用指定 profile
+# Use a specific profile
 opencc -p work
 
-# 交互选择
+# Interactive selection
 opencc -p
 ```
 
-## 项目绑定
+## Project Bindings
 
-将目录绑定到特定 profile 和/或 CLI，实现项目级自动配置。
+Bind directories to specific profiles and/or CLIs for project-level auto-configuration.
 
 ```sh
 cd ~/work/company-project
 
-# 绑定 profile
+# Bind profile
 opencc bind work-profile
 
-# 绑定 CLI
+# Bind CLI
 opencc bind --cli codex
 
-# 同时绑定
+# Bind both
 opencc bind work-profile --cli codex
 
-# 查看状态
+# Check status
 opencc status
 
-# 解除绑定
+# Remove binding
 opencc unbind
 ```
 
-**优先级**：命令行参数 > 项目绑定 > 全局默认
+**Priority**: Command-line args > Project binding > Global default
 
-## TUI 配置界面
+## TUI Config Interface
 
 ```sh
 opencc config
 ```
 
-v1.5 提供全新 Dashboard 界面：
+v1.5 introduces a new Dashboard interface:
 
-- **左侧列表**：Providers、Profiles、Project Bindings
-- **右侧详情**：选中项的详细信息
-- **快捷键**：
-  - `a` - 添加新项
-  - `e` - 编辑选中项
-  - `d` - 删除选中项
-  - `Tab` - 切换焦点
-  - `q` - 返回/退出
+- **Left panel**: Providers, Profiles, Project Bindings
+- **Right panel**: Details for the selected item
+- **Keyboard shortcuts**:
+  - `a` - Add new item
+  - `e` - Edit selected item
+  - `d` - Delete selected item
+  - `Tab` - Switch focus
+  - `q` - Back / Quit
 
-使用 `--legacy` 切换到传统界面。
+Use `--legacy` to switch to the legacy interface.
 
-## Web 管理界面
+## Web Management UI
 
 ```sh
-# 启动（后台运行，端口 19840）
+# Start (runs in background, port 19840)
 opencc web start
 
-# 打开浏览器
+# Open in browser
 opencc web open
 
-# 停止
+# Stop
 opencc web stop
 ```
 
-Web UI 功能：
-- Provider 和 Profile 管理
-- 项目绑定管理
-- 全局设置（默认 CLI、默认 Profile、端口）
-- 请求日志查看
-- 模型字段自动补全
+Web UI features:
+- Provider and Profile management
+- Project binding management
+- Global settings (default CLI, default profile, port)
+- Request log viewer
+- Model field autocomplete
 
-## 环境变量配置
+## Environment Variables
 
-每个 provider 可以为不同 CLI 配置独立的环境变量：
+Each provider can have CLI-specific environment variables:
 
 ```json
 {
@@ -223,30 +225,30 @@ Web UI 功能：
 }
 ```
 
-### Claude Code 常用环境变量
+### Common Claude Code Environment Variables
 
-| 变量 | 说明 |
-|------|------|
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 最大输出 token |
-| `MAX_THINKING_TOKENS` | 扩展思考预算 |
-| `ANTHROPIC_MAX_CONTEXT_WINDOW` | 最大上下文窗口 |
-| `BASH_DEFAULT_TIMEOUT_MS` | Bash 默认超时 |
+| Variable | Description |
+|----------|-------------|
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Max output tokens |
+| `MAX_THINKING_TOKENS` | Extended thinking budget |
+| `ANTHROPIC_MAX_CONTEXT_WINDOW` | Max context window |
+| `BASH_DEFAULT_TIMEOUT_MS` | Bash default timeout |
 
-## 场景路由
+## Scenario Routing
 
-根据请求特征自动路由到不同 provider：
+Automatically route requests to different providers based on request characteristics:
 
-| 场景 | 触发条件 |
-|------|---------|
-| `think` | 启用 thinking 模式 |
-| `image` | 包含图片内容 |
-| `longContext` | 内容超过阈值 |
-| `webSearch` | 使用 web_search 工具 |
-| `background` | 使用 Haiku 模型 |
+| Scenario | Trigger Condition |
+|----------|-------------------|
+| `think` | Thinking mode enabled |
+| `image` | Contains image content |
+| `longContext` | Content exceeds threshold |
+| `webSearch` | Uses web_search tool |
+| `background` | Uses Haiku model |
 
-**Fallback 机制**：如果场景配置的 providers 全部失败，会自动 fallback 到 profile 的默认 providers。
+**Fallback mechanism**: If all providers in a scenario config fail, it automatically falls back to the profile's default providers.
 
-配置示例：
+Configuration example:
 
 ```json
 {
@@ -267,15 +269,15 @@ Web UI 功能：
 }
 ```
 
-## 配置文件
+## Config Files
 
-| 文件 | 说明 |
-|------|------|
-| `~/.opencc/opencc.json` | 主配置文件 |
-| `~/.opencc/proxy.log` | 代理日志 |
-| `~/.opencc/web.log` | Web 服务日志 |
+| File | Description |
+|------|-------------|
+| `~/.opencc/opencc.json` | Main configuration file |
+| `~/.opencc/proxy.log` | Proxy log |
+| `~/.opencc/web.log` | Web server log |
 
-### 完整配置示例
+### Full Configuration Example
 
 ```json
 {
@@ -307,32 +309,32 @@ Web UI 功能：
 }
 ```
 
-## 升级
+## Upgrade
 
 ```sh
-# 最新版本
+# Latest version
 opencc upgrade
 
-# 指定版本
+# Specific version
 opencc upgrade 1.5
 opencc upgrade 1.5.0
 ```
 
-## 从旧版迁移
+## Migrating from Older Versions
 
-如果之前使用 `~/.cc_envs/` 格式，opencc 会自动迁移到 `~/.opencc/opencc.json`。
+If you previously used the `~/.cc_envs/` format, opencc will automatically migrate to `~/.opencc/opencc.json`.
 
-## 开发
+## Development
 
 ```sh
-# 构建
+# Build
 go build -o opencc .
 
-# 测试
+# Test
 go test ./...
 ```
 
-发布：打 tag 后 GitHub Actions 自动构建。
+Release: Push a tag and GitHub Actions will build automatically.
 
 ```sh
 git tag v1.5.0

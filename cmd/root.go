@@ -148,6 +148,17 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 	os.Setenv("ANTHROPIC_BASE_URL", fmt.Sprintf("http://127.0.0.1:%d", port))
 	os.Setenv("ANTHROPIC_AUTH_TOKEN", "opencc-proxy")
 
+	// Export env_vars from the first provider to Claude Code
+	// This allows settings like ANTHROPIC_MAX_CONTEXT_WINDOW to take effect
+	if len(providers) > 0 && providers[0].EnvVars != nil {
+		for k, v := range providers[0].EnvVars {
+			if k != "" && v != "" {
+				os.Setenv(k, v)
+				logger.Printf("Setting env: %s=%s", k, v)
+			}
+		}
+	}
+
 	// Find claude binary
 	claudeBin, err := exec.LookPath("claude")
 	if err != nil {

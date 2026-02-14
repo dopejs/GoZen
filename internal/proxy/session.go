@@ -78,6 +78,27 @@ func UpdateSessionUsage(sessionID string, usage *SessionUsage) {
 	globalSessionCache.data.Store(sessionID, usage)
 }
 
+// ClearSessionUsage removes usage data for a specific session.
+// This should be called when the user clears their context.
+func ClearSessionUsage(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+
+	globalSessionCache.mu.Lock()
+	defer globalSessionCache.mu.Unlock()
+
+	globalSessionCache.data.Delete(sessionID)
+
+	// Remove from key order
+	for i, key := range globalSessionCache.keyOrder {
+		if key == sessionID {
+			globalSessionCache.keyOrder = append(globalSessionCache.keyOrder[:i], globalSessionCache.keyOrder[i+1:]...)
+			break
+		}
+	}
+}
+
 // CleanupOldSessions removes sessions older than the specified duration.
 // This should be called periodically to prevent memory leaks.
 func CleanupOldSessions(maxAge time.Duration) int {

@@ -10,7 +10,11 @@ import (
 const (
 	defaultLongContextThreshold = 32000
 	// Minimum token count for current request when using session history
-	minCurrentTokensForSessionCheck = 20000
+	// If current request is below this, assume context was cleared
+	minCurrentTokensForSessionCheck = 5000
+	// Ratio threshold: if current tokens are less than 20% of last session's input,
+	// assume context was cleared or significantly compacted
+	sessionClearRatio = 0.2
 )
 
 // DetectScenario examines a parsed request body and returns the matching scenario.
@@ -74,11 +78,11 @@ func hasImageContent(body map[string]interface{}) bool {
 // isLongContext checks if the total text content in messages exceeds the threshold.
 // It uses tiktoken for accurate token counting and considers session history.
 //
-// Session history logic (inspired by claude-code-router):
+// Session history logic:
 // - lastUsage.InputTokens represents the ACTUAL tokens sent to API (after any compaction)
-// - If the last request used > threshold tokens AND current request is substantial (>20k),
-//   continue using longContext model for consistency in long conversations
-// - This accounts for Claude Code's automatic context compaction
+// - If current request tokens are significantly lower than last session (< 20%),
+//   assume context was cleared and DON'T use session history
+// - This accounts for /clear commands and context resets
 func isLongContext(body map[string]interface{}, threshold int, sessionID string) bool {
 	if threshold <= 0 {
 		threshold = defaultLongContextThreshold
@@ -91,23 +95,35 @@ func isLongContext(body map[string]interface{}, threshold int, sessionID string)
 		tokenCount = estimateTokensFromChars(body)
 	}
 
+	// Check current request token count first
+	if tokenCount >= threshold {
+		return true
+	}
+
 	// Check session history for long context continuation
 	// This helps maintain model consistency in long conversations
 	if sessionID != "" {
 		lastUsage := GetSessionUsage(sessionID)
-		if lastUsage != nil {
-			// If last request's input (including context) exceeded threshold
-			// and current request is substantial, continue using longContext
-			// Note: lastUsage.InputTokens includes the full context sent to API,
-			// which may have been compacted by Claude Code's autocompact feature
+		if lastUsage != nil && lastUsage.InputTokens > 0 {
+			// Detect context clear: if current tokens are much smaller than last session,
+			// the user likely cleared context or it was heavily compacted
+			ratio := float64(tokenCount) / float64(lastUsage.InputTokens)
+			if ratio < sessionClearRatio {
+				// Context was likely cleared, don't use session history
+				// Also clear the session cache to prevent future false positives
+				ClearSessionUsage(sessionID)
+				return false
+			}
+
+			// If last request's input exceeded threshold and current request
+			// is substantial (not a tiny follow-up), continue using longContext
 			if lastUsage.InputTokens > threshold && tokenCount > minCurrentTokensForSessionCheck {
 				return true
 			}
 		}
 	}
 
-	// Check current request token count
-	return tokenCount >= threshold
+	return false
 }
 
 // hasWebSearchTool checks if the request includes web_search tools.

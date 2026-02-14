@@ -119,7 +119,7 @@ func (m LaunchModel) Update(msg tea.Msg) (LaunchModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m LaunchModel) View() string {
-	// Layout: 2 padding on each side, content fills the rest
+	// Layout: 2 padding on each side
 	sidePadding := 2
 	contentWidth := m.width - sidePadding*2
 	if contentWidth < 40 {
@@ -129,7 +129,7 @@ func (m LaunchModel) View() string {
 	// Each pane takes half width, minus 1 for the divider
 	paneWidth := (contentWidth - 1) / 2
 
-	// Calculate pane height (reserve 1 for help bar)
+	// Calculate pane height (reserve 1 for help bar at bottom)
 	paneHeight := m.height - 2
 	if paneHeight < 10 {
 		paneHeight = 10
@@ -153,7 +153,7 @@ func (m LaunchModel) View() string {
 	dimStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8"))
 
-	// Build left pane (Profiles)
+	// Build left pane content (Profiles)
 	var leftContent strings.Builder
 	leftContent.WriteString(titleStyle.Render("Select Profile"))
 	leftContent.WriteString("\n")
@@ -164,7 +164,7 @@ func (m LaunchModel) View() string {
 		line := p
 		pc := config.GetProfileConfig(p)
 		if pc != nil && len(pc.Providers) > 0 {
-			line += dimStyle.Render(fmt.Sprintf(" (%d providers)", len(pc.Providers)))
+			line += dimStyle.Render(fmt.Sprintf(" (%d)", len(pc.Providers)))
 		}
 
 		if i == m.profileCursor {
@@ -179,7 +179,7 @@ func (m LaunchModel) View() string {
 		leftContent.WriteString("\n")
 	}
 
-	// Build right pane (CLI)
+	// Build right pane content (CLI)
 	var rightContent strings.Builder
 	rightContent.WriteString(titleStyle.Render("Select CLI"))
 	rightContent.WriteString("\n")
@@ -209,38 +209,43 @@ func (m LaunchModel) View() string {
 		rightContent.WriteString("\n")
 	}
 
-	// Style panes with padding
+	// Pane style with thick border - internal width accounts for border and padding
+	// Border takes 2 chars (left+right), padding takes 4 chars (2 each side)
+	internalWidth := paneWidth - 2 - 4
+	if internalWidth < 20 {
+		internalWidth = 20
+	}
+
 	paneStyle := lipgloss.NewStyle().
-		Width(paneWidth).
-		Height(paneHeight).
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Width(internalWidth).
+		Height(paneHeight - 2). // -2 for border top/bottom
 		Padding(1, 2)
 
 	leftPane := paneStyle.Render(leftContent.String())
 	rightPane := paneStyle.Render(rightContent.String())
 
-	// Thick vertical divider
-	dividerStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240"))
-	var divider strings.Builder
-	for i := 0; i < paneHeight; i++ {
-		divider.WriteString(dividerStyle.Render("┃"))
-		if i < paneHeight-1 {
-			divider.WriteString("\n")
-		}
-	}
-
-	// Join panes with divider
-	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, divider.String(), rightPane)
+	// Join panes side by side (thick border creates the divider effect)
+	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
 	// Add side padding
 	paddedContent := lipgloss.NewStyle().
 		PaddingLeft(sidePadding).
 		Render(mainContent)
 
-	// Help bar at bottom
+	// Calculate lines used and fill remaining space
+	contentLines := strings.Count(paddedContent, "\n") + 1
+	remainingLines := m.height - contentLines - 1
+	var filler strings.Builder
+	for i := 0; i < remainingLines; i++ {
+		filler.WriteString("\n")
+	}
+
+	// Help bar at bottom - full terminal width
 	helpBar := RenderHelpBar("Tab/←→ switch pane • ↑↓ navigate • Enter launch • Esc back", m.width)
 
-	return paddedContent + "\n" + helpBar
+	return paddedContent + filler.String() + helpBar
 }
 
 // Refresh reloads profiles and CLIs.

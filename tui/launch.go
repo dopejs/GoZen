@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // LaunchBackMsg is sent when user wants to go back from launch wizard.

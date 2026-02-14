@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // providerResponse is the JSON shape returned for a single provider.

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 const (

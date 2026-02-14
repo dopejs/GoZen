@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 type view int

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // exeHash returns a short hash of the current executable's resolved path.

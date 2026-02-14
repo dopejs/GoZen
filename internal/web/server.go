@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dopejs/opencc/internal/config"
-	"github.com/dopejs/opencc/internal/proxy"
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy"
 )
 
 // Server is the web configuration management server.

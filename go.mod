@@ -1,4 +1,4 @@
-module github.com/dopejs/opencc
+module github.com/dopejs/gozen
 
 go 1.25.6
 

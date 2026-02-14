@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dopejs/opencc/internal/config"
-	"github.com/dopejs/opencc/tui"
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/tui"
 	"github.com/spf13/cobra"
 )
 

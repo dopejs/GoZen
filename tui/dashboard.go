@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dopejs/opencc/internal/config"
-	"github.com/dopejs/opencc/tui/components"
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/tui/components"
 )
 
 // DashboardModel is the main configuration dashboard with split view.

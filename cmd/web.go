@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dopejs/opencc/internal/config"
-	"github.com/dopejs/opencc/internal/daemon"
-	"github.com/dopejs/opencc/internal/proxy"
-	"github.com/dopejs/opencc/internal/web"
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/daemon"
+	"github.com/dopejs/gozen/internal/proxy"
+	"github.com/dopejs/gozen/internal/web"
 	"github.com/spf13/cobra"
 )
 

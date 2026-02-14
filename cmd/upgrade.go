@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dopejs/opencc/internal/daemon"
+	"github.com/dopejs/gozen/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -64,10 +64,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	var downloadURL string
 	if useTarball {
 		assetName := fmt.Sprintf("opencc-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
-		downloadURL = fmt.Sprintf("https://github.com/dopejs/opencc/releases/download/v%s/%s", target, assetName)
+		downloadURL = fmt.Sprintf("https://github.com/dopejs/gozen/releases/download/v%s/%s", target, assetName)
 	} else {
 		assetName := fmt.Sprintf("opencc-%s-%s", runtime.GOOS, runtime.GOARCH)
-		downloadURL = fmt.Sprintf("https://github.com/dopejs/opencc/releases/download/v%s/%s", target, assetName)
+		downloadURL = fmt.Sprintf("https://github.com/dopejs/gozen/releases/download/v%s/%s", target, assetName)
 	}
 
 	fmt.Printf("Downloading %s...\n", downloadURL)

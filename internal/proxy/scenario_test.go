@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // generateLongText creates varied text to get realistic token counts.

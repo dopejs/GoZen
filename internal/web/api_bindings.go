@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // bindingResponse is the JSON shape for a single project binding.

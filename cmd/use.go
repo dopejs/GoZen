@@ -7,7 +7,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 	"github.com/spf13/cobra"
 )
 

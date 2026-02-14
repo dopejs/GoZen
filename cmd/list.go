@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/dopejs/opencc/tui"
+	"github.com/dopejs/gozen/tui"
 	"github.com/spf13/cobra"
 )
 

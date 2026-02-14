@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dopejs/opencc/cmd"
+	"github.com/dopejs/gozen/cmd"
 )
 
 func main() {

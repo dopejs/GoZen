@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 func discardLogger() *log.Logger {

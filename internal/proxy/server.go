@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dopejs/opencc/internal/config"
-	"github.com/dopejs/opencc/internal/proxy/transform"
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
 var (

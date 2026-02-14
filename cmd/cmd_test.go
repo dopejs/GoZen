@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 func TestCompleteConfigNames(t *testing.T) {

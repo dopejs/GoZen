@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 func setTestHome(t *testing.T) string {

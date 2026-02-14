@@ -533,9 +533,19 @@ func filterProviderRoutes(routes []*ProviderRoute, name string) []*ProviderRoute
 
 // --- Project Bindings ---
 
+// resolveProjectPath resolves symlinks and cleans the path to ensure
+// consistent binding keys regardless of how the path was reached.
+func resolveProjectPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return filepath.Clean(path)
+}
+
 // BindProject binds a directory path to a profile and/or CLI.
 // Either profile or cli can be empty to use the default.
 func (s *Store) BindProject(path string, profile string, cli string) error {
+	path = resolveProjectPath(path)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
@@ -562,6 +572,7 @@ func (s *Store) BindProject(path string, profile string, cli string) error {
 
 // UnbindProject removes the binding for a directory path.
 func (s *Store) UnbindProject(path string) error {
+	path = resolveProjectPath(path)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
@@ -574,6 +585,7 @@ func (s *Store) UnbindProject(path string) error {
 // GetProjectBinding returns the binding for a directory path.
 // Returns nil if no binding exists.
 func (s *Store) GetProjectBinding(path string) *ProjectBinding {
+	path = resolveProjectPath(path)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()

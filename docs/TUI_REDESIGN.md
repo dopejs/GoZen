@@ -668,7 +668,8 @@ type Action struct {
   - [x] Connect existing editors to dashboard
   - [x] Add `--new` flag to `opencc config`
   - [x] Settings API and Web UI
-- [ ] Phase 4: Migration
-  - [ ] Make new TUI the default
-  - [ ] Remove old TUI after testing
+- [x] Phase 4: Migration
+  - [x] Make new TUI the default (`opencc config`)
+  - [x] Legacy TUI available via `--legacy` flag
+  - [ ] Remove old TUI after sufficient testing
 

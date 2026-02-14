@@ -9,8 +9,9 @@ Claude Code 多环境切换器，支持 API 代理自动故障转移。
 - **场景路由** — 根据请求特征（thinking、image、longContext、webSearch、background）智能路由到不同 provider
 - **环境变量配置** — 在 provider 级别配置 Claude Code 环境变量（max_output_tokens、effort_level 等）
 - **Fallback Profiles** — 多个命名的故障转移配置，按场景快速切换（work / staging / …）
-- **TUI 配置界面** — 交互式终端界面管理配置、profile 和故障转移顺序
+- **TUI 配置界面** — 交互式终端界面管理配置、profile 和故障转移顺序（v1.5 全新设计）
 - **Web 管理界面** — 浏览器可视化管理 provider 和 profile，支持拖拽排序
+- **全局设置** — 配置默认 Profile、默认 CLI、Web UI 端口
 - **智能 Profile 分配** — 添加 provider 后自动弹出 profile 选择（TUI 和 Web）
 - **模型自动补全** — Web 端模型字段带有官方 Claude Model ID 候选提示
 - **自更新** — `opencc upgrade` 一键升级，支持 semver 版本匹配，带下载进度条
@@ -74,7 +75,8 @@ opencc config
 | `opencc use <config>` | 使用指定配置直接启动 claude |
 | `opencc pick` | 交互选择 provider 启动（不保存） |
 | `opencc list` | 列出所有配置（按 fallback 顺序排列） |
-| `opencc config` | 打开 TUI 配置管理界面 |
+| `opencc config` | 打开 TUI 配置管理界面（主菜单） |
+| `opencc config --legacy` | 使用旧版 TUI 界面 |
 | `opencc config add provider [name]` | 添加 provider（可预填名称） |
 | `opencc config add profile [name]` | 添加 profile（可预填名称） |
 | `opencc bind <profile>` | 绑定当前目录到指定 profile |
@@ -250,6 +252,8 @@ opencc upgrade 1.2.3
 **版本历史**：
 - Version 1（隐式）：v1.3.1 及之前，profiles 为字符串数组
 - Version 2：v1.3.2+，profiles 支持 routing 和 long_context_threshold
+- Version 3：v1.4.0+，project_bindings 支持
+- Version 4：v1.5.0+，default_profile、default_cli、web_port 全局设置
 
 每个 provider 支持以下字段：
 

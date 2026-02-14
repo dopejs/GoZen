@@ -11,20 +11,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configNewUI bool
+var configLegacyUI bool
 
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage providers and profiles",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if configNewUI {
-			_, err := tui.RunNewApp()
+		if configLegacyUI {
+			err := tui.RunConfigMain()
 			if err != nil && err.Error() == "cancelled" {
 				return nil
 			}
 			return err
 		}
-		err := tui.RunConfigMain()
+		_, err := tui.RunNewApp()
 		if err != nil && err.Error() == "cancelled" {
 			return nil
 		}
@@ -336,7 +336,7 @@ func editGroup(name string) error {
 }
 
 func init() {
-	configCmd.Flags().BoolVar(&configNewUI, "new", false, "use new TUI interface")
+	configCmd.Flags().BoolVar(&configLegacyUI, "legacy", false, "use legacy TUI interface")
 
 	configAddCmd.AddCommand(configAddProviderCmd)
 	configAddCmd.AddCommand(configAddGroupCmd)

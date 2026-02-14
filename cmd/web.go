@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -93,26 +92,18 @@ func init() {
 }
 
 func runWeb(cmd *cobra.Command, args []string) error {
-	// Resolve port override: flag > env var > 0 (use config default)
-	portOvr := webPortOverride
-	if portOvr == 0 {
-		if envPort, _ := strconv.Atoi(os.Getenv("OPENCC_WEB_PORT")); envPort > 0 {
-			portOvr = envPort
-		}
-	}
-
-	// If this is the daemon child process, run the server directly.
+	// If this is the daemon child process, run the server directly (no port override).
 	if os.Getenv("OPENCC_WEB_DAEMON") == "1" {
-		return runWebServer(portOvr)
+		return runWebServer(0)
 	}
 
-	// Daemon mode: spawn a detached child process.
+	// Daemon mode: ignore --port, use configured port.
 	if webDaemonFlag {
-		return startDaemon(portOvr)
+		return startDaemon()
 	}
 
-	// Foreground mode: start server and open browser.
-	return runWebForeground(portOvr)
+	// Foreground mode: --port override only applies here.
+	return runWebForeground(webPortOverride)
 }
 
 func runWebServer(portOverride int) error {
@@ -128,8 +119,11 @@ func runWebServer(portOverride int) error {
 
 	srv := web.NewServer(Version, logger, portOverride)
 
-	// Write PID file.
-	daemon.WritePid(os.Getpid())
+	// Only manage PID file when running on the configured port (normal mode).
+	managePid := portOverride == 0
+	if managePid {
+		daemon.WritePid(os.Getpid())
+	}
 
 	// Graceful shutdown on signals.
 	sigCh := make(chan os.Signal, 1)
@@ -140,18 +134,22 @@ func runWebServer(portOverride int) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
-		daemon.RemovePid()
+		if managePid {
+			daemon.RemovePid()
+		}
 	}()
 
 	return srv.Start()
 }
 
 func runWebForeground(portOverride int) error {
-	// Check if already running.
-	if pid, running := daemon.IsRunning(); running {
-		fmt.Printf("Web server already running (PID %d). Opening browser...\n", pid)
-		openBrowser(fmt.Sprintf("http://127.0.0.1:%d", config.GetWebPort()))
-		return nil
+	// When using an alternate port, skip PID check — this is a temporary test instance.
+	if portOverride == 0 {
+		if pid, running := daemon.IsRunning(); running {
+			fmt.Printf("Web server already running (PID %d). Opening browser...\n", pid)
+			openBrowser(fmt.Sprintf("http://127.0.0.1:%d", config.GetWebPort()))
+			return nil
+		}
 	}
 
 	port := config.GetWebPort()
@@ -169,7 +167,7 @@ func runWebForeground(portOverride int) error {
 	return runWebServer(portOverride)
 }
 
-func startDaemon(portOverride int) error {
+func startDaemon() error {
 	// Check if already running.
 	if pid, running := daemon.IsRunning(); running {
 		fmt.Printf("Web server already running (PID %d).\n", pid)
@@ -189,11 +187,7 @@ func startDaemon(portOverride int) error {
 	defer logFile.Close()
 
 	child := exec.Command(exe, "web")
-	childEnv := append(os.Environ(), "OPENCC_WEB_DAEMON=1")
-	if portOverride > 0 {
-		childEnv = append(childEnv, fmt.Sprintf("OPENCC_WEB_PORT=%d", portOverride))
-	}
-	child.Env = childEnv
+	child.Env = append(os.Environ(), "OPENCC_WEB_DAEMON=1")
 	child.Stdout = logFile
 	child.Stderr = logFile
 	child.SysProcAttr = daemon.DaemonSysProcAttr()
@@ -207,15 +201,11 @@ func startDaemon(portOverride int) error {
 	// Wait for the server to be ready.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := web.WaitForReady(ctx, portOverride); err != nil {
+	if err := web.WaitForReady(ctx, 0); err != nil {
 		return fmt.Errorf("daemon started but server did not become ready: %w", err)
 	}
 
-	port := config.GetWebPort()
-	if portOverride > 0 {
-		port = portOverride
-	}
-	fmt.Printf("Web server started in background (PID %d) on http://127.0.0.1:%d\n", child.Process.Pid, port)
+	fmt.Printf("Web server started in background (PID %d) on http://127.0.0.1:%d\n", child.Process.Pid, config.GetWebPort())
 	return nil
 }
 

@@ -339,6 +339,9 @@ func removeFromScenarioOrder(order []string, name string) []string {
 }
 
 func (m routingModel) view(width, height int) string {
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(width, height)
+
 	var b strings.Builder
 
 	// Header
@@ -354,10 +357,10 @@ func (m routingModel) view(width, height int) string {
 
 	if m.phase == 1 {
 		// Editing a scenario
-		b.WriteString(m.renderScenarioEdit())
+		b.WriteString(m.renderScenarioEdit(contentWidth))
 	} else {
 		// Scenario list
-		b.WriteString(m.renderScenarioList())
+		b.WriteString(m.renderScenarioList(contentWidth))
 	}
 
 	b.WriteString("\n\n")
@@ -374,10 +377,23 @@ func (m routingModel) view(width, height int) string {
 		}
 	}
 
-	return b.String()
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(b.String())
 }
 
-func (m routingModel) renderScenarioList() string {
+func (m routingModel) renderScenarioList(contentWidth int) string {
+	boxWidth := contentWidth * 60 / 100
+	if boxWidth < 50 {
+		boxWidth = 50
+	}
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+
 	var content strings.Builder
 	content.WriteString(sectionTitleStyle.Render(" Scenario Routes"))
 	content.WriteString("\n")
@@ -410,11 +426,19 @@ func (m routingModel) renderScenarioList() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(50).
+		Width(boxWidth).
 		Render(content.String())
 }
 
-func (m routingModel) renderScenarioEdit() string {
+func (m routingModel) renderScenarioEdit(contentWidth int) string {
+	boxWidth := contentWidth * 65 / 100
+	if boxWidth < 60 {
+		boxWidth = 60
+	}
+	if boxWidth > 90 {
+		boxWidth = 90
+	}
+
 	em := m.editModel
 	var content strings.Builder
 
@@ -481,7 +505,7 @@ func (m routingModel) renderScenarioEdit() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(60).
+		Width(boxWidth).
 		Render(content.String())
 }
 
@@ -628,6 +652,17 @@ func (w *scenarioEditWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (w *scenarioEditWrapper) View() string {
+	// Use default dimensions for standalone wrapper
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(120, 40)
+
+	boxWidth := contentWidth * 65 / 100
+	if boxWidth < 60 {
+		boxWidth = 60
+	}
+	if boxWidth > 90 {
+		boxWidth = 90
+	}
+
 	var b strings.Builder
 
 	scenarioLabel := string(w.edit.scenario)
@@ -699,9 +734,15 @@ func (w *scenarioEditWrapper) View() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(60).
+		Width(boxWidth).
 		Render(content.String())
 
 	b.WriteString(contentBox)
-	return b.String()
+
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(b.String())
 }

@@ -37,5 +37,5 @@ func runPick(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return startProxy(selected, nil, args)
+	return startProxy(selected, nil, config.GetDefaultCLI(), args)
 }

@@ -121,9 +121,9 @@ func SetWebPort(port int) error {
 
 // --- Project Bindings convenience functions ---
 
-// BindProject binds a directory path to a profile name.
-func BindProject(path string, profile string) error {
-	return DefaultStore().BindProject(path, profile)
+// BindProject binds a directory path to a profile and/or CLI.
+func BindProject(path string, profile string, cli string) error {
+	return DefaultStore().BindProject(path, profile, cli)
 }
 
 // UnbindProject removes the binding for a directory path.
@@ -131,12 +131,12 @@ func UnbindProject(path string) error {
 	return DefaultStore().UnbindProject(path)
 }
 
-// GetProjectBinding returns the profile bound to a directory path.
-func GetProjectBinding(path string) string {
+// GetProjectBinding returns the binding for a directory path.
+func GetProjectBinding(path string) *ProjectBinding {
 	return DefaultStore().GetProjectBinding(path)
 }
 
 // GetAllProjectBindings returns all project bindings.
-func GetAllProjectBindings() map[string]string {
+func GetAllProjectBindings() map[string]*ProjectBinding {
 	return DefaultStore().GetAllProjectBindings()
 }

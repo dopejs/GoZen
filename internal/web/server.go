@@ -43,6 +43,8 @@ func NewServer(version string, logger *log.Logger) *Server {
 	mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
 	mux.HandleFunc("/api/v1/logs", s.handleLogs)
 	mux.HandleFunc("/api/v1/settings", s.handleSettings)
+	mux.HandleFunc("/api/v1/bindings", s.handleBindings)
+	mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
 
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")

@@ -126,6 +126,9 @@ func (m MenuModel) Update(msg tea.Msg) (MenuModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m MenuModel) View() string {
+	// Use global layout dimensions
+	contentWidth, contentHeight, leftPadding, topPadding := LayoutDimensions(m.width, m.height)
+
 	// Title
 	title := m.titleStyle.Render("OpenCC")
 	subtitle := lipgloss.NewStyle().
@@ -147,48 +150,51 @@ func (m MenuModel) View() string {
 	// Status line
 	status := m.statusStyle.Render(fmt.Sprintf("Profile: %s  |  CLI: %s", m.profile, m.cli))
 
-	// Combine into box
+	// Combine into box - use wider box
+	boxWidth := contentWidth * 60 / 100
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+	if boxWidth > 60 {
+		boxWidth = 60
+	}
+
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		title,
 		subtitle,
 		"",
 		menuItems,
 	)
-	box := m.boxStyle.Render(content)
+	box := m.boxStyle.Width(boxWidth).Render(content)
 
 	// Center on screen
-	boxWidth := lipgloss.Width(box)
+	boxWidthActual := lipgloss.Width(box)
 	boxHeight := lipgloss.Height(box)
 
-	padLeft := (m.width - boxWidth) / 2
-	padTop := (m.height - boxHeight - 2) / 2
+	// Calculate centering within content area
+	boxPadLeft := leftPadding + (contentWidth-boxWidthActual)/2
+	boxPadTop := topPadding + (contentHeight-boxHeight-2)/2
 
-	if padLeft < 0 {
-		padLeft = 0
+	if boxPadLeft < 0 {
+		boxPadLeft = 0
 	}
-	if padTop < 0 {
-		padTop = 0
+	if boxPadTop < 0 {
+		boxPadTop = 0
 	}
 
 	// Build final view
 	var view string
-	for i := 0; i < padTop; i++ {
+	for i := 0; i < boxPadTop; i++ {
 		view += "\n"
 	}
 
 	lines := strings.Split(box, "\n")
 	for _, line := range lines {
-		for i := 0; i < padLeft; i++ {
-			view += " "
-		}
-		view += line + "\n"
+		view += strings.Repeat(" ", boxPadLeft) + line + "\n"
 	}
 
 	// Status at bottom
-	for i := 0; i < padLeft; i++ {
-		view += " "
-	}
-	view += status
+	view += strings.Repeat(" ", boxPadLeft) + status
 
 	return view
 }

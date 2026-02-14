@@ -18,17 +18,20 @@ func TestProjectBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Test binding
+	// Test binding with profile only
 	testPath := filepath.Join(home, "test-project")
-	err = BindProject(testPath, "test-profile")
+	err = BindProject(testPath, "test-profile", "")
 	if err != nil {
 		t.Fatalf("BindProject() error: %v", err)
 	}
 
 	// Test getting binding
-	profile := GetProjectBinding(testPath)
-	if profile != "test-profile" {
-		t.Errorf("GetProjectBinding() = %q, want %q", profile, "test-profile")
+	binding := GetProjectBinding(testPath)
+	if binding == nil {
+		t.Fatal("GetProjectBinding() returned nil")
+	}
+	if binding.Profile != "test-profile" {
+		t.Errorf("GetProjectBinding().Profile = %q, want %q", binding.Profile, "test-profile")
 	}
 
 	// Test getting all bindings
@@ -36,8 +39,8 @@ func TestProjectBindings(t *testing.T) {
 	if len(bindings) != 1 {
 		t.Errorf("GetAllProjectBindings() len = %d, want 1", len(bindings))
 	}
-	if bindings[testPath] != "test-profile" {
-		t.Errorf("bindings[%q] = %q, want %q", testPath, bindings[testPath], "test-profile")
+	if bindings[testPath].Profile != "test-profile" {
+		t.Errorf("bindings[%q].Profile = %q, want %q", testPath, bindings[testPath].Profile, "test-profile")
 	}
 
 	// Test unbinding
@@ -47,9 +50,57 @@ func TestProjectBindings(t *testing.T) {
 	}
 
 	// Verify unbinding
-	profile = GetProjectBinding(testPath)
-	if profile != "" {
-		t.Errorf("GetProjectBinding() after unbind = %q, want empty", profile)
+	binding = GetProjectBinding(testPath)
+	if binding != nil {
+		t.Errorf("GetProjectBinding() after unbind = %v, want nil", binding)
+	}
+}
+
+func TestProjectBindingsWithCLI(t *testing.T) {
+	home := setTestHome(t)
+
+	// Create a test profile
+	err := SetProfileConfig("cli-profile", &ProfileConfig{
+		Providers: []string{"test-provider"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test binding with both profile and CLI
+	testPath := filepath.Join(home, "cli-project")
+	err = BindProject(testPath, "cli-profile", "codex")
+	if err != nil {
+		t.Fatalf("BindProject() error: %v", err)
+	}
+
+	binding := GetProjectBinding(testPath)
+	if binding == nil {
+		t.Fatal("GetProjectBinding() returned nil")
+	}
+	if binding.Profile != "cli-profile" {
+		t.Errorf("binding.Profile = %q, want %q", binding.Profile, "cli-profile")
+	}
+	if binding.CLI != "codex" {
+		t.Errorf("binding.CLI = %q, want %q", binding.CLI, "codex")
+	}
+
+	// Test binding with CLI only (no profile)
+	testPath2 := filepath.Join(home, "cli-only-project")
+	err = BindProject(testPath2, "", "opencode")
+	if err != nil {
+		t.Fatalf("BindProject() with CLI only error: %v", err)
+	}
+
+	binding2 := GetProjectBinding(testPath2)
+	if binding2 == nil {
+		t.Fatal("GetProjectBinding() returned nil for CLI-only binding")
+	}
+	if binding2.Profile != "" {
+		t.Errorf("binding.Profile = %q, want empty", binding2.Profile)
+	}
+	if binding2.CLI != "opencode" {
+		t.Errorf("binding.CLI = %q, want %q", binding2.CLI, "opencode")
 	}
 }
 
@@ -57,9 +108,19 @@ func TestBindNonexistentProfile(t *testing.T) {
 	setTestHome(t)
 
 	testPath := "/tmp/test-project"
-	err := BindProject(testPath, "nonexistent")
+	err := BindProject(testPath, "nonexistent", "")
 	if err == nil {
 		t.Error("BindProject() with nonexistent profile should error")
+	}
+}
+
+func TestBindInvalidCLI(t *testing.T) {
+	setTestHome(t)
+
+	testPath := "/tmp/test-project"
+	err := BindProject(testPath, "", "invalid-cli")
+	if err == nil {
+		t.Error("BindProject() with invalid CLI should error")
 	}
 }
 
@@ -84,9 +145,9 @@ func TestProjectBindingPersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Bind a project
+	// Bind a project with both profile and CLI
 	testPath := filepath.Join(home, "persist-project")
-	err = BindProject(testPath, "persist-profile")
+	err = BindProject(testPath, "persist-profile", "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,9 +156,15 @@ func TestProjectBindingPersistence(t *testing.T) {
 	ResetDefaultStore()
 
 	// Verify binding persisted
-	profile := GetProjectBinding(testPath)
-	if profile != "persist-profile" {
-		t.Errorf("GetProjectBinding() after reload = %q, want %q", profile, "persist-profile")
+	binding := GetProjectBinding(testPath)
+	if binding == nil {
+		t.Fatal("GetProjectBinding() after reload returned nil")
+	}
+	if binding.Profile != "persist-profile" {
+		t.Errorf("binding.Profile after reload = %q, want %q", binding.Profile, "persist-profile")
+	}
+	if binding.CLI != "claude" {
+		t.Errorf("binding.CLI after reload = %q, want %q", binding.CLI, "claude")
 	}
 }
 
@@ -112,7 +179,7 @@ func TestConfigVersionWithBindings(t *testing.T) {
 
 	// Create a profile and binding
 	SetProfileConfig("test", &ProfileConfig{Providers: []string{"p1"}})
-	BindProject("/test/path", "test")
+	BindProject("/test/path", "test", "codex")
 
 	// Read config and check version
 	data, err := os.ReadFile(configPath)
@@ -131,5 +198,16 @@ func TestConfigVersionWithBindings(t *testing.T) {
 
 	if len(cfg.ProjectBindings) != 1 {
 		t.Errorf("project_bindings len = %d, want 1", len(cfg.ProjectBindings))
+	}
+
+	binding := cfg.ProjectBindings["/test/path"]
+	if binding == nil {
+		t.Fatal("binding not found in config")
+	}
+	if binding.Profile != "test" {
+		t.Errorf("binding.Profile = %q, want %q", binding.Profile, "test")
+	}
+	if binding.CLI != "codex" {
+		t.Errorf("binding.CLI = %q, want %q", binding.CLI, "codex")
 	}
 }

@@ -1293,15 +1293,52 @@ func TestRoutingSharedProviderHealth(t *testing.T) {
 		t.Errorf("first request status = %d, want 200 (failover to backup)", w1.Code)
 	}
 
-	// Now "shared" is unhealthy. A think scenario request should skip it too.
+	// Now "shared" is unhealthy. A think scenario request should skip it too,
+	// but will fallback to default providers where backup is healthy.
 	req2 := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"think"}]}`))
 	w2 := httptest.NewRecorder()
 	srv.ServeHTTP(w2, req2)
 
-	// All providers in think scenario are unhealthy → 502
-	if w2.Code != http.StatusBadGateway {
-		t.Errorf("second request status = %d, want 502 (shared provider unhealthy across scenarios)", w2.Code)
+	// Think scenario providers are unhealthy, but fallback to default providers succeeds
+	if w2.Code != 200 {
+		t.Errorf("second request status = %d, want 200 (fallback to default providers)", w2.Code)
+	}
+}
+
+func TestRoutingScenarioFallbackAllFail(t *testing.T) {
+	// Test that when both scenario and default providers fail, we get 502
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":"server error"}`))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+
+	scenarioProvider := &Provider{Name: "scenario-p", BaseURL: u, Token: "t1", Model: "m", Healthy: true}
+	defaultProvider := &Provider{Name: "default-p", BaseURL: u, Token: "t2", Model: "m", Healthy: true}
+
+	routing := &RoutingConfig{
+		DefaultProviders: []*Provider{defaultProvider},
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: []*Provider{scenarioProvider},
+			},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+
+	// Think scenario request - both scenario and default providers will fail
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"think"}]}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	// Both scenario and default providers failed → 502
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502 (all providers failed)", w.Code)
 	}
 }
 

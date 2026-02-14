@@ -501,7 +501,7 @@ func (s *Store) ensureConfig() {
 		s.config.Profiles = make(map[string]*ProfileConfig)
 	}
 	if s.config.ProjectBindings == nil {
-		s.config.ProjectBindings = make(map[string]string)
+		s.config.ProjectBindings = make(map[string]*ProjectBinding)
 	}
 	// Ensure version is set
 	if s.config.Version == 0 {
@@ -533,19 +533,30 @@ func filterProviderRoutes(routes []*ProviderRoute, name string) []*ProviderRoute
 
 // --- Project Bindings ---
 
-// BindProject binds a directory path to a profile name.
-func (s *Store) BindProject(path string, profile string) error {
+// BindProject binds a directory path to a profile and/or CLI.
+// Either profile or cli can be empty to use the default.
+func (s *Store) BindProject(path string, profile string, cli string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
 	s.ensureConfig()
 
-	// Verify profile exists
-	if _, ok := s.config.Profiles[profile]; !ok {
-		return fmt.Errorf("profile '%s' does not exist", profile)
+	// Verify profile exists if specified
+	if profile != "" {
+		if _, ok := s.config.Profiles[profile]; !ok {
+			return fmt.Errorf("profile '%s' does not exist", profile)
+		}
 	}
 
-	s.config.ProjectBindings[path] = profile
+	// Verify CLI is valid if specified
+	if cli != "" && cli != "claude" && cli != "codex" && cli != "opencode" {
+		return fmt.Errorf("invalid CLI '%s' (must be claude, codex, or opencode)", cli)
+	}
+
+	s.config.ProjectBindings[path] = &ProjectBinding{
+		Profile: profile,
+		CLI:     cli,
+	}
 	return s.saveLocked()
 }
 
@@ -560,28 +571,28 @@ func (s *Store) UnbindProject(path string) error {
 	return s.saveLocked()
 }
 
-// GetProjectBinding returns the profile bound to a directory path.
-// Returns empty string if no binding exists.
-func (s *Store) GetProjectBinding(path string) string {
+// GetProjectBinding returns the binding for a directory path.
+// Returns nil if no binding exists.
+func (s *Store) GetProjectBinding(path string) *ProjectBinding {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
-	if s.config == nil {
-		return ""
+	if s.config == nil || s.config.ProjectBindings == nil {
+		return nil
 	}
 	return s.config.ProjectBindings[path]
 }
 
 // GetAllProjectBindings returns all project bindings.
-func (s *Store) GetAllProjectBindings() map[string]string {
+func (s *Store) GetAllProjectBindings() map[string]*ProjectBinding {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
 	if s.config == nil || s.config.ProjectBindings == nil {
-		return make(map[string]string)
+		return make(map[string]*ProjectBinding)
 	}
 	// Return a copy to avoid concurrent modification
-	bindings := make(map[string]string, len(s.config.ProjectBindings))
+	bindings := make(map[string]*ProjectBinding, len(s.config.ProjectBindings))
 	for k, v := range s.config.ProjectBindings {
 		bindings[k] = v
 	}

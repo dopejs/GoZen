@@ -178,7 +178,7 @@ func TestResolveWithProfileFlag(t *testing.T) {
 	setTestHome(t)
 	writeProfileConf(t, "work", []string{"p1", "p2"})
 
-	names, profile, err := resolveProviderNames("work")
+	names, profile, cli, err := resolveProviderNamesAndCLI("work", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -188,12 +188,15 @@ func TestResolveWithProfileFlag(t *testing.T) {
 	if profile != "work" {
 		t.Errorf("profile = %q, want \"work\"", profile)
 	}
+	if cli != "claude" {
+		t.Errorf("cli = %q, want \"claude\"", cli)
+	}
 }
 
 func TestResolveWithProfileFlagNotFound(t *testing.T) {
 	setTestHome(t)
 
-	_, _, err := resolveProviderNames("nonexistent")
+	_, _, _, err := resolveProviderNamesAndCLI("nonexistent", "")
 	if err == nil {
 		t.Error("expected error for nonexistent profile")
 	}
@@ -206,7 +209,7 @@ func TestResolveWithProfileFlagEmpty(t *testing.T) {
 	setTestHome(t)
 	writeProfileConf(t, "empty", []string{})
 
-	_, _, err := resolveProviderNames("empty")
+	_, _, _, err := resolveProviderNamesAndCLI("empty", "")
 	if err == nil {
 		t.Error("expected error for empty profile")
 	}
@@ -219,7 +222,7 @@ func TestResolveNoFlag(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, []string{"a", "b"})
 
-	names, profile, err := resolveProviderNames("")
+	names, profile, cli, err := resolveProviderNamesAndCLI("", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -228,6 +231,9 @@ func TestResolveNoFlag(t *testing.T) {
 	}
 	if profile != "default" {
 		t.Errorf("profile = %q, want \"default\"", profile)
+	}
+	if cli != "claude" {
+		t.Errorf("cli = %q, want \"claude\"", cli)
 	}
 }
 
@@ -258,7 +264,7 @@ func TestResolveProviderNamesFromFallbackConf(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, []string{"p1", "p2"})
 
-	names, profile, err := resolveProviderNames("")
+	names, profile, cli, err := resolveProviderNamesAndCLI("", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -268,13 +274,16 @@ func TestResolveProviderNamesFromFallbackConf(t *testing.T) {
 	if profile != "default" {
 		t.Errorf("profile = %q, want \"default\"", profile)
 	}
+	if cli != "claude" {
+		t.Errorf("cli = %q, want \"claude\"", cli)
+	}
 }
 
 func TestResolveProviderNamesNoFallbackConf(t *testing.T) {
 	setTestHome(t)
 	// No default profile and no providers → should error about no providers configured
 
-	_, _, err := resolveProviderNames("")
+	_, _, _, err := resolveProviderNamesAndCLI("", "")
 	if err == nil {
 		t.Error("expected error when default profile missing and no providers")
 	}
@@ -285,9 +294,29 @@ func TestResolveProviderNamesEmptyFallbackConf(t *testing.T) {
 	writeFallbackConf(t, []string{})
 	// Empty default profile and no providers → should error about no providers configured
 
-	_, _, err := resolveProviderNames("")
+	_, _, _, err := resolveProviderNamesAndCLI("", "")
 	if err == nil {
 		t.Error("expected error when default profile is empty and no providers")
+	}
+}
+
+func TestResolveWithCLIFlag(t *testing.T) {
+	setTestHome(t)
+	writeFallbackConf(t, []string{"p1"})
+
+	// CLI flag should override default
+	names, profile, cli, err := resolveProviderNamesAndCLI("", "codex")
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if len(names) != 1 || names[0] != "p1" {
+		t.Errorf("got %v", names)
+	}
+	if profile != "default" {
+		t.Errorf("profile = %q, want \"default\"", profile)
+	}
+	if cli != "codex" {
+		t.Errorf("cli = %q, want \"codex\"", cli)
 	}
 }
 

@@ -159,16 +159,13 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Calculate list size based on new layout
-		hPadding := 2
-		vPadding := 1
-		availWidth := m.width - hPadding*2
-		availHeight := m.height - vPadding*2
-		leftWidth := availWidth * 35 / 100
+		// Calculate list size based on layout
+		contentWidth, contentHeight, _, _ := LayoutDimensions(m.width, m.height)
+		leftWidth := contentWidth * 35 / 100
 		if leftWidth < 28 {
 			leftWidth = 28
 		}
-		paneHeight := availHeight - 3
+		paneHeight := contentHeight - 2
 		// List size accounts for border (2) and internal padding (2)
 		m.list.SetSize(leftWidth-4, paneHeight-2)
 	case tea.KeyMsg:
@@ -249,28 +246,23 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m DashboardModel) View() string {
-	// Add horizontal padding from terminal edges
-	hPadding := 2
-	vPadding := 1
-
-	// Available width after padding
-	availWidth := m.width - hPadding*2
-	availHeight := m.height - vPadding*2
+	// Use global layout dimensions
+	contentWidth, contentHeight, leftPadding, topPadding := LayoutDimensions(m.width, m.height)
 
 	// Left pane takes 35%, right pane takes 65% (detail needs more space)
-	leftWidth := availWidth * 35 / 100
-	rightWidth := availWidth - leftWidth - 2 // -2 for gap between panes
+	leftWidth := contentWidth * 35 / 100
+	rightWidth := contentWidth - leftWidth - 2 // -2 for gap between panes
 
 	// Minimum widths
 	if leftWidth < 28 {
 		leftWidth = 28
 	}
-	if rightWidth < 36 {
-		rightWidth = 36
+	if rightWidth < 40 {
+		rightWidth = 40
 	}
 
 	// Pane height (leave room for help bar)
-	paneHeight := availHeight - 3
+	paneHeight := contentHeight - 2
 
 	// Left pane - list
 	leftContent := m.list.View()
@@ -294,10 +286,10 @@ func (m DashboardModel) View() string {
 	// Help bar
 	help := m.helpStyle.Render("[a]dd [e]dit [d]elete [Tab] switch pane [Esc] back")
 
-	// Apply outer padding
+	// Apply outer padding for centering
 	paddingStyle := lipgloss.NewStyle().
-		PaddingLeft(hPadding).
-		PaddingTop(vPadding)
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
 
 	return paddingStyle.Render(content + "\n\n" + help)
 }

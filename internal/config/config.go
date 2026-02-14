@@ -214,15 +214,22 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 2 (v1.3.2+): profiles as objects with routing support
 // - Version 3 (v1.4.0+): project bindings support
 // - Version 4 (v1.5.0+): default profile and web port settings
-const CurrentConfigVersion = 4
+// - Version 5 (v1.5.0+): project bindings with CLI support
+const CurrentConfigVersion = 5
+
+// ProjectBinding holds the configuration for a project directory.
+type ProjectBinding struct {
+	Profile string `json:"profile,omitempty"` // profile name (empty = use default)
+	CLI     string `json:"cli,omitempty"`     // CLI name (empty = use default)
+}
 
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
-	Version         int                        `json:"version,omitempty"`          // config file version
-	DefaultProfile  string                     `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
-	DefaultCLI      string                     `json:"default_cli,omitempty"`      // default CLI (claude, codex, opencode)
-	WebPort         int                        `json:"web_port,omitempty"`         // web UI port (defaults to 19841)
-	Providers       map[string]*ProviderConfig `json:"providers"`                  // provider configurations
-	Profiles        map[string]*ProfileConfig  `json:"profiles"`                   // profile configurations
-	ProjectBindings map[string]string          `json:"project_bindings,omitempty"` // directory path -> profile name
+	Version         int                         `json:"version,omitempty"`          // config file version
+	DefaultProfile  string                      `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
+	DefaultCLI      string                      `json:"default_cli,omitempty"`      // default CLI (claude, codex, opencode)
+	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19841)
+	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
+	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
+	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
 }

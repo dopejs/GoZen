@@ -147,7 +147,16 @@ func (m LaunchModel) Update(msg tea.Msg) (LaunchModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m LaunchModel) View() string {
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(m.width, m.height)
+
 	title := m.titleStyle.Render("Launch")
+
+	// Calculate box widths - each box takes ~45% of content width
+	boxWidth := contentWidth * 42 / 100
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
 
 	// Profile list
 	profileLabel := m.labelStyle.Render("Select Profile:")
@@ -169,7 +178,7 @@ func (m LaunchModel) View() string {
 			profileList += m.itemStyle.Render("  "+line) + "\n"
 		}
 	}
-	profileBox := m.boxStyle.Render(profileLabel + "\n" + profileList)
+	profileBox := m.boxStyle.Width(boxWidth).Render(profileLabel + "\n" + profileList)
 
 	// CLI list
 	cliLabel := m.labelStyle.Render("Select CLI:")
@@ -195,7 +204,7 @@ func (m LaunchModel) View() string {
 			cliList += m.itemStyle.Render("  "+line) + "\n"
 		}
 	}
-	cliBox := m.boxStyle.Render(cliLabel + "\n" + cliList)
+	cliBox := m.boxStyle.Width(boxWidth).Render(cliLabel + "\n" + cliList)
 
 	// Help
 	help := m.helpStyle.Render("[Tab] switch  [Enter] launch  [Esc] back")
@@ -208,7 +217,12 @@ func (m LaunchModel) View() string {
 		help,
 	)
 
-	return content
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(content)
 }
 
 // Refresh reloads profiles and CLIs.

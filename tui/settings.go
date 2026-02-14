@@ -147,9 +147,28 @@ func (m SettingsModel) save() tea.Cmd {
 
 // View implements tea.Model.
 func (m SettingsModel) View() string {
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(m.width, m.height)
+
 	title := m.titleStyle.Render("Settings")
 
 	formView := m.form.View()
+
+	// Wrap form in a box with proper width
+	formWidth := contentWidth * 70 / 100
+	if formWidth < 50 {
+		formWidth = 50
+	}
+	if formWidth > 80 {
+		formWidth = 80
+	}
+
+	formBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Width(formWidth).
+		Padding(1, 2).
+		Render(formView)
 
 	help := m.helpStyle.Render("[Tab] next  [Shift+Tab] prev  [Ctrl+S] save  [Esc] back")
 
@@ -161,12 +180,17 @@ func (m SettingsModel) View() string {
 		status = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: " + m.err)
 	}
 
-	content := fmt.Sprintf("%s\n\n%s\n%s", title, formView, help)
+	content := fmt.Sprintf("%s\n\n%s\n\n%s", title, formBox, help)
 	if status != "" {
 		content += "\n" + status
 	}
 
-	return content
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(content)
 }
 
 // Refresh reloads settings from config.

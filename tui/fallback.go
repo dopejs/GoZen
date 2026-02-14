@@ -268,6 +268,9 @@ func RunEditProfile(profile string) error {
 }
 
 func (m fallbackModel) view(width, height int) string {
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(width, height)
+
 	var b strings.Builder
 
 	// Header
@@ -284,7 +287,15 @@ func (m fallbackModel) view(width, height int) string {
 	b.WriteString(header)
 	b.WriteString("\n\n")
 
-	// Content box
+	// Content box with proper width
+	boxWidth := contentWidth * 60 / 100
+	if boxWidth < 50 {
+		boxWidth = 50
+	}
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+
 	var content strings.Builder
 	if len(m.allConfigs) == 0 {
 		content.WriteString(dimStyle.Render("No providers configured.\n"))
@@ -375,7 +386,7 @@ func (m fallbackModel) view(width, height int) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(50).
+		Width(boxWidth).
 		Render(content.String())
 
 	b.WriteString(contentBox)
@@ -391,5 +402,10 @@ func (m fallbackModel) view(width, height int) string {
 		b.WriteString(helpStyle.Render("  tab switch section • s save • esc back"))
 	}
 
-	return b.String()
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(b.String())
 }

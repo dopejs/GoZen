@@ -17,6 +17,58 @@ func saveKeyHint() string {
 	return "ctrl+s"
 }
 
+// Layout constants - use at least 80% of terminal width
+const (
+	minContentWidth  = 80  // Minimum content width
+	maxContentWidth  = 160 // Maximum content width
+	contentWidthPct  = 85  // Percentage of terminal width to use
+	horizontalMargin = 2   // Margin from terminal edges
+	verticalMargin   = 1   // Margin from top/bottom
+)
+
+// LayoutDimensions calculates the content area dimensions based on terminal size.
+// Returns contentWidth, contentHeight, leftPadding, topPadding
+func LayoutDimensions(termWidth, termHeight int) (int, int, int, int) {
+	// Calculate content width as percentage of terminal
+	contentWidth := termWidth * contentWidthPct / 100
+
+	// Apply min/max constraints
+	if contentWidth < minContentWidth {
+		contentWidth = minContentWidth
+	}
+	if contentWidth > maxContentWidth {
+		contentWidth = maxContentWidth
+	}
+
+	// Don't exceed terminal width minus margins
+	if contentWidth > termWidth-horizontalMargin*2 {
+		contentWidth = termWidth - horizontalMargin*2
+	}
+
+	// Calculate centering padding
+	leftPadding := (termWidth - contentWidth) / 2
+	if leftPadding < horizontalMargin {
+		leftPadding = horizontalMargin
+	}
+
+	// Content height
+	contentHeight := termHeight - verticalMargin*2 - 2 // -2 for help bar
+
+	return contentWidth, contentHeight, leftPadding, verticalMargin
+}
+
+// WrapWithLayout wraps content with proper centering and padding
+func WrapWithLayout(content string, termWidth, termHeight int) string {
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(termWidth, termHeight)
+
+	wrapper := lipgloss.NewStyle().
+		Width(contentWidth).
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return wrapper.Render(content)
+}
+
 // Colors - soft, muted palette
 var (
 	primaryColor   = lipgloss.Color("109") // soft teal

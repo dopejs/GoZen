@@ -1037,6 +1037,8 @@
   // --- Settings ---
   function setupSettings() {
     document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
+    document.getElementById("btn-add-binding").addEventListener("click", openAddBinding);
+    document.getElementById("binding-save").addEventListener("click", saveBinding);
   }
 
   function loadSettings() {
@@ -1049,6 +1051,7 @@
       .catch(function(err) {
         console.error("Failed to load settings:", err);
       });
+    loadBindings();
   }
 
   function renderSettings(data) {
@@ -1095,7 +1098,149 @@
         toast("Settings saved", "success");
       })
       .catch(function(err) {
-        showToast(err.message, "error");
+        toast(err.message, "error");
       });
+  }
+
+  // --- Bindings ---
+  var bindings = [];
+  var bindingsProfiles = [];
+  var editingBindingPath = null;
+
+  function loadBindings() {
+    api("GET", "/bindings").then(function(data) {
+      bindings = data.bindings || [];
+      bindingsProfiles = data.profiles || [];
+      renderBindings();
+    }).catch(function(err) {
+      console.error("Failed to load bindings:", err);
+    });
+  }
+
+  function renderBindings() {
+    var container = document.getElementById("bindings-list");
+    if (bindings.length === 0) {
+      container.innerHTML =
+        '<div class="empty-state empty-state-sm">' +
+          '<div class="empty-state-icon">' + ICONS.inbox + '</div>' +
+          '<div class="empty-state-text">No project bindings configured.<br>Use <code>opencc bind</code> or click Add Binding.</div>' +
+        '</div>';
+      return;
+    }
+
+    var html = '<div class="bindings-table">';
+    html += '<div class="bindings-row bindings-header">';
+    html += '<div class="bindings-cell">Directory</div>';
+    html += '<div class="bindings-cell">Profile</div>';
+    html += '<div class="bindings-cell">CLI</div>';
+    html += '<div class="bindings-cell bindings-actions"></div>';
+    html += '</div>';
+
+    bindings.forEach(function(b) {
+      html += '<div class="bindings-row" data-path="' + esc(b.path) + '">';
+      html += '<div class="bindings-cell bindings-path">' + esc(b.path) + '</div>';
+      html += '<div class="bindings-cell">' + (b.profile ? '<span class="badge badge-lavender">' + esc(b.profile) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
+      html += '<div class="bindings-cell">' + (b.cli ? '<span class="badge badge-teal">' + esc(b.cli) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
+      html += '<div class="bindings-cell bindings-actions">';
+      html += '<button class="btn-icon" data-action="edit-binding" data-path="' + esc(b.path) + '" title="Edit">' + ICONS.edit + '</button>';
+      html += '<button class="btn-icon danger" data-action="delete-binding" data-path="' + esc(b.path) + '" title="Delete">' + ICONS.trash + '</button>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    container.querySelectorAll('[data-action="edit-binding"]').forEach(function(btn) {
+      btn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        editBinding(btn.dataset.path);
+      });
+    });
+    container.querySelectorAll('[data-action="delete-binding"]').forEach(function(btn) {
+      btn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        deleteBinding(btn.dataset.path);
+      });
+    });
+  }
+
+  function openAddBinding() {
+    editingBindingPath = null;
+    document.getElementById("binding-modal-title").textContent = "Add Binding";
+    document.getElementById("binding-path").value = "";
+    document.getElementById("binding-path").disabled = false;
+    document.getElementById("binding-path-group").style.display = "block";
+    document.getElementById("binding-profile").value = "";
+    document.getElementById("binding-cli").value = "";
+    updateBindingProfileOptions();
+    openModal("binding-modal");
+  }
+
+  function editBinding(path) {
+    editingBindingPath = path;
+    var b = bindings.find(function(x) { return x.path === path; });
+    if (!b) return;
+
+    document.getElementById("binding-modal-title").textContent = "Edit Binding";
+    document.getElementById("binding-path").value = path;
+    document.getElementById("binding-path").disabled = true;
+    document.getElementById("binding-path-group").style.display = "none";
+    document.getElementById("binding-profile").value = b.profile || "";
+    document.getElementById("binding-cli").value = b.cli || "";
+    updateBindingProfileOptions();
+    openModal("binding-modal");
+  }
+
+  function updateBindingProfileOptions() {
+    var select = document.getElementById("binding-profile");
+    var currentValue = select.value;
+    select.innerHTML = '<option value="">(Use default)</option>';
+    bindingsProfiles.forEach(function(p) {
+      var opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      if (p === currentValue) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+
+  function saveBinding() {
+    var path = document.getElementById("binding-path").value.trim();
+    var profile = document.getElementById("binding-profile").value;
+    var cli = document.getElementById("binding-cli").value;
+
+    if (!path) {
+      toast("Path is required", "error");
+      return;
+    }
+
+    var payload = { profile: profile, cli: cli };
+    var promise;
+
+    if (editingBindingPath) {
+      promise = api("PUT", "/bindings/" + encodeURIComponent(editingBindingPath), payload);
+    } else {
+      payload.path = path;
+      promise = api("POST", "/bindings", payload);
+    }
+
+    promise.then(function() {
+      closeModal("binding-modal");
+      toast(editingBindingPath ? "Binding updated" : "Binding created");
+      loadBindings();
+    }).catch(function(err) {
+      toast(err.message, "error");
+    });
+  }
+
+  function deleteBinding(path) {
+    showConfirm('Remove binding for "' + path + '"?', function() {
+      api("DELETE", "/bindings/" + encodeURIComponent(path)).then(function() {
+        toast("Binding removed");
+        loadBindings();
+      }).catch(function(err) {
+        toast(err.message, "error");
+      });
+    });
   }
 })();

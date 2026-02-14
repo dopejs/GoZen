@@ -373,8 +373,11 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 func (m editorModel) view(width, height int) string {
 	// If editing env vars, show that view
 	if m.envVarsEdit {
-		return m.envVarsModel.view()
+		return m.envVarsModel.view(width, height)
 	}
+
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(width, height)
 
 	var b strings.Builder
 
@@ -457,9 +460,19 @@ func (m editorModel) view(width, height int) string {
 		content.WriteString("\n")
 	}
 
+	// Form box with proper width
+	formWidth := contentWidth * 75 / 100
+	if formWidth < 60 {
+		formWidth = 60
+	}
+	if formWidth > 100 {
+		formWidth = 100
+	}
+
 	formBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
+		Width(formWidth).
 		Padding(0, 1).
 		Render(content.String())
 	b.WriteString(formBox)
@@ -478,7 +491,12 @@ func (m editorModel) view(width, height int) string {
 		b.WriteString(helpStyle.Render("  tab next • " + saveKeyHint() + " save • esc cancel"))
 	}
 
-	return b.String()
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(b.String())
 }
 
 // standaloneEditorModel wraps editorModel for standalone use.
@@ -735,7 +753,10 @@ func (m envVarsEditorModel) updateValueEdit(msg tea.KeyMsg) (envVarsEditorModel,
 	return m, nil
 }
 
-func (m envVarsEditorModel) view() string {
+func (m envVarsEditorModel) view(width, height int) string {
+	// Use global layout dimensions
+	contentWidth, _, leftPadding, topPadding := LayoutDimensions(width, height)
+
 	var b strings.Builder
 
 	header := lipgloss.NewStyle().
@@ -796,13 +817,27 @@ func (m envVarsEditorModel) view() string {
 		content.WriteString(helpStyle.Render("  ↑↓ move • enter edit/add • d delete • esc done"))
 	}
 
+	// Content box with proper width
+	boxWidth := contentWidth * 60 / 100
+	if boxWidth < 60 {
+		boxWidth = 60
+	}
+	if boxWidth > 80 {
+		boxWidth = 80
+	}
+
 	contentBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1).
-		Width(60).
+		Width(boxWidth).
 		Render(content.String())
 	b.WriteString(contentBox)
 
-	return b.String()
+	// Apply padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(leftPadding).
+		PaddingTop(topPadding)
+
+	return paddingStyle.Render(b.String())
 }

@@ -60,6 +60,13 @@ type ScenarioProviders struct {
 	Models    map[string]string // provider name → model override
 }
 
+// providerFailure tracks details of a failed provider attempt.
+type providerFailure struct {
+	Name       string
+	StatusCode int
+	Body       string
+}
+
 type ProxyServer struct {
 	Providers        []*Provider
 	Routing          *RoutingConfig // optional; nil means use Providers as-is
@@ -129,31 +136,67 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers
 	var modelOverrides map[string]string
+	var detectedScenario config.Scenario
+	var usingScenarioRoute bool
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
 		threshold := s.Routing.LongContextThreshold
 		if threshold <= 0 {
 			threshold = defaultLongContextThreshold
 		}
-		scenario, _ := DetectScenarioFromJSON(bodyBytes, threshold, sessionID)
-		if sp, ok := s.Routing.ScenarioRoutes[scenario]; ok {
+		detectedScenario, _ = DetectScenarioFromJSON(bodyBytes, threshold, sessionID)
+		if sp, ok := s.Routing.ScenarioRoutes[detectedScenario]; ok {
 			providers = sp.Providers
 			modelOverrides = sp.Models
+			usingScenarioRoute = true
 			s.Logger.Printf("[routing] scenario=%s, providers=%d, model_overrides=%d",
-				scenario, len(providers), len(modelOverrides))
-		} else if scenario != config.ScenarioDefault {
-			s.Logger.Printf("[routing] scenario=%s (no route configured, using default)", scenario)
+				detectedScenario, len(providers), len(modelOverrides))
+		} else if detectedScenario != config.ScenarioDefault {
+			s.Logger.Printf("[routing] scenario=%s (no route configured, using default)", detectedScenario)
 		}
 	}
 
 	// Track provider failure details for error reporting
-	type providerFailure struct {
-		Name       string
-		StatusCode int
-		Body       string
-	}
 	var failures []providerFailure
 
+	// Try scenario providers first, then fallback to default if all fail
+	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, &failures)
+	if success {
+		return
+	}
+
+	// If scenario route failed and we have default providers to fallback to
+	if usingScenarioRoute && len(s.Providers) > 0 {
+		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", detectedScenario)
+		// Clear model overrides for default providers
+		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, &failures)
+		if success {
+			return
+		}
+	}
+
+	// Build detailed error message with all provider failures
+	var errMsg strings.Builder
+	errMsg.WriteString("all providers failed\n")
+	for _, f := range failures {
+		if f.StatusCode > 0 {
+			errMsg.WriteString(fmt.Sprintf("[%s] %d %s\n", f.Name, f.StatusCode, f.Body))
+		} else {
+			errMsg.WriteString(fmt.Sprintf("[%s] error: %s\n", f.Name, f.Body))
+		}
+	}
+
+	errStr := errMsg.String()
+	s.Logger.Printf("%s", errStr)
+	if s.StructuredLogger != nil {
+		s.StructuredLogger.Error("", errStr)
+	}
+	http.Error(w, errStr, http.StatusBadGateway)
+}
+
+// tryProviders attempts to forward the request to each provider in order.
+// Returns true if a provider successfully handled the request.
+func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID string, failures *[]providerFailure) bool {
 	for i, p := range providers {
 		isLast := i == len(providers)-1
 
@@ -182,13 +225,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				msg := fmt.Sprintf("request canceled by client: %v", err)
 				s.Logger.Printf("[%s] %s", p.Name, msg)
 				s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg)
-				// Return immediately - client is gone, no point in failover
-				return
+				// Return true to stop processing - client is gone
+				return true
 			}
 			msg := fmt.Sprintf("request error: %v", err)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
 			s.logStructuredError(p.Name, r.Method, r.URL.Path, err)
-			failures = append(failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error()})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error()})
 			p.MarkFailed()
 			continue
 		}
@@ -200,7 +243,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
-			failures = append(failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkAuthFailed()
 			continue
 		}
@@ -212,7 +255,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
-			failures = append(failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkFailed()
 			continue
 		}
@@ -228,7 +271,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
 				s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
-				failures = append(failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 				continue
 			}
 
@@ -236,7 +279,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
-			failures = append(failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkFailed()
 			continue
 		}
@@ -250,26 +293,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.updateSessionCache(sessionID, resp)
 
 		s.copyResponse(w, resp, p)
-		return
+		return true
 	}
 
-	// Build detailed error message with all provider failures
-	var errMsg strings.Builder
-	errMsg.WriteString("all providers failed\n")
-	for _, f := range failures {
-		if f.StatusCode > 0 {
-			errMsg.WriteString(fmt.Sprintf("[%s] %d %s\n", f.Name, f.StatusCode, f.Body))
-		} else {
-			errMsg.WriteString(fmt.Sprintf("[%s] error: %s\n", f.Name, f.Body))
-		}
-	}
-
-	errStr := errMsg.String()
-	s.Logger.Printf("%s", errStr)
-	if s.StructuredLogger != nil {
-		s.StructuredLogger.Error("", errStr)
-	}
-	http.Error(w, errStr, http.StatusBadGateway)
+	return false
 }
 
 // logStructured logs to the structured logger if available.

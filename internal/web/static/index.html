@@ -270,7 +270,7 @@
         <div class="page-header">
           <div>
             <h1>Settings</h1>
-            <p class="page-desc">Configure global settings</p>
+            <p class="page-desc">Configure global settings and project bindings</p>
           </div>
           <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
         </div>
@@ -293,6 +293,16 @@
             <p class="form-hint">Changes require restart of the web server</p>
           </div>
         </form>
+
+        <div class="form-divider"><span>Project Bindings</span></div>
+        <p class="section-desc">Bind directories to specific profiles and CLIs. When running <code>opencc</code> in a bound directory, it will automatically use the configured settings.</p>
+        <div class="bindings-header">
+          <button class="btn btn-ghost btn-sm" id="btn-add-binding">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Binding
+          </button>
+        </div>
+        <div id="bindings-list" class="bindings-container"></div>
       </section>
     </div>
   </div>
@@ -337,6 +347,45 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-ghost" id="atp-skip">Skip</button>
           <button type="button" class="btn btn-primary" id="atp-confirm">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Binding Edit Modal -->
+  <div id="binding-modal" class="modal-overlay">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h2 id="binding-modal-title">Add Binding</h2>
+        <button class="btn-close modal-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="binding-form">
+          <div class="form-group" id="binding-path-group">
+            <label for="binding-path">Directory Path</label>
+            <input type="text" id="binding-path" required autocomplete="off" placeholder="/path/to/project">
+          </div>
+          <div class="form-group">
+            <label for="binding-profile">Profile</label>
+            <select id="binding-profile">
+              <option value="">(Use default)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="binding-cli">CLI</label>
+            <select id="binding-cli">
+              <option value="">(Use default)</option>
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="opencode">OpenCode</option>
+            </select>
+          </div>
+        </form>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost modal-cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="binding-save">Save</button>
         </div>
       </div>
     </div>

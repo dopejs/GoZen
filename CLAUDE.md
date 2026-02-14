@@ -55,6 +55,15 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **Minimal test files**: Only add tests for new public APIs or complex logic. Do not create excessive test files for simple functions. Prefer table-driven tests in existing *_test.go files.
 - **No unnecessary files**: Before committing, review `git status` and remove any generated, temporary, or example files that should not be in the repository.
 
+## Config Migration Rules
+
+When modifying `OpenCCConfig` or its nested types in a way that changes the JSON schema (e.g. changing a field's type, renaming a field, restructuring data):
+
+1. Bump `CurrentConfigVersion` in `internal/config/config.go`.
+2. Add migration logic so older config files are parsed correctly. The current pattern uses a custom `UnmarshalJSON` on `OpenCCConfig` with a fallback path that parses changed fields as `json.RawMessage` and converts them to the new format.
+3. The version check in `loadLocked()` (`store.go`) automatically upgrades `cfg.Version < CurrentConfigVersion` to the current version after unmarshal.
+4. Add tests covering: old format parsing, mixed old/new format, field preservation on the fallback path, and marshal round-trip.
+
 ## Key Conventions
 
 - Config convenience functions in `internal/config/compat.go` wrap `DefaultStore()` methods

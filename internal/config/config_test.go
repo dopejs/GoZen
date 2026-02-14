@@ -842,4 +842,276 @@ func TestEnvVarsNilMap(t *testing.T) {
 	p.ExportToEnv() // Should not panic
 }
 
+func TestConfigVersionV3Bindings(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
 
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a v3-style config where project_bindings values are plain strings
+	v3Config := `{
+  "version": 3,
+  "providers": {
+    "main": {
+      "base_url": "https://api.example.com",
+      "auth_token": "tok-123"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["main"]
+    }
+  },
+  "project_bindings": {
+    "/home/user/project-a": "default",
+    "/home/user/project-b": "work"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v3Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// Verify provider loaded
+	if p := store.GetProvider("main"); p == nil {
+		t.Fatal("expected provider 'main' to be loaded")
+	}
+
+	// Verify project bindings were migrated from string to *ProjectBinding
+	bindings := store.GetAllProjectBindings()
+	if len(bindings) != 2 {
+		t.Fatalf("expected 2 project bindings, got %d", len(bindings))
+	}
+
+	bindingA := bindings["/home/user/project-a"]
+	if bindingA == nil {
+		t.Fatal("expected binding for /home/user/project-a")
+	}
+	if bindingA.Profile != "default" {
+		t.Errorf("project-a profile = %q, want %q", bindingA.Profile, "default")
+	}
+	if bindingA.CLI != "" {
+		t.Errorf("project-a cli = %q, want empty", bindingA.CLI)
+	}
+
+	bindingB := bindings["/home/user/project-b"]
+	if bindingB == nil {
+		t.Fatal("expected binding for /home/user/project-b")
+	}
+	if bindingB.Profile != "work" {
+		t.Errorf("project-b profile = %q, want %q", bindingB.Profile, "work")
+	}
+
+	// Verify version was upgraded after save
+	if err := store.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("saved version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+}
+
+func TestConfigVersionV3MixedBindings(t *testing.T) {
+	// Test a config with mixed binding formats (some string, some object)
+	v3MixedConfig := `{
+  "version": 3,
+  "providers": {},
+  "profiles": {},
+  "project_bindings": {
+    "/path/old": "my-profile",
+    "/path/new": {"profile": "other", "cli": "codex"}
+  }
+}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(v3MixedConfig), &cfg); err != nil {
+		t.Fatalf("failed to unmarshal mixed bindings: %v", err)
+	}
+
+	if len(cfg.ProjectBindings) != 2 {
+		t.Fatalf("expected 2 bindings, got %d", len(cfg.ProjectBindings))
+	}
+
+	old := cfg.ProjectBindings["/path/old"]
+	if old == nil || old.Profile != "my-profile" || old.CLI != "" {
+		t.Errorf("old binding = %+v, want {Profile:my-profile CLI:}", old)
+	}
+
+	newB := cfg.ProjectBindings["/path/new"]
+	if newB == nil || newB.Profile != "other" || newB.CLI != "codex" {
+		t.Errorf("new binding = %+v, want {Profile:other CLI:codex}", newB)
+	}
+}
+
+func TestOpenCCConfigUnmarshalEdgeCases(t *testing.T) {
+	tests := []struct {
+		name            string
+		json            string
+		wantErr         bool
+		wantBindingsLen int
+		checkBinding    func(t *testing.T, bindings map[string]*ProjectBinding)
+	}{
+		{
+			name: "no project_bindings field",
+			json: `{"version":5,"providers":{},"profiles":{}}`,
+			wantBindingsLen: 0,
+		},
+		{
+			name: "empty project_bindings",
+			json: `{"version":5,"providers":{},"profiles":{},"project_bindings":{}}`,
+			wantBindingsLen: 0,
+		},
+		{
+			name: "v5 object bindings (normal path)",
+			json: `{"version":5,"providers":{},"profiles":{},"project_bindings":{"/a":{"profile":"p","cli":"claude"}}}`,
+			wantBindingsLen: 1,
+			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
+				if b["/a"].Profile != "p" || b["/a"].CLI != "claude" {
+					t.Errorf("/a = %+v", b["/a"])
+				}
+			},
+		},
+		{
+			name: "v3 all string bindings (fallback path)",
+			json: `{"version":3,"providers":{},"profiles":{},"project_bindings":{"/x":"prof1","/y":"prof2"}}`,
+			wantBindingsLen: 2,
+			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
+				if b["/x"].Profile != "prof1" || b["/x"].CLI != "" {
+					t.Errorf("/x = %+v", b["/x"])
+				}
+				if b["/y"].Profile != "prof2" {
+					t.Errorf("/y = %+v", b["/y"])
+				}
+			},
+		},
+		{
+			name: "v3 empty string binding",
+			json: `{"version":3,"providers":{},"profiles":{},"project_bindings":{"/z":""}}`,
+			wantBindingsLen: 1,
+			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
+				if b["/z"] == nil || b["/z"].Profile != "" {
+					t.Errorf("/z = %+v, want empty ProjectBinding", b["/z"])
+				}
+			},
+		},
+		{
+			name: "v5 binding with empty object",
+			json: `{"version":5,"providers":{},"profiles":{},"project_bindings":{"/e":{}}}`,
+			wantBindingsLen: 1,
+			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
+				if b["/e"] == nil || b["/e"].Profile != "" || b["/e"].CLI != "" {
+					t.Errorf("/e = %+v, want empty", b["/e"])
+				}
+			},
+		},
+		{
+			name: "invalid json",
+			json: `{not valid json`,
+			wantErr: true,
+		},
+		{
+			name:            "v4 config without bindings upgrades cleanly",
+			json:            `{"version":4,"providers":{"p":{"base_url":"u","auth_token":"t"}},"profiles":{"default":{"providers":["p"]}}}`,
+			wantBindingsLen: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg OpenCCConfig
+			err := json.Unmarshal([]byte(tt.json), &cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(cfg.ProjectBindings) != tt.wantBindingsLen {
+				t.Fatalf("bindings len = %d, want %d", len(cfg.ProjectBindings), tt.wantBindingsLen)
+			}
+			if tt.checkBinding != nil {
+				tt.checkBinding(t, cfg.ProjectBindings)
+			}
+		})
+	}
+}
+
+func TestOpenCCConfigUnmarshalPreservesAllFields(t *testing.T) {
+	// Ensure the fallback path doesn't lose any top-level fields
+	input := `{
+  "version": 3,
+  "default_profile": "work",
+  "default_cli": "codex",
+  "web_port": 9999,
+  "providers": {"p1": {"base_url": "https://a.com", "auth_token": "tok"}},
+  "profiles": {"work": {"providers": ["p1"]}},
+  "project_bindings": {"/proj": "work"}
+}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(input), &cfg); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if cfg.Version != 3 {
+		t.Errorf("Version = %d, want 3", cfg.Version)
+	}
+	if cfg.DefaultProfile != "work" {
+		t.Errorf("DefaultProfile = %q, want %q", cfg.DefaultProfile, "work")
+	}
+	if cfg.DefaultCLI != "codex" {
+		t.Errorf("DefaultCLI = %q, want %q", cfg.DefaultCLI, "codex")
+	}
+	if cfg.WebPort != 9999 {
+		t.Errorf("WebPort = %d, want 9999", cfg.WebPort)
+	}
+	if cfg.Providers["p1"] == nil || cfg.Providers["p1"].BaseURL != "https://a.com" {
+		t.Errorf("Provider p1 not preserved: %+v", cfg.Providers["p1"])
+	}
+	if cfg.Profiles["work"] == nil || len(cfg.Profiles["work"].Providers) != 1 {
+		t.Errorf("Profile work not preserved: %+v", cfg.Profiles["work"])
+	}
+	if cfg.ProjectBindings["/proj"] == nil || cfg.ProjectBindings["/proj"].Profile != "work" {
+		t.Errorf("ProjectBinding /proj not migrated: %+v", cfg.ProjectBindings["/proj"])
+	}
+}
+
+func TestOpenCCConfigMarshalRoundTrip(t *testing.T) {
+	// After migrating a v3 config, marshal and re-unmarshal should produce v5 format
+	v3Input := `{"version":3,"providers":{},"profiles":{},"project_bindings":{"/a":"prof1"}}`
+	var cfg OpenCCConfig
+	if err := json.Unmarshal([]byte(v3Input), &cfg); err != nil {
+		t.Fatalf("unmarshal v3: %v", err)
+	}
+
+	// Marshal (produces v5 format with object bindings)
+	data, err := json.Marshal(&cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Re-unmarshal should take the fast path (no fallback needed)
+	var cfg2 OpenCCConfig
+	if err := json.Unmarshal(data, &cfg2); err != nil {
+		t.Fatalf("re-unmarshal: %v", err)
+	}
+
+	if cfg2.ProjectBindings["/a"] == nil || cfg2.ProjectBindings["/a"].Profile != "prof1" {
+		t.Errorf("round-trip failed: /a = %+v", cfg2.ProjectBindings["/a"])
+	}
+}

@@ -8,9 +8,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/dopejs/opencc/internal/config"
+	"github.com/dopejs/opencc/internal/proxy"
 )
 
 // Server is the web configuration management server.
@@ -36,6 +38,7 @@ func NewServer(version string, logger *log.Logger) *Server {
 	mux.HandleFunc("/api/v1/providers/", s.handleProvider)
 	mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
 	mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
+	mux.HandleFunc("/api/v1/logs", s.handleLogs)
 
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
@@ -146,4 +149,74 @@ func WaitForReady(ctx context.Context) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// --- logs ---
+
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	logger := proxy.GetGlobalLogger()
+	if logger == nil {
+		writeJSON(w, http.StatusOK, proxy.LogsResponse{
+			Entries:   []proxy.LogEntry{},
+			Total:     0,
+			Providers: []string{},
+		})
+		return
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	filter := proxy.LogFilter{
+		Provider: query.Get("provider"),
+	}
+
+	if query.Get("errors_only") == "true" {
+		filter.ErrorsOnly = true
+	}
+
+	if level := query.Get("level"); level != "" {
+		filter.Level = proxy.LogLevel(level)
+	}
+
+	if statusCode := query.Get("status_code"); statusCode != "" {
+		if code, err := strconv.Atoi(statusCode); err == nil {
+			filter.StatusCode = code
+		}
+	}
+
+	if statusMin := query.Get("status_min"); statusMin != "" {
+		if code, err := strconv.Atoi(statusMin); err == nil {
+			filter.StatusMin = code
+		}
+	}
+
+	if statusMax := query.Get("status_max"); statusMax != "" {
+		if code, err := strconv.Atoi(statusMax); err == nil {
+			filter.StatusMax = code
+		}
+	}
+
+	if limit := query.Get("limit"); limit != "" {
+		if l, err := strconv.Atoi(limit); err == nil {
+			filter.Limit = l
+		}
+	}
+
+	if filter.Limit <= 0 {
+		filter.Limit = 100 // default limit
+	}
+
+	entries := logger.GetEntries(filter)
+	providers := logger.GetProviders()
+
+	writeJSON(w, http.StatusOK, proxy.LogsResponse{
+		Entries:   entries,
+		Total:     len(entries),
+		Providers: providers,
+	})
 }

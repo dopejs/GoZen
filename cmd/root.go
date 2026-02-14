@@ -114,6 +114,11 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 		logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
+	// Initialize structured logger for web API access
+	if err := proxy.InitGlobalLogger(logDir); err != nil {
+		logger.Printf("Warning: failed to initialize structured logger: %v", err)
+	}
+
 	logger.Printf("Starting proxy with %d providers:", len(providers))
 	for i, p := range providers {
 		logger.Printf("  [%d] %s → %s (model=%s)", i+1, p.Name, p.BaseURL.String(), p.Model)

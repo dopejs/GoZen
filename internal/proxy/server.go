@@ -9,10 +9,40 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dopejs/opencc/internal/config"
 )
+
+var (
+	globalLogger     *StructuredLogger
+	globalLoggerOnce sync.Once
+	globalLoggerMu   sync.RWMutex
+)
+
+// InitGlobalLogger initializes the global structured logger.
+func InitGlobalLogger(logDir string) error {
+	var initErr error
+	globalLoggerOnce.Do(func() {
+		logger, err := NewStructuredLogger(logDir, 2000)
+		if err != nil {
+			initErr = err
+			return
+		}
+		globalLoggerMu.Lock()
+		globalLogger = logger
+		globalLoggerMu.Unlock()
+	})
+	return initErr
+}
+
+// GetGlobalLogger returns the global structured logger.
+func GetGlobalLogger() *StructuredLogger {
+	globalLoggerMu.RLock()
+	defer globalLoggerMu.RUnlock()
+	return globalLogger
+}
 
 // RoutingConfig holds the default provider chain and optional scenario routes.
 type RoutingConfig struct {
@@ -28,16 +58,18 @@ type ScenarioProviders struct {
 }
 
 type ProxyServer struct {
-	Providers []*Provider
-	Routing   *RoutingConfig // optional; nil means use Providers as-is
-	Logger    *log.Logger
-	Client    *http.Client
+	Providers        []*Provider
+	Routing          *RoutingConfig // optional; nil means use Providers as-is
+	Logger           *log.Logger
+	StructuredLogger *StructuredLogger
+	Client           *http.Client
 }
 
 func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 	return &ProxyServer{
-		Providers: providers,
-		Logger:    logger,
+		Providers:        providers,
+		Logger:           logger,
+		StructuredLogger: GetGlobalLogger(),
 		Client: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
@@ -47,9 +79,10 @@ func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 // NewProxyServerWithRouting creates a proxy server with scenario-based routing.
 func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *ProxyServer {
 	return &ProxyServer{
-		Providers: routing.DefaultProviders,
-		Routing:   routing,
-		Logger:    logger,
+		Providers:        routing.DefaultProviders,
+		Routing:          routing,
+		Logger:           logger,
+		StructuredLogger: GetGlobalLogger(),
 		Client: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
@@ -93,7 +126,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for _, p := range providers {
 		if !p.IsHealthy() {
-			s.Logger.Printf("[%s] skipping (unhealthy, backoff %v)", p.Name, p.Backoff)
+			msg := fmt.Sprintf("skipping (unhealthy, backoff %v)", p.Backoff)
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelWarn, msg)
 			continue
 		}
 
@@ -106,14 +141,18 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
 		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride)
 		if err != nil {
-			s.Logger.Printf("[%s] request error: %v", p.Name, err)
+			msg := fmt.Sprintf("request error: %v", err)
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructuredError(p.Name, r.Method, r.URL.Path, err)
 			p.MarkFailed()
 			continue
 		}
 
 		// Auth/account errors → failover with long backoff
 		if resp.StatusCode == 401 || resp.StatusCode == 402 || resp.StatusCode == 403 {
-			s.Logger.Printf("[%s] got %d (auth/account error), failing over", p.Name, resp.StatusCode)
+			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelError, msg)
 			resp.Body.Close()
 			p.MarkAuthFailed()
 			continue
@@ -121,7 +160,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Rate limit → failover with short backoff
 		if resp.StatusCode == 429 {
-			s.Logger.Printf("[%s] got %d (rate limited), failing over", p.Name, resp.StatusCode)
+			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelError, msg)
 			resp.Body.Close()
 			p.MarkFailed()
 			continue
@@ -135,18 +176,24 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			if isRequestRelatedError(errBody) {
 				// Request-related error (e.g., context too long) - failover without marking unhealthy
-				s.Logger.Printf("[%s] got %d (request-related error), failing over without backoff", p.Name, resp.StatusCode)
+				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff", resp.StatusCode)
+				s.Logger.Printf("[%s] %s", p.Name, msg)
+				s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelError, msg)
 				continue
 			}
 
 			// Server-side issue - mark as failed with backoff
-			s.Logger.Printf("[%s] got %d (server error), failing over", p.Name, resp.StatusCode)
+			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelError, msg)
 			p.MarkFailed()
 			continue
 		}
 
 		p.MarkHealthy()
-		s.Logger.Printf("[%s] success %d", p.Name, resp.StatusCode)
+		msg := fmt.Sprintf("success %d", resp.StatusCode)
+		s.Logger.Printf("[%s] %s", p.Name, msg)
+		s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelInfo, msg)
 
 		// Update session cache with token usage from response
 		s.updateSessionCache(sessionID, resp)
@@ -155,7 +202,34 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.Logger.Printf("all providers failed")
+	if s.StructuredLogger != nil {
+		s.StructuredLogger.Error("", "all providers failed")
+	}
 	http.Error(w, "all providers failed", http.StatusBadGateway)
+}
+
+// logStructured logs to the structured logger if available.
+func (s *ProxyServer) logStructured(provider, method, path string, statusCode int, level LogLevel, message string) {
+	if s.StructuredLogger == nil {
+		return
+	}
+	s.StructuredLogger.Log(LogEntry{
+		Level:      level,
+		Provider:   provider,
+		Method:     method,
+		Path:       path,
+		StatusCode: statusCode,
+		Message:    message,
+	})
+}
+
+// logStructuredError logs an error to the structured logger.
+func (s *ProxyServer) logStructuredError(provider, method, path string, err error) {
+	if s.StructuredLogger == nil {
+		return
+	}
+	s.StructuredLogger.RequestError(provider, method, path, err)
 }
 
 func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, modelOverride string) (*http.Response, error) {

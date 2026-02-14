@@ -13,6 +13,7 @@ import (
 
 	"github.com/dopejs/opencc/internal/config"
 	"github.com/dopejs/opencc/internal/daemon"
+	"github.com/dopejs/opencc/internal/proxy"
 	"github.com/dopejs/opencc/internal/web"
 	"github.com/spf13/cobra"
 )
@@ -102,6 +103,11 @@ func runWebServer() error {
 	logFile, logger := setupWebLogger()
 	if logFile != nil {
 		defer logFile.Close()
+	}
+
+	// Initialize global structured logger for proxy
+	if err := proxy.InitGlobalLogger(config.ConfigDirPath()); err != nil {
+		logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
 
 	srv := web.NewServer(Version, logger)

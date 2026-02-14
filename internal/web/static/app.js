@@ -16,7 +16,8 @@
     checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
     alertCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
-    gripVertical: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
+    gripVertical: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>',
+    fileText: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'
   };
 
   // --- State ---
@@ -34,6 +35,7 @@
     setupModals();
     setupAutocomplete();
     setupEnvVars();
+    setupLogs();
     document.getElementById("btn-add-provider").addEventListener("click", openAddProvider);
     document.getElementById("btn-add-profile").addEventListener("click", openAddProfile);
     document.getElementById("provider-form").addEventListener("submit", submitProvider);
@@ -72,6 +74,10 @@
     if (section) section.classList.add("active");
     if (window.location.hash !== "#" + tab) {
       history.replaceState(null, "", "#" + tab);
+    }
+    // Load logs when switching to logs tab
+    if (tab === "logs") {
+      loadLogs();
     }
   }
 
@@ -843,5 +849,117 @@
     var d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  // --- Logs ---
+  var logsProviders = [];
+
+  function setupLogs() {
+    document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
+    document.getElementById("logs-provider-filter").addEventListener("change", loadLogs);
+    document.getElementById("logs-type-filter").addEventListener("change", loadLogs);
+    document.getElementById("logs-status-filter").addEventListener("change", loadLogs);
+  }
+
+  function loadLogs() {
+    var params = new URLSearchParams();
+
+    var provider = document.getElementById("logs-provider-filter").value;
+    if (provider) params.set("provider", provider);
+
+    var logType = document.getElementById("logs-type-filter").value;
+    if (logType === "errors") params.set("errors_only", "true");
+
+    var statusFilter = document.getElementById("logs-status-filter").value;
+    if (statusFilter === "4xx") {
+      params.set("status_min", "400");
+      params.set("status_max", "499");
+    } else if (statusFilter === "5xx") {
+      params.set("status_min", "500");
+      params.set("status_max", "599");
+    } else if (statusFilter) {
+      params.set("status_code", statusFilter);
+    }
+
+    params.set("limit", "200");
+
+    var url = "/logs" + (params.toString() ? "?" + params.toString() : "");
+    api("GET", url).then(function(data) {
+      logsProviders = data.providers || [];
+      updateProviderFilter();
+      renderLogs(data.entries || []);
+    }).catch(function(err) {
+      toast("Failed to load logs: " + err.message, "error");
+    });
+  }
+
+  function updateProviderFilter() {
+    var select = document.getElementById("logs-provider-filter");
+    var currentValue = select.value;
+    select.innerHTML = '<option value="">All Providers</option>';
+    logsProviders.forEach(function(p) {
+      var opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      if (p === currentValue) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+
+  function renderLogs(entries) {
+    var container = document.getElementById("logs-list");
+
+    if (entries.length === 0) {
+      container.innerHTML =
+        '<div class="logs-empty">' +
+          ICONS.fileText +
+          '<div>No logs found</div>' +
+        '</div>';
+      return;
+    }
+
+    var html = '';
+    entries.forEach(function(entry) {
+      var levelClass = entry.level || 'info';
+      var time = formatLogTime(entry.timestamp);
+      var statusClass = getStatusClass(entry.status_code);
+
+      html += '<div class="log-entry level-' + levelClass + '">';
+      html += '<span class="log-time">' + esc(time) + '</span>';
+      html += '<span class="log-level ' + levelClass + '">' + esc(entry.level || 'info') + '</span>';
+      if (entry.provider) {
+        html += '<span class="log-provider">' + esc(entry.provider) + '</span>';
+      }
+      if (entry.status_code) {
+        html += '<span class="log-status ' + statusClass + '">' + entry.status_code + '</span>';
+      }
+      html += '<span class="log-message">';
+      if (entry.method && entry.path) {
+        html += '<span class="log-path">' + esc(entry.method) + ' ' + esc(entry.path) + '</span> ';
+      }
+      html += esc(entry.message);
+      if (entry.error) {
+        html += ' <span style="color:var(--red)">' + esc(entry.error) + '</span>';
+      }
+      html += '</span>';
+      html += '</div>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  function formatLogTime(timestamp) {
+    if (!timestamp) return '';
+    var d = new Date(timestamp);
+    var pad = function(n) { return n < 10 ? '0' + n : n; };
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function getStatusClass(code) {
+    if (!code) return '';
+    if (code >= 200 && code < 300) return 'status-2xx';
+    if (code >= 400 && code < 500) return 'status-4xx';
+    if (code >= 500) return 'status-5xx';
+    return '';
   }
 })();

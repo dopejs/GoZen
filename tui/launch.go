@@ -47,7 +47,7 @@ func NewLaunchModel() LaunchModel {
 	}
 
 	// Find default CLI index
-	clis := []string{"claude", "codex", "opencode"}
+	clis := config.AvailableCLIs
 	cliIdx := 0
 	for i, c := range clis {
 		if c == defaultCLI {

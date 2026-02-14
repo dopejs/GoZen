@@ -44,7 +44,7 @@ func NewSettingsModel() SettingsModel {
 			Label:   "Default CLI",
 			Type:    components.FieldSelect,
 			Value:   currentCLI,
-			Options: []string{"claude", "codex", "opencode"},
+			Options: config.AvailableCLIs,
 		},
 		{
 			Key:     "default_profile",

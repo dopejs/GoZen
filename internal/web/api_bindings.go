@@ -85,7 +85,7 @@ func (s *Server) listBindings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bindingsResponse{
 		Bindings: bindings,
 		Profiles: profiles,
-		CLIs:     availableCLIs,
+		CLIs:     config.AvailableCLIs,
 	})
 }
 
@@ -128,14 +128,7 @@ func (s *Server) createBinding(w http.ResponseWriter, r *http.Request) {
 
 	// Verify CLI is valid if specified
 	if req.CLI != "" {
-		valid := false
-		for _, cli := range availableCLIs {
-			if cli == req.CLI {
-				valid = true
-				break
-			}
-		}
-		if !valid {
+		if !config.IsValidCLI(req.CLI) {
 			writeError(w, http.StatusBadRequest, "invalid CLI")
 			return
 		}
@@ -172,14 +165,7 @@ func (s *Server) updateBinding(w http.ResponseWriter, r *http.Request, path stri
 
 	// Verify CLI is valid if specified
 	if req.CLI != "" {
-		valid := false
-		for _, cli := range availableCLIs {
-			if cli == req.CLI {
-				valid = true
-				break
-			}
-		}
-		if !valid {
+		if !config.IsValidCLI(req.CLI) {
 			writeError(w, http.StatusBadRequest, "invalid CLI")
 			return
 		}

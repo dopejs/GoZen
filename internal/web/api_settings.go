@@ -23,8 +23,6 @@ type settingsRequest struct {
 	WebPort        int    `json:"web_port,omitempty"`
 }
 
-var availableCLIs = []string{"claude", "codex", "opencode"}
-
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -45,7 +43,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		DefaultCLI:     store.GetDefaultCLI(),
 		WebPort:        store.GetWebPort(),
 		Profiles:       profiles,
-		CLIs:           availableCLIs,
+		CLIs:           config.AvailableCLIs,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -74,13 +72,7 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Update default CLI if provided
 	if req.DefaultCLI != "" {
-		valid := false
-		for _, cli := range availableCLIs {
-			if cli == req.DefaultCLI {
-				valid = true
-				break
-			}
-		}
+		valid := config.IsValidCLI(req.DefaultCLI)
 		if !valid {
 			writeError(w, http.StatusBadRequest, "invalid CLI")
 			return

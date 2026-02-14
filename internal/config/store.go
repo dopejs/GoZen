@@ -369,13 +369,14 @@ func (s *Store) loadLocked() error {
 		}
 
 		// Check config version
-		if cfg.Version == 0 {
-			// Old config without version field, auto-upgrade to current version
-			cfg.Version = CurrentConfigVersion
-		} else if cfg.Version > CurrentConfigVersion {
+		if cfg.Version > CurrentConfigVersion {
 			// Config is newer than this version of opencc can handle
 			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade opencc to the latest version",
 				cfg.Version, CurrentConfigVersion)
+		}
+		if cfg.Version < CurrentConfigVersion {
+			// Older config (including version 0 = no version field), upgrade to current
+			cfg.Version = CurrentConfigVersion
 		}
 
 		if cfg.Providers == nil {
@@ -559,8 +560,8 @@ func (s *Store) BindProject(path string, profile string, cli string) error {
 	}
 
 	// Verify CLI is valid if specified
-	if cli != "" && cli != "claude" && cli != "codex" && cli != "opencode" {
-		return fmt.Errorf("invalid CLI '%s' (must be claude, codex, or opencode)", cli)
+	if cli != "" && !IsValidCLI(cli) {
+		return fmt.Errorf("invalid CLI '%s' (must be %v)", cli, AvailableCLIs)
 	}
 
 	s.config.ProjectBindings[path] = &ProjectBinding{

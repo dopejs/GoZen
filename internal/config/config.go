@@ -17,10 +17,28 @@ const (
 	DefaultProfileName = "default"
 	DefaultCLIName     = "claude"
 
+	// Supported CLI names
+	CLIClaude   = "claude"
+	CLICodex    = "codex"
+	CLIOpenCode = "opencode"
+
 	// Provider API types
 	ProviderTypeAnthropic = "anthropic"
 	ProviderTypeOpenAI    = "openai"
 )
+
+// AvailableCLIs is the canonical list of supported CLI names.
+var AvailableCLIs = []string{CLIClaude, CLICodex, CLIOpenCode}
+
+// IsValidCLI reports whether cli is a supported CLI name.
+func IsValidCLI(cli string) bool {
+	for _, c := range AvailableCLIs {
+		if c == cli {
+			return true
+		}
+	}
+	return false
+}
 
 // ProviderConfig holds connection and model settings for a single API provider.
 type ProviderConfig struct {
@@ -232,4 +250,59 @@ type OpenCCConfig struct {
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
+}
+
+// UnmarshalJSON supports both current format (project_bindings as map[string]*ProjectBinding)
+// and the v3 format (project_bindings as map[string]string where the value is just a profile name).
+func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
+	// Try standard unmarshal first (works for v5+ configs and configs without project_bindings)
+	type openCCConfigAlias OpenCCConfig
+	var alias openCCConfigAlias
+	if err := json.Unmarshal(data, &alias); err == nil {
+		*c = OpenCCConfig(alias)
+		return nil
+	}
+
+	// Standard unmarshal failed — likely v3 project_bindings with string values.
+	// Parse with raw messages for project_bindings.
+	var raw struct {
+		Version         int                            `json:"version,omitempty"`
+		DefaultProfile  string                         `json:"default_profile,omitempty"`
+		DefaultCLI      string                         `json:"default_cli,omitempty"`
+		WebPort         int                            `json:"web_port,omitempty"`
+		Providers       map[string]*ProviderConfig     `json:"providers"`
+		Profiles        map[string]*ProfileConfig      `json:"profiles"`
+		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	c.Version = raw.Version
+	c.DefaultProfile = raw.DefaultProfile
+	c.DefaultCLI = raw.DefaultCLI
+	c.WebPort = raw.WebPort
+	c.Providers = raw.Providers
+	c.Profiles = raw.Profiles
+
+	if len(raw.ProjectBindings) > 0 {
+		c.ProjectBindings = make(map[string]*ProjectBinding, len(raw.ProjectBindings))
+		for path, msg := range raw.ProjectBindings {
+			// Try as *ProjectBinding first (v5 format)
+			var pb ProjectBinding
+			if err := json.Unmarshal(msg, &pb); err == nil {
+				c.ProjectBindings[path] = &pb
+				continue
+			}
+			// Try as plain string (v3 format: profile name only)
+			var profileName string
+			if err := json.Unmarshal(msg, &profileName); err == nil {
+				c.ProjectBindings[path] = &ProjectBinding{Profile: profileName}
+				continue
+			}
+			// Skip unrecognized entries
+		}
+	}
+
+	return nil
 }

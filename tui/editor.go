@@ -27,18 +27,21 @@ const (
 )
 
 type editorModel struct {
-	fields      [fieldCount]textinput.Model
-	focus       editorField
-	editing     string // config name being edited, empty = new
-	initMode    bool   // true = auto-add to default profile on save (first provider)
-	err         string
-	saved       bool   // true = save succeeded, waiting to exit
-	status      string // "Saved" success message
-	createdName string // name of provider after save (for callers)
-	envVars     map[string]string // custom environment variables
-	envVarsEdit bool              // true = editing env vars
-	envVarsModel envVarsEditorModel
-	providerType int // 0 = anthropic, 1 = openai
+	fields          [fieldCount]textinput.Model
+	focus           editorField
+	editing         string // config name being edited, empty = new
+	initMode        bool   // true = auto-add to default profile on save (first provider)
+	err             string
+	saved           bool   // true = save succeeded, waiting to exit
+	status          string // "Saved" success message
+	createdName     string // name of provider after save (for callers)
+	claudeEnvVars   map[string]string // Claude Code environment variables
+	codexEnvVars    map[string]string // Codex environment variables
+	opencodeEnvVars map[string]string // OpenCode environment variables
+	currentEnvCLI   int               // 0=claude, 1=codex, 2=opencode
+	envVarsEdit     bool              // true = editing env vars
+	envVarsModel    envVarsEditorModel
+	providerType    int // 0 = anthropic, 1 = openai
 }
 
 func newEditorModel(configName string) editorModel {
@@ -75,10 +78,13 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 	// fieldEnvVars is a special field, not a textinput
 
 	m := editorModel{
-		fields:       fields,
-		editing:      configName,
-		envVars:      make(map[string]string),
-		providerType: 0, // default to anthropic
+		fields:          fields,
+		editing:         configName,
+		claudeEnvVars:   make(map[string]string),
+		codexEnvVars:    make(map[string]string),
+		opencodeEnvVars: make(map[string]string),
+		currentEnvCLI:   0, // default to claude
+		providerType:    0, // default to anthropic
 	}
 
 	if configName != "" {
@@ -97,10 +103,25 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 			if p.GetType() == config.ProviderTypeOpenAI {
 				m.providerType = 1
 			}
-			// Load env vars
-			if p.EnvVars != nil {
+			// Load env vars for each CLI
+			if p.ClaudeEnvVars != nil {
+				for k, v := range p.ClaudeEnvVars {
+					m.claudeEnvVars[k] = v
+				}
+			} else if p.EnvVars != nil {
+				// Fallback to legacy EnvVars for Claude
 				for k, v := range p.EnvVars {
-					m.envVars[k] = v
+					m.claudeEnvVars[k] = v
+				}
+			}
+			if p.CodexEnvVars != nil {
+				for k, v := range p.CodexEnvVars {
+					m.codexEnvVars[k] = v
+				}
+			}
+			if p.OpenCodeEnvVars != nil {
+				for k, v := range p.OpenCodeEnvVars {
+					m.opencodeEnvVars[k] = v
 				}
 			}
 		}
@@ -138,7 +159,15 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 		switch msg := msg.(type) {
 		case envVarsExitMsg:
 			m.envVarsEdit = false
-			m.envVars = msg.envVars
+			// Save to the current CLI's env vars
+			switch m.currentEnvCLI {
+			case 0:
+				m.claudeEnvVars = msg.envVars
+			case 1:
+				m.codexEnvVars = msg.envVars
+			case 2:
+				m.opencodeEnvVars = msg.envVars
+			}
 			return m, nil
 		default:
 			var cmd tea.Cmd
@@ -177,9 +206,18 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 				return m, nil
 			}
 			if m.focus == fieldEnvVars {
-				// Open env vars editor
+				// Open env vars editor for current CLI
+				var envVars map[string]string
+				switch m.currentEnvCLI {
+				case 0:
+					envVars = m.claudeEnvVars
+				case 1:
+					envVars = m.codexEnvVars
+				case 2:
+					envVars = m.opencodeEnvVars
+				}
 				m.envVarsEdit = true
-				m.envVarsModel = newEnvVarsEditorModel(m.envVars)
+				m.envVarsModel = newEnvVarsEditorModel(envVars)
 				return m, nil
 			}
 			// Enter on last text field = save
@@ -195,9 +233,18 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 			m.focusCurrentField()
 			return m, textinput.Blink
 		case "left", "right":
-			// Toggle type with left/right when focused
+			// Toggle type with left/right when focused on type field
 			if m.focus == fieldType {
 				m.providerType = (m.providerType + 1) % 2
+				return m, nil
+			}
+			// Switch CLI with left/right when focused on env vars field
+			if m.focus == fieldEnvVars {
+				if msg.String() == "left" {
+					m.currentEnvCLI = (m.currentEnvCLI - 1 + 3) % 3
+				} else {
+					m.currentEnvCLI = (m.currentEnvCLI + 1) % 3
+				}
 				return m, nil
 			}
 		}
@@ -284,11 +331,23 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 		SonnetModel:    modelValues[4],
 	}
 
-	// Add env vars if any
-	if len(m.envVars) > 0 {
-		p.EnvVars = make(map[string]string)
-		for k, v := range m.envVars {
-			p.EnvVars[k] = v
+	// Add env vars for each CLI if any
+	if len(m.claudeEnvVars) > 0 {
+		p.ClaudeEnvVars = make(map[string]string)
+		for k, v := range m.claudeEnvVars {
+			p.ClaudeEnvVars[k] = v
+		}
+	}
+	if len(m.codexEnvVars) > 0 {
+		p.CodexEnvVars = make(map[string]string)
+		for k, v := range m.codexEnvVars {
+			p.CodexEnvVars[k] = v
+		}
+	}
+	if len(m.opencodeEnvVars) > 0 {
+		p.OpenCodeEnvVars = make(map[string]string)
+		for k, v := range m.opencodeEnvVars {
+			p.OpenCodeEnvVars[k] = v
 		}
 	}
 
@@ -358,19 +417,34 @@ func (m editorModel) view(width, height int) string {
 			continue
 		}
 		if editorField(i) == fieldEnvVars {
-			// Special handling for env vars field
+			// Special handling for env vars field with CLI tabs
 			cursor := "  "
 			style := dimStyle
 			if m.focus == fieldEnvVars {
 				cursor = "▸ "
 				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 			}
-			envCount := len(m.envVars)
+
+			// Get current CLI name and env var count
+			cliNames := []string{"Claude", "Codex", "OpenCode"}
+			cliName := cliNames[m.currentEnvCLI]
+			var envCount int
+			switch m.currentEnvCLI {
+			case 0:
+				envCount = len(m.claudeEnvVars)
+			case 1:
+				envCount = len(m.codexEnvVars)
+			case 2:
+				envCount = len(m.opencodeEnvVars)
+			}
+
 			envLabel := fmt.Sprintf("%d configured", envCount)
 			if envCount == 0 {
 				envLabel = "none"
 			}
-			content.WriteString(style.Render(fmt.Sprintf("%sEnv Vars:         [%s] (enter to edit)", cursor, envLabel)))
+
+			// Show CLI selector and env var count
+			content.WriteString(style.Render(fmt.Sprintf("%sEnv Vars (%s): [%s] (←/→ CLI, enter edit)", cursor, cliName, envLabel)))
 			content.WriteString("\n")
 			continue
 		}

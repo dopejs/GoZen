@@ -126,11 +126,11 @@ func (m LaunchModel) View() string {
 		contentWidth = 40
 	}
 
-	// Each pane takes half width, minus 1 for the divider
-	paneWidth := (contentWidth - 1) / 2
+	// Each pane takes half width
+	paneWidth := contentWidth / 2
 
 	// Calculate pane height (reserve 1 for help bar at bottom)
-	paneHeight := m.height - 2
+	paneHeight := m.height - 1
 	if paneHeight < 10 {
 		paneHeight = 10
 	}
@@ -209,8 +209,9 @@ func (m LaunchModel) View() string {
 		rightContent.WriteString("\n")
 	}
 
-	// Pane style with thick border - internal width accounts for border and padding
-	// Border takes 2 chars (left+right), padding takes 4 chars (2 each side)
+	// Pane style with thick border
+	// Width is the internal content width (excluding border and padding)
+	// Border takes 2 chars, padding takes 4 chars (2 each side)
 	internalWidth := paneWidth - 2 - 4
 	if internalWidth < 20 {
 		internalWidth = 20
@@ -226,26 +227,32 @@ func (m LaunchModel) View() string {
 	leftPane := paneStyle.Render(leftContent.String())
 	rightPane := paneStyle.Render(rightContent.String())
 
-	// Join panes side by side (thick border creates the divider effect)
+	// Join panes side by side
 	mainContent := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 
-	// Add side padding
-	paddedContent := lipgloss.NewStyle().
-		PaddingLeft(sidePadding).
-		Render(mainContent)
+	// Build the view line by line
+	var view strings.Builder
 
-	// Calculate lines used and fill remaining space
-	contentLines := strings.Count(paddedContent, "\n") + 1
-	remainingLines := m.height - contentLines - 1
-	var filler strings.Builder
+	// Add side padding to each line of main content
+	lines := strings.Split(mainContent, "\n")
+	for _, line := range lines {
+		view.WriteString(strings.Repeat(" ", sidePadding))
+		view.WriteString(line)
+		view.WriteString("\n")
+	}
+
+	// Fill remaining space to push help bar to bottom
+	currentLines := len(lines)
+	remainingLines := m.height - currentLines - 1
 	for i := 0; i < remainingLines; i++ {
-		filler.WriteString("\n")
+		view.WriteString("\n")
 	}
 
 	// Help bar at bottom - full terminal width
 	helpBar := RenderHelpBar("Tab/←→ switch pane • ↑↓ navigate • Enter launch • Esc back", m.width)
+	view.WriteString(helpBar)
 
-	return paddedContent + filler.String() + helpBar
+	return view.String()
 }
 
 // Refresh reloads profiles and CLIs.

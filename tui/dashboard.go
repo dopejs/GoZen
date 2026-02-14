@@ -107,16 +107,27 @@ func (m *DashboardModel) refreshList() {
 	}
 
 	var bindingItems []components.ListItem
-	for path, profile := range bindings {
+	for path, binding := range bindings {
 		// Shorten path for display
 		shortPath := path
 		if len(shortPath) > 30 {
 			shortPath = "..." + shortPath[len(shortPath)-27:]
 		}
+		// Build sublabel from binding
+		var sublabel string
+		if binding.Profile != "" && binding.CLI != "" {
+			sublabel = "→ " + binding.Profile + " (" + binding.CLI + ")"
+		} else if binding.Profile != "" {
+			sublabel = "→ " + binding.Profile
+		} else if binding.CLI != "" {
+			sublabel = "→ (" + binding.CLI + ")"
+		} else {
+			sublabel = "→ (default)"
+		}
 		bindingItems = append(bindingItems, components.ListItem{
 			ID:       "binding:" + path,
 			Label:    shortPath,
-			Sublabel: "→ " + profile,
+			Sublabel: sublabel,
 		})
 	}
 
@@ -148,7 +159,18 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(m.width/2-4, m.height-6)
+		// Calculate list size based on new layout
+		hPadding := 2
+		vPadding := 1
+		availWidth := m.width - hPadding*2
+		availHeight := m.height - vPadding*2
+		leftWidth := availWidth * 35 / 100
+		if leftWidth < 28 {
+			leftWidth = 28
+		}
+		paneHeight := availHeight - 3
+		// List size accounts for border (2) and internal padding (2)
+		m.list.SetSize(leftWidth-4, paneHeight-2)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "q":
@@ -227,37 +249,57 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 
 // View implements tea.Model.
 func (m DashboardModel) View() string {
-	leftWidth := m.width/2 - 2
-	rightWidth := m.width - leftWidth - 4
+	// Add horizontal padding from terminal edges
+	hPadding := 2
+	vPadding := 1
 
-	if leftWidth < 20 {
-		leftWidth = 20
+	// Available width after padding
+	availWidth := m.width - hPadding*2
+	availHeight := m.height - vPadding*2
+
+	// Left pane takes 35%, right pane takes 65% (detail needs more space)
+	leftWidth := availWidth * 35 / 100
+	rightWidth := availWidth - leftWidth - 2 // -2 for gap between panes
+
+	// Minimum widths
+	if leftWidth < 28 {
+		leftWidth = 28
 	}
-	if rightWidth < 20 {
-		rightWidth = 20
+	if rightWidth < 36 {
+		rightWidth = 36
 	}
+
+	// Pane height (leave room for help bar)
+	paneHeight := availHeight - 3
 
 	// Left pane - list
 	leftContent := m.list.View()
 	leftPane := m.borderStyle.
 		Width(leftWidth).
-		Height(m.height - 4).
+		Height(paneHeight).
+		Padding(0, 1). // Internal padding
 		Render(leftContent)
 
 	// Right pane - detail
 	rightContent := m.renderDetail()
 	rightPane := m.borderStyle.
 		Width(rightWidth).
-		Height(m.height - 4).
+		Height(paneHeight).
+		Padding(0, 1). // Internal padding
 		Render(rightContent)
 
-	// Join panes
-	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
+	// Join panes with gap
+	content := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, "  ", rightPane)
 
 	// Help bar
 	help := m.helpStyle.Render("[a]dd [e]dit [d]elete [Tab] switch pane [Esc] back")
 
-	return content + "\n" + help
+	// Apply outer padding
+	paddingStyle := lipgloss.NewStyle().
+		PaddingLeft(hPadding).
+		PaddingTop(vPadding)
+
+	return paddingStyle.Render(content + "\n\n" + help)
 }
 
 func (m DashboardModel) renderDetail() string {
@@ -393,14 +435,27 @@ func (m DashboardModel) renderDetail() string {
 		}
 
 	case "binding":
-		profile := config.GetProjectBinding(itemName)
+		binding := config.GetProjectBinding(itemName)
 		b.WriteString(m.titleStyle.Render("Project Binding"))
 		b.WriteString("\n\n")
 		b.WriteString(m.labelStyle.Render("Path: "))
 		b.WriteString(m.valueStyle.Render(itemName))
 		b.WriteString("\n")
-		b.WriteString(m.labelStyle.Render("Profile: "))
-		b.WriteString(m.valueStyle.Render(profile))
+		if binding != nil {
+			profileVal := binding.Profile
+			if profileVal == "" {
+				profileVal = "(default)"
+			}
+			cliVal := binding.CLI
+			if cliVal == "" {
+				cliVal = "(default)"
+			}
+			b.WriteString(m.labelStyle.Render("Profile: "))
+			b.WriteString(m.valueStyle.Render(profileVal))
+			b.WriteString("\n")
+			b.WriteString(m.labelStyle.Render("CLI: "))
+			b.WriteString(m.valueStyle.Render(cliVal))
+		}
 	}
 
 	return b.String()

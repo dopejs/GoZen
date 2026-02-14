@@ -158,30 +158,36 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 		logger.Printf("Setting env: %s=%s", k, v)
 	}
 
-	// Find claude binary
-	claudeBin, err := exec.LookPath("claude")
-	if err != nil {
-		return fmt.Errorf("claude not found in PATH: %w", err)
+	// Get CLI binary name from config
+	cliBin := config.GetDefaultCLI()
+	if cliBin == "" {
+		cliBin = "claude"
 	}
 
-	// Start claude as subprocess (not exec, so proxy stays alive)
-	claudeCmd := exec.Command(claudeBin, args...)
-	claudeCmd.Stdin = os.Stdin
-	claudeCmd.Stdout = os.Stdout
-	claudeCmd.Stderr = os.Stderr
+	// Find CLI binary
+	cliPath, err := exec.LookPath(cliBin)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH: %w", cliBin, err)
+	}
+
+	// Start CLI as subprocess (not exec, so proxy stays alive)
+	cliCmd := exec.Command(cliPath, args...)
+	cliCmd.Stdin = os.Stdin
+	cliCmd.Stdout = os.Stdout
+	cliCmd.Stderr = os.Stderr
 
 	// Forward signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		for sig := range sigCh {
-			if claudeCmd.Process != nil {
-				claudeCmd.Process.Signal(sig)
+			if cliCmd.Process != nil {
+				cliCmd.Process.Signal(sig)
 			}
 		}
 	}()
 
-	if err := claudeCmd.Run(); err != nil {
+	if err := cliCmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}

@@ -12,8 +12,8 @@ import (
 )
 
 var useCmd = &cobra.Command{
-	Use:               "use <config> [claude args...]",
-	Short:             "Load config and exec claude directly",
+	Use:               "use <config> [cli args...]",
+	Short:             "Load config and exec CLI directly",
 	ValidArgsFunction: completeConfigNames,
 	SilenceUsage:      true,
 	SilenceErrors:     true,
@@ -24,7 +24,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	available := config.ProviderNames()
 
 	if len(args) == 0 {
-		fmt.Println("Usage: opencc use <provider> [claude args...]")
+		fmt.Println("Usage: opencc use <provider> [cli args...]")
 		if len(available) > 0 {
 			fmt.Printf("\nAvailable providers: %s\n", strings.Join(available, ", "))
 		} else {
@@ -34,7 +34,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	}
 
 	configName := args[0]
-	claudeArgs := args[1:]
+	cliArgs := args[1:]
 
 	if err := config.ExportProviderToEnv(configName); err != nil {
 		fmt.Printf("Provider '%s' not found.\n", configName)
@@ -46,15 +46,21 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Find claude binary
-	claudeBin, err := exec.LookPath("claude")
-	if err != nil {
-		return fmt.Errorf("claude not found in PATH: %w", err)
+	// Get CLI binary name from config
+	cliBin := config.GetDefaultCLI()
+	if cliBin == "" {
+		cliBin = "claude"
 	}
 
-	// Replace process with claude (like shell exec)
-	argv := append([]string{"claude"}, claudeArgs...)
-	return syscall.Exec(claudeBin, argv, os.Environ())
+	// Find CLI binary
+	cliPath, err := exec.LookPath(cliBin)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH: %w", cliBin, err)
+	}
+
+	// Replace process with CLI (like shell exec)
+	argv := append([]string{cliBin}, cliArgs...)
+	return syscall.Exec(cliPath, argv, os.Environ())
 }
 
 func completeConfigNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

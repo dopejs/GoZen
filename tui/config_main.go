@@ -203,7 +203,7 @@ func (m configMainModel) View() string {
 		Foreground(primaryColor).
 		Background(headerBgColor).
 		Padding(0, 2).
-		Render("⚙  opencc config")
+		Render("⚙  zen config")
 	b.WriteString(header)
 	b.WriteString("\n\n")
 

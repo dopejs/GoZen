@@ -231,7 +231,7 @@ func (m detailListModel) viewList() string {
 		Foreground(primaryColor).
 		Background(headerBgColor).
 		Padding(0, 2).
-		Render("📋 opencc list")
+		Render("📋 zen list")
 	b.WriteString(header)
 	b.WriteString("\n\n")
 

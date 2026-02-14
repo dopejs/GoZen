@@ -1280,7 +1280,7 @@
       container.innerHTML =
         '<div class="empty-state empty-state-sm">' +
           '<div class="empty-state-icon">' + ICONS.inbox + '</div>' +
-          '<div class="empty-state-text">No project bindings configured.<br>Use <code>opencc bind</code> or click Add Binding.</div>' +
+          '<div class="empty-state-text">No project bindings configured.<br>Use <code>zen bind</code> or click Add Binding.</div>' +
         '</div>';
       return;
     }

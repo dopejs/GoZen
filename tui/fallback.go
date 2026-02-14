@@ -300,7 +300,7 @@ func (m fallbackModel) view(width, height int) string {
 	var content strings.Builder
 	if len(m.allConfigs) == 0 {
 		content.WriteString(dimStyle.Render("No providers configured.\n"))
-		content.WriteString(dimStyle.Render("Run 'opencc config add provider' to create one."))
+		content.WriteString(dimStyle.Render("Run 'zen config add provider' to create one."))
 	} else {
 		// Default Providers Section
 		sectionStyle := sectionTitleStyle

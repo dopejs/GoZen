@@ -134,7 +134,7 @@ func (m listModel) view(width, height int) string {
 	sidePadding := 2
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("  opencc configurations"))
+	b.WriteString(titleStyle.Render("  zen configurations"))
 	b.WriteString("\n\n")
 
 	if len(m.configs) == 0 {

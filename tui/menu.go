@@ -118,7 +118,7 @@ func (m MenuModel) Update(msg tea.Msg) (MenuModel, tea.Cmd) {
 // View implements tea.Model.
 func (m MenuModel) View() string {
 	// Title and subtitle - centered
-	title := m.titleStyle.Render("OpenCC")
+	title := m.titleStyle.Render("GoZen")
 	subtitle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("8")).
 		Render("Environment Switcher")

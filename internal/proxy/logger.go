@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -34,24 +33,23 @@ type LogEntry struct {
 
 // StructuredLogger provides structured logging with separate error log file.
 type StructuredLogger struct {
-	mu          sync.Mutex
-	logFile     *os.File
-	errLogFile  *os.File
-	jsonLogFile *os.File // JSON format log for web API
-	logDir      string
-	entries     []LogEntry
-	maxEntries  int
+	mu         sync.Mutex
+	logFile    *os.File
+	errLogFile *os.File
+	logDB      *LogDB // SQLite log storage (nil falls back to JSONL)
+	logDir     string
+	entries    []LogEntry
+	maxEntries int
 }
 
 // NewStructuredLogger creates a new structured logger.
-func NewStructuredLogger(logDir string, maxEntries int) (*StructuredLogger, error) {
+func NewStructuredLogger(logDir string, maxEntries int, logDB *LogDB) (*StructuredLogger, error) {
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return nil, err
 	}
 
 	logPath := filepath.Join(logDir, "proxy.log")
 	errLogPath := filepath.Join(logDir, "err.log")
-	jsonLogPath := filepath.Join(logDir, "proxy.jsonl")
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -64,28 +62,21 @@ func NewStructuredLogger(logDir string, maxEntries int) (*StructuredLogger, erro
 		return nil, fmt.Errorf("open error log file: %w", err)
 	}
 
-	jsonLogFile, err := os.OpenFile(jsonLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		logFile.Close()
-		errLogFile.Close()
-		return nil, fmt.Errorf("open json log file: %w", err)
-	}
-
 	if maxEntries <= 0 {
 		maxEntries = 1000
 	}
 
 	return &StructuredLogger{
-		logFile:     logFile,
-		errLogFile:  errLogFile,
-		jsonLogFile: jsonLogFile,
-		logDir:      logDir,
-		entries:     make([]LogEntry, 0, maxEntries),
-		maxEntries:  maxEntries,
+		logFile:    logFile,
+		errLogFile: errLogFile,
+		logDB:      logDB,
+		logDir:     logDir,
+		entries:    make([]LogEntry, 0, maxEntries),
+		maxEntries: maxEntries,
 	}, nil
 }
 
-// Close closes the log files.
+// Close closes the log files and database.
 func (l *StructuredLogger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -101,8 +92,8 @@ func (l *StructuredLogger) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	if l.jsonLogFile != nil {
-		if err := l.jsonLogFile.Close(); err != nil {
+	if l.logDB != nil {
+		if err := l.logDB.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -134,11 +125,9 @@ func (l *StructuredLogger) Log(entry LogEntry) {
 		l.logFile.WriteString(line + "\n")
 	}
 
-	// Write to JSON log file (for web API)
-	if l.jsonLogFile != nil {
-		if jsonLine, err := json.Marshal(entry); err == nil {
-			l.jsonLogFile.WriteString(string(jsonLine) + "\n")
-		}
+	// Write to SQLite log database
+	if l.logDB != nil {
+		l.logDB.Insert(entry)
 	}
 
 	// Write errors to err.log
@@ -363,62 +352,3 @@ func (e LogEntry) ToJSON() ([]byte, error) {
 	return json.Marshal(e)
 }
 
-// ReadEntriesFromFile reads log entries from the JSON log file.
-// This is used by the web server to read logs from a different process.
-func ReadEntriesFromFile(logDir string, filter LogFilter) ([]LogEntry, []string, error) {
-	jsonLogPath := filepath.Join(logDir, "proxy.jsonl")
-
-	file, err := os.Open(jsonLogPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []LogEntry{}, []string{}, nil
-		}
-		return nil, nil, err
-	}
-	defer file.Close()
-
-	var entries []LogEntry
-	providerSet := make(map[string]bool)
-
-	scanner := bufio.NewScanner(file)
-	// Increase buffer size for long lines
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
-		var entry LogEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			continue // Skip malformed lines
-		}
-
-		if entry.Provider != "" {
-			providerSet[entry.Provider] = true
-		}
-
-		if filter.Match(entry) {
-			entries = append(entries, entry)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, nil, err
-	}
-
-	// Collect providers
-	var providers []string
-	for p := range providerSet {
-		providers = append(providers, p)
-	}
-
-	// Return in reverse order (newest first)
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
-	}
-
-	// Apply limit
-	if filter.Limit > 0 && len(entries) > filter.Limit {
-		entries = entries[:filter.Limit]
-	}
-
-	return entries, providers, nil
-}

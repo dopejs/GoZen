@@ -221,7 +221,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		filter.Limit = 100 // default limit
 	}
 
-	// Try in-memory logger first (same process as proxy), fall back to file
+	// Try in-memory logger first (same process as proxy), then SQLite (cross-process).
 	var entries []proxy.LogEntry
 	var providers []string
 
@@ -229,14 +229,16 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if logger != nil && logger.HasEntries() {
 		entries = logger.GetEntries(filter)
 		providers = logger.GetProviders()
-	} else {
-		// Read from JSON log file (web server running in separate process)
-		logDir := config.ConfigDirPath()
+	} else if db := proxy.GetGlobalLogDB(); db != nil {
 		var err error
-		entries, providers, err = proxy.ReadEntriesFromFile(logDir, filter)
+		entries, err = db.Query(filter)
 		if err != nil {
-			s.logger.Printf("Failed to read log file: %v", err)
+			s.logger.Printf("Failed to query log database: %v", err)
 			entries = []proxy.LogEntry{}
+		}
+		providers, err = db.GetProviders()
+		if err != nil {
+			s.logger.Printf("Failed to query log providers: %v", err)
 			providers = []string{}
 		}
 	}

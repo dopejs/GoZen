@@ -20,21 +20,29 @@ import (
 
 var (
 	globalLogger     *StructuredLogger
+	globalLogDB      *LogDB
 	globalLoggerOnce sync.Once
 	globalLoggerMu   sync.RWMutex
 )
 
-// InitGlobalLogger initializes the global structured logger.
+// InitGlobalLogger initializes the global structured logger with SQLite storage.
 func InitGlobalLogger(logDir string) error {
 	var initErr error
 	globalLoggerOnce.Do(func() {
-		logger, err := NewStructuredLogger(logDir, 2000)
+		logDB, err := OpenLogDB(logDir)
 		if err != nil {
+			initErr = err
+			return
+		}
+		logger, err := NewStructuredLogger(logDir, 2000, logDB)
+		if err != nil {
+			logDB.Close()
 			initErr = err
 			return
 		}
 		globalLoggerMu.Lock()
 		globalLogger = logger
+		globalLogDB = logDB
 		globalLoggerMu.Unlock()
 	})
 	return initErr
@@ -45,6 +53,13 @@ func GetGlobalLogger() *StructuredLogger {
 	globalLoggerMu.RLock()
 	defer globalLoggerMu.RUnlock()
 	return globalLogger
+}
+
+// GetGlobalLogDB returns the global log database.
+func GetGlobalLogDB() *LogDB {
+	globalLoggerMu.RLock()
+	defer globalLoggerMu.RUnlock()
+	return globalLogDB
 }
 
 // RoutingConfig holds the default provider chain and optional scenario routes.

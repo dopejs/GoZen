@@ -41,12 +41,21 @@ jobs:
           tar -czvf zen-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz zen
           cp zen zen-${{ matrix.goos }}-${{ matrix.goarch }}
 
+      - name: Create legacy opencc-named assets for upgrade compatibility
+        run: |
+          cp zen opencc
+          tar -czvf opencc-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz opencc
+          cp opencc opencc-${{ matrix.goos }}-${{ matrix.goarch }}
+          rm opencc
+
       - uses: actions/upload-artifact@v4
         with:
           name: zen-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             zen-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
             zen-${{ matrix.goos }}-${{ matrix.goarch }}
+            opencc-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+            opencc-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: build

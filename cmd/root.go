@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -148,15 +149,13 @@ func startProxy(names []string, pc *config.ProfileConfig, args []string) error {
 	os.Setenv("ANTHROPIC_BASE_URL", fmt.Sprintf("http://127.0.0.1:%d", port))
 	os.Setenv("ANTHROPIC_AUTH_TOKEN", "opencc-proxy")
 
-	// Export env_vars from the first provider to Claude Code
-	// This allows settings like ANTHROPIC_MAX_CONTEXT_WINDOW to take effect
-	if len(providers) > 0 && providers[0].EnvVars != nil {
-		for k, v := range providers[0].EnvVars {
-			if k != "" && v != "" {
-				os.Setenv(k, v)
-				logger.Printf("Setting env: %s=%s", k, v)
-			}
-		}
+	// Merge env_vars from all providers to Claude Code
+	// For ANTHROPIC_MAX_CONTEXT_WINDOW, use the minimum value across all providers
+	// This ensures Claude Code respects the most restrictive provider's limit
+	mergedEnvVars := mergeProviderEnvVars(providers)
+	for k, v := range mergedEnvVars {
+		os.Setenv(k, v)
+		logger.Printf("Setting env: %s=%s", k, v)
 	}
 
 	// Find claude binary
@@ -252,6 +251,47 @@ func buildProviders(names []string) ([]*proxy.Provider, error) {
 		return nil, fmt.Errorf("no valid providers")
 	}
 	return providers, nil
+}
+
+// mergeProviderEnvVars merges env_vars from all providers.
+// For numeric values like ANTHROPIC_MAX_CONTEXT_WINDOW, uses the minimum value.
+// For other values, first provider's value takes precedence.
+func mergeProviderEnvVars(providers []*proxy.Provider) map[string]string {
+	result := make(map[string]string)
+
+	// Env vars where we should take the minimum numeric value
+	minValueKeys := map[string]bool{
+		"ANTHROPIC_MAX_CONTEXT_WINDOW": true,
+	}
+
+	for _, p := range providers {
+		if p.EnvVars == nil {
+			continue
+		}
+		for k, v := range p.EnvVars {
+			if k == "" || v == "" {
+				continue
+			}
+
+			existing, exists := result[k]
+			if !exists {
+				result[k] = v
+				continue
+			}
+
+			// For min-value keys, compare and keep the smaller value
+			if minValueKeys[k] {
+				existingVal, err1 := strconv.Atoi(existing)
+				newVal, err2 := strconv.Atoi(v)
+				if err1 == nil && err2 == nil && newVal < existingVal {
+					result[k] = v
+				}
+			}
+			// For other keys, first value wins (already set)
+		}
+	}
+
+	return result
 }
 
 // buildRoutingConfig creates a RoutingConfig from a ProfileConfig.

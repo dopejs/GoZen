@@ -232,15 +232,23 @@ do_install() {
   ok "Installed ${BIN_TARGET}"
 
   # Restart web daemon if it was running before upgrade
-  if [ -f "$HOME/.opencc/web.pid" ]; then
-    _web_pid="$(cat "$HOME/.opencc/web.pid" 2>/dev/null)"
+  # Check all PID files (legacy web.pid + hash-based web-*.pid)
+  _was_running=0
+  for pidfile in "$HOME/.opencc"/web*.pid; do
+    [ -f "$pidfile" ] || continue
+    _web_pid="$(cat "$pidfile" 2>/dev/null)"
     if [ -n "$_web_pid" ] && kill -0 "$_web_pid" 2>/dev/null; then
-      info "Restarting web daemon (PID ${_web_pid})..."
+      _was_running=1
+      info "Stopping web daemon (PID ${_web_pid})..."
       kill "$_web_pid" 2>/dev/null || true
-      sleep 1
-      "$BIN_TARGET" web --daemon >/dev/null 2>&1 || true
-      ok "Web daemon restarted."
+      rm -f "$pidfile"
     fi
+  done
+  if [ "$_was_running" = "1" ]; then
+    sleep 1
+    info "Restarting web daemon..."
+    "$BIN_TARGET" web --daemon >/dev/null 2>&1 || true
+    ok "Web daemon restarted."
   fi
 
   # Create envs dir

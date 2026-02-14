@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -99,4 +101,27 @@ func DisableService() error {
 	}
 
 	return nil
+}
+
+// findServicePid checks launchd for the daemon's PID.
+func findServicePid() (int, bool) {
+	out, err := exec.Command("launchctl", "list", launchdLabel).Output()
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "\"PID\"") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			pidStr := strings.TrimSuffix(strings.TrimSpace(parts[1]), ";")
+			pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
+			if err == nil && pid > 0 {
+				return pid, true
+			}
+		}
+	}
+	return 0, false
 }

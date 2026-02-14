@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"text/template"
 )
 
@@ -80,4 +82,17 @@ func DisableService() error {
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
 
 	return nil
+}
+
+// findServicePid checks systemd for the daemon's PID.
+func findServicePid() (int, bool) {
+	out, err := exec.Command("systemctl", "--user", "show", "opencc-web.service", "-p", "MainPID", "--value").Output()
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err == nil && pid > 0 {
+		return pid, true
+	}
+	return 0, false
 }

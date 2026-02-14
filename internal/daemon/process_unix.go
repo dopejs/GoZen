@@ -9,18 +9,26 @@ import (
 )
 
 // IsRunning checks if the daemon process is still alive.
+// It first checks the PID file, then falls back to the platform
+// service manager (launchd/systemd) to find the actual PID.
 func IsRunning() (int, bool) {
 	pid, err := ReadPid()
-	if err != nil {
-		return 0, false
+	if err == nil {
+		proc, err := os.FindProcess(pid)
+		if err == nil {
+			if proc.Signal(syscall.Signal(0)) == nil {
+				return pid, true
+			}
+		}
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return 0, false
+
+	// Fallback: check platform service manager for the actual PID
+	if foundPid, ok := findServicePid(); ok {
+		WritePid(foundPid)
+		return foundPid, true
 	}
-	// Signal 0 checks if process exists without actually signaling it.
-	err = proc.Signal(syscall.Signal(0))
-	return pid, err == nil
+
+	return 0, false
 }
 
 // StopDaemon sends SIGTERM to the daemon process.

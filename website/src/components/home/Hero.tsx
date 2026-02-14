@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check, Copy, ArrowRight } from "lucide-react";
 
 const installCmd =
-  'curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh';
+  'curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh';
 
 export function Hero() {
   const { t } = useTranslation();
@@ -30,7 +30,7 @@ export function Hero() {
         </div>
 
         <h1 className="mb-6 text-4xl font-bold tracking-tight text-text-primary sm:text-5xl lg:text-6xl">
-          <span className="text-teal">OpenCC</span>
+          <span className="text-teal">GoZen</span>
           <span className="mt-3 block">{t("hero.title")}</span>
         </h1>
 
@@ -68,7 +68,7 @@ export function Hero() {
             <ArrowRight className="h-4 w-4" />
           </Link>
           <a
-            href="https://github.com/dopejs/opencc"
+            href="https://github.com/dopejs/gozen"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-xl border border-border bg-bg-surface px-6 py-3 text-sm font-semibold text-text-primary transition-all no-underline hover:border-border-strong hover:bg-bg-elevated"

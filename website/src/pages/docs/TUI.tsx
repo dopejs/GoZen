@@ -37,7 +37,7 @@ export default function TUI() {
             </li>
           ))}
         </ul>
-        <CodeBlock code="opencc config" language="bash" />
+        <CodeBlock code="zen config" language="bash" />
       </section>
 
       <section className="mb-10">
@@ -67,7 +67,7 @@ export default function TUI() {
         <h2 className="mb-4 text-xl font-semibold text-text-primary">
           {t("docs.tui.legacyTitle")}
         </h2>
-        <CodeBlock code="opencc config --legacy" language="bash" />
+        <CodeBlock code="zen config --legacy" language="bash" />
       </section>
     </div>
   );

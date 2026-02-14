@@ -50,7 +50,7 @@
   "install": {
     "title": "Inicio R\u00e1pido",
     "step1": {
-      "title": "Instalar OpenCC",
+      "title": "Instalar GoZen",
       "desc": "Script de instalaci\u00f3n en una l\u00ednea"
     },
     "step2": {
@@ -104,8 +104,8 @@
       "config": "Referencia de Configuraci\u00f3n"
     },
     "index": {
-      "title": "Documentaci\u00f3n de OpenCC",
-      "subtitle": "Aprende a instalar, configurar y usar OpenCC para gestionar tus asistentes de programaci\u00f3n con IA."
+      "title": "Documentaci\u00f3n de GoZen",
+      "subtitle": "Aprende a instalar, configurar y usar GoZen para gestionar tus asistentes de programaci\u00f3n con IA."
     },
     "gettingStarted": {
       "title": "Primeros Pasos",
@@ -160,7 +160,7 @@
     },
     "multiCli": {
       "title": "Soporte Multi-CLI",
-      "intro": "OpenCC soporta tres CLIs de asistentes de programaci\u00f3n con IA:",
+      "intro": "GoZen soporta tres CLIs de asistentes de programaci\u00f3n con IA:",
       "cliTable": {
         "cli": "CLI",
         "description": "Descripci\u00f3n",

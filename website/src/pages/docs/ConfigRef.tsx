@@ -2,13 +2,13 @@ import { useTranslation } from "react-i18next";
 import { CodeBlock } from "@/components/docs/CodeBlock";
 
 const files = [
-  { path: "~/.opencc/opencc.json", key: "mainConfig" },
-  { path: "~/.opencc/proxy.log", key: "proxyLog" },
-  { path: "~/.opencc/web.log", key: "webLog" },
+  { path: "~/.zen/zen.json", key: "mainConfig" },
+  { path: "~/.zen/proxy.log", key: "proxyLog" },
+  { path: "~/.zen/web.log", key: "webLog" },
 ];
 
 const fullConfig = `{
-  "version": 5,
+  "version": 6,
   "default_profile": "default",
   "default_cli": "claude",
   "web_port": 19840,

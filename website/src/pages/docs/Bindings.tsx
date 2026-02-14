@@ -4,19 +4,19 @@ import { CodeBlock } from "@/components/docs/CodeBlock";
 const bindingCode = `cd ~/work/company-project
 
 # Bind profile
-opencc bind work-profile
+zen bind work-profile
 
 # Bind CLI
-opencc bind --cli codex
+zen bind --cli codex
 
 # Bind both
-opencc bind work-profile --cli codex
+zen bind work-profile --cli codex
 
 # Check status
-opencc status
+zen status
 
 # Unbind
-opencc unbind`;
+zen unbind`;
 
 export default function Bindings() {
   const { t } = useTranslation();

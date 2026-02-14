@@ -17,12 +17,12 @@ export default function GettingStarted() {
         <p className="mb-3 text-text-secondary">
           {t("docs.gettingStarted.installDesc")}
         </p>
-        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh" />
+        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh" />
 
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.uninstallDesc")}
         </p>
-        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh -s -- --uninstall" />
+        <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall" />
       </section>
 
       <section className="mb-10">
@@ -33,22 +33,22 @@ export default function GettingStarted() {
         <p className="mb-3 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep1")}
         </p>
-        <CodeBlock code="opencc config" />
+        <CodeBlock code="zen config" />
 
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep2")}
         </p>
-        <CodeBlock code="opencc" />
+        <CodeBlock code="zen" />
 
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep3")}
         </p>
-        <CodeBlock code="opencc -p work" />
+        <CodeBlock code="zen -p work" />
 
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep4")}
         </p>
-        <CodeBlock code="opencc --cli codex" />
+        <CodeBlock code="zen --cli codex" />
       </section>
     </div>
   );

@@ -50,7 +50,7 @@
   "install": {
     "title": "Quick Start",
     "step1": {
-      "title": "Install OpenCC",
+      "title": "Install GoZen",
       "desc": "One-line install script"
     },
     "step2": {
@@ -104,8 +104,8 @@
       "config": "Config Reference"
     },
     "index": {
-      "title": "OpenCC Documentation",
-      "subtitle": "Learn how to install, configure, and use OpenCC to manage your AI coding assistants."
+      "title": "GoZen Documentation",
+      "subtitle": "Learn how to install, configure, and use GoZen to manage your AI coding assistants."
     },
     "gettingStarted": {
       "title": "Getting Started",
@@ -160,7 +160,7 @@
     },
     "multiCli": {
       "title": "Multi-CLI Support",
-      "intro": "OpenCC supports three AI coding assistant CLIs:",
+      "intro": "GoZen supports three AI coding assistant CLIs:",
       "cliTable": {
         "cli": "CLI",
         "description": "Description",

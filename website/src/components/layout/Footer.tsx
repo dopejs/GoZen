@@ -22,7 +22,7 @@ export function Footer() {
           </div>
           <div className="flex items-center gap-4">
             <a
-              href="https://github.com/dopejs/opencc"
+              href="https://github.com/dopejs/gozen"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-text-muted transition-colors no-underline hover:text-text-primary"

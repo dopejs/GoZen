@@ -50,7 +50,7 @@
   "install": {
     "title": "快速开始",
     "step1": {
-      "title": "安装 OpenCC",
+      "title": "安装 GoZen",
       "desc": "一键安装脚本"
     },
     "step2": {
@@ -104,8 +104,8 @@
       "config": "配置参考"
     },
     "index": {
-      "title": "OpenCC 文档",
-      "subtitle": "了解如何安装、配置和使用 OpenCC 管理你的 AI 编程助手。"
+      "title": "GoZen 文档",
+      "subtitle": "了解如何安装、配置和使用 GoZen 管理你的 AI 编程助手。"
     },
     "gettingStarted": {
       "title": "快速开始",
@@ -160,7 +160,7 @@
     },
     "multiCli": {
       "title": "多 CLI 支持",
-      "intro": "OpenCC 支持三种 AI 编程助手 CLI：",
+      "intro": "GoZen 支持三种 AI 编程助手 CLI：",
       "cliTable": {
         "cli": "CLI",
         "description": "说明",

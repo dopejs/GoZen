@@ -4,15 +4,15 @@ import { CodeBlock } from "@/components/docs/CodeBlock";
 const steps = [
   {
     key: "step1",
-    code: "curl -fsSL https://raw.githubusercontent.com/dopejs/opencc/main/install.sh | sh",
+    code: "curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh",
   },
   {
     key: "step2",
-    code: "opencc config",
+    code: "zen config",
   },
   {
     key: "step3",
-    code: "opencc",
+    code: "zen",
   },
 ];
 

@@ -17,13 +17,13 @@ export default function WebUI() {
         </h2>
         <CodeBlock
           code={`# Start (runs in background, port 19840)
-opencc web start
+zen web start
 
 # Open browser
-opencc web open
+zen web open
 
 # Stop
-opencc web stop`}
+zen web stop`}
           language="bash"
         />
       </section>

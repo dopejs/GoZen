@@ -45,10 +45,10 @@ export default function MultiCli() {
         </h2>
         <CodeBlock
           code={`# Via TUI
-opencc config  # Settings → Default CLI
+zen config  # Settings → Default CLI
 
 # Via Web UI
-opencc web open  # Settings page`}
+zen web open  # Settings page`}
           language="bash"
         />
       </section>
@@ -59,7 +59,7 @@ opencc web open  # Settings page`}
         </h2>
         <CodeBlock
           code={`cd ~/work/project
-opencc bind --cli codex  # This directory uses Codex`}
+zen bind --cli codex  # This directory uses Codex`}
           language="bash"
         />
       </section>
@@ -69,7 +69,7 @@ opencc bind --cli codex  # This directory uses Codex`}
           {t("docs.multiCli.tempTitle")}
         </h2>
         <CodeBlock
-          code="opencc --cli opencode  # Use OpenCode for this session"
+          code="zen --cli opencode  # Use OpenCode for this session"
           language="bash"
         />
       </section>

@@ -16,13 +16,13 @@ const profileConfig = `{
 }`;
 
 const usageCode = `# Use default profile
-opencc
+zen
 
 # Use specified profile
-opencc -p work
+zen -p work
 
 # Interactively select
-opencc -p`;
+zen -p`;
 
 export default function Profiles() {
   const { t } = useTranslation();

@@ -19,7 +19,7 @@ export function Header() {
   const langRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("opencc-theme");
+    const saved = localStorage.getItem("gozen-theme");
     if (saved === "light") {
       setDark(false);
       document.documentElement.classList.remove("dark");
@@ -45,10 +45,10 @@ export function Header() {
     setDark(next);
     if (next) {
       document.documentElement.classList.add("dark");
-      localStorage.setItem("opencc-theme", "dark");
+      localStorage.setItem("gozen-theme", "dark");
     } else {
       document.documentElement.classList.remove("dark");
-      localStorage.setItem("opencc-theme", "light");
+      localStorage.setItem("gozen-theme", "light");
     }
   };
 
@@ -68,7 +68,7 @@ export function Header() {
               <span className="text-lg font-bold text-teal">⌘</span>
             </div>
             <span className="text-lg font-bold tracking-tight text-text-primary">
-              OpenCC
+              GoZen
             </span>
           </Link>
 
@@ -95,7 +95,7 @@ export function Header() {
               {t("nav.docs")}
             </Link>
             <a
-              href="https://github.com/dopejs/opencc"
+              href="https://github.com/dopejs/gozen"
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors no-underline hover:text-text-primary"
@@ -189,7 +189,7 @@ export function Header() {
               {t("nav.docs")}
             </Link>
             <a
-              href="https://github.com/dopejs/opencc"
+              href="https://github.com/dopejs/gozen"
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary no-underline"

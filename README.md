@@ -65,6 +65,7 @@ opencc --cli codex
 | `opencc web start` | Start the Web management UI |
 | `opencc web open` | Open the Web UI in browser |
 | `opencc web stop` | Stop the Web server |
+| `opencc web restart` | Restart the Web server |
 | `opencc upgrade` | Upgrade to the latest version |
 | `opencc version` | Show version |
 
@@ -191,6 +192,9 @@ opencc web open
 
 # Stop
 opencc web stop
+
+# Restart
+opencc web restart
 ```
 
 Web UI features:

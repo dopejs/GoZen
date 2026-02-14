@@ -65,6 +65,7 @@ opencc --cli codex
 | `opencc web start` | Iniciar la interfaz web de gestión |
 | `opencc web open` | Abrir la interfaz web en el navegador |
 | `opencc web stop` | Detener el servidor web |
+| `opencc web restart` | Reiniciar el servidor web |
 | `opencc upgrade` | Actualizar a la última versión |
 | `opencc version` | Mostrar versión |
 
@@ -191,6 +192,9 @@ opencc web open
 
 # Detener
 opencc web stop
+
+# Reiniciar
+opencc web restart
 ```
 
 Funcionalidades de la interfaz web:

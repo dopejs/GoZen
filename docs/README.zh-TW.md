@@ -65,6 +65,7 @@ opencc --cli codex
 | `opencc web start` | 啟動 Web 管理介面 |
 | `opencc web open` | 在瀏覽器中開啟 Web 介面 |
 | `opencc web stop` | 停止 Web 服務 |
+| `opencc web restart` | 重新啟動 Web 服務 |
 | `opencc upgrade` | 升級至最新版本 |
 | `opencc version` | 顯示版本 |
 
@@ -191,6 +192,9 @@ opencc web open
 
 # 停止
 opencc web stop
+
+# 重新啟動
+opencc web restart
 ```
 
 Web UI 功能：

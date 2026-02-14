@@ -60,13 +60,13 @@ func writeTestEnv(t *testing.T, name, content string) {
 func writeTestConfig(t *testing.T, cfg *config.OpenCCConfig) {
 	t.Helper()
 	home := os.Getenv("HOME")
-	dir := filepath.Join(home, ".opencc")
+	dir := filepath.Join(home, ".zen")
 	os.MkdirAll(dir, 0755)
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "opencc.json"), data, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "zen.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetDefaultStore()
@@ -495,8 +495,8 @@ func TestSetupCLIEnvironment_Claude(t *testing.T) {
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
 		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
 	}
-	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "opencc-proxy" {
-		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "opencc-proxy")
+	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "zen-proxy" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "zen-proxy")
 	}
 
 	// OpenAI env vars should not be set
@@ -521,8 +521,8 @@ func TestSetupCLIEnvironment_Codex(t *testing.T) {
 	if got := os.Getenv("OPENAI_BASE_URL"); got != proxyURL {
 		t.Errorf("OPENAI_BASE_URL = %q, want %q", got, proxyURL)
 	}
-	if got := os.Getenv("OPENAI_API_KEY"); got != "opencc-proxy" {
-		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "opencc-proxy")
+	if got := os.Getenv("OPENAI_API_KEY"); got != "zen-proxy" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "zen-proxy")
 	}
 
 	// Anthropic env vars should not be set
@@ -547,14 +547,14 @@ func TestSetupCLIEnvironment_OpenCode(t *testing.T) {
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
 		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
 	}
-	if got := os.Getenv("ANTHROPIC_API_KEY"); got != "opencc-proxy" {
-		t.Errorf("ANTHROPIC_API_KEY = %q, want %q", got, "opencc-proxy")
+	if got := os.Getenv("ANTHROPIC_API_KEY"); got != "zen-proxy" {
+		t.Errorf("ANTHROPIC_API_KEY = %q, want %q", got, "zen-proxy")
 	}
 	if got := os.Getenv("OPENAI_BASE_URL"); got != proxyURL {
 		t.Errorf("OPENAI_BASE_URL = %q, want %q", got, proxyURL)
 	}
-	if got := os.Getenv("OPENAI_API_KEY"); got != "opencc-proxy" {
-		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "opencc-proxy")
+	if got := os.Getenv("OPENAI_API_KEY"); got != "zen-proxy" {
+		t.Errorf("OPENAI_API_KEY = %q, want %q", got, "zen-proxy")
 	}
 }
 
@@ -574,8 +574,8 @@ func TestSetupCLIEnvironment_UnknownCLI(t *testing.T) {
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
 		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)
 	}
-	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "opencc-proxy" {
-		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "opencc-proxy")
+	if got := os.Getenv("ANTHROPIC_AUTH_TOKEN"); got != "zen-proxy" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want %q", got, "zen-proxy")
 	}
 }
 

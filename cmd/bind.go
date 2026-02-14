@@ -13,13 +13,13 @@ var bindCmd = &cobra.Command{
 	Use:   "bind [profile]",
 	Short: "Bind current directory to a profile and/or CLI",
 	Long: `Bind the current directory to a profile and/or CLI.
-After binding, running 'opencc' in this directory will automatically use the bound settings.
+After binding, running 'zen' in this directory will automatically use the bound settings.
 
 Examples:
-  opencc bind work              # Bind to profile 'work'
-  opencc bind --cli codex       # Bind to use Codex CLI
-  opencc bind work --cli codex  # Bind to profile 'work' with Codex CLI
-  opencc bind --cli ""          # Clear CLI binding (use default)`,
+  zen bind work              # Bind to profile 'work'
+  zen bind --cli codex       # Bind to use Codex CLI
+  zen bind work --cli codex  # Bind to profile 'work' with Codex CLI
+  zen bind --cli ""          # Clear CLI binding (use default)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runBind,
 }

@@ -20,19 +20,19 @@ import (
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade [version]",
-	Short: "Upgrade opencc to latest or specified version",
-	Long: `Upgrade opencc to the latest version, or a specific version.
+	Short: "Upgrade zen to latest or specified version",
+	Long: `Upgrade zen to the latest version, or a specific version.
 
 Examples:
-  opencc upgrade          # latest version
-  opencc upgrade 1        # latest 1.x.x
-  opencc upgrade 1.2      # latest 1.2.x
-  opencc upgrade 1.2.3    # exact version 1.2.3`,
+  zen upgrade          # latest version
+  zen upgrade 2        # latest 2.x.x
+  zen upgrade 2.1      # latest 2.1.x
+  zen upgrade 2.1.0    # exact version 2.1.0`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runUpgrade,
 }
 
-const repoAPI = "https://api.github.com/repos/dopejs/opencc/releases"
+const repoAPI = "https://api.github.com/repos/dopejs/gozen/releases"
 
 type ghRelease struct {
 	TagName string `json:"tag_name"`
@@ -63,10 +63,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	var downloadURL string
 	if useTarball {
-		assetName := fmt.Sprintf("opencc-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+		assetName := fmt.Sprintf("zen-%s-%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 		downloadURL = fmt.Sprintf("https://github.com/dopejs/gozen/releases/download/v%s/%s", target, assetName)
 	} else {
-		assetName := fmt.Sprintf("opencc-%s-%s", runtime.GOOS, runtime.GOARCH)
+		assetName := fmt.Sprintf("zen-%s-%s", runtime.GOOS, runtime.GOARCH)
 		downloadURL = fmt.Sprintf("https://github.com/dopejs/gozen/releases/download/v%s/%s", target, assetName)
 	}
 
@@ -81,7 +81,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("download failed: HTTP %d (binary for %s/%s may not exist)", resp.StatusCode, runtime.GOOS, runtime.GOARCH)
 	}
 
-	tmpFile, err := os.CreateTemp("", "opencc-*")
+	tmpFile, err := os.CreateTemp("", "zen-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -176,7 +176,7 @@ func shouldUseTarball(version string) bool {
 	return major > 1 || (major == 1 && minor >= 4)
 }
 
-// extractTarGz extracts the opencc binary from a tar.gz file.
+// extractTarGz extracts the zen binary from a tar.gz file.
 func extractTarGz(tarPath string) (string, error) {
 	f, err := os.Open(tarPath)
 	if err != nil {
@@ -201,9 +201,9 @@ func extractTarGz(tarPath string) (string, error) {
 			return "", err
 		}
 
-		// Look for the opencc binary
-		if header.Typeflag == tar.TypeReg && (header.Name == "opencc" || strings.HasSuffix(header.Name, "/opencc")) {
-			tmpFile, err := os.CreateTemp("", "opencc-extracted-*")
+		// Look for the zen binary
+		if header.Typeflag == tar.TypeReg && (header.Name == "zen" || strings.HasSuffix(header.Name, "/zen")) {
+			tmpFile, err := os.CreateTemp("", "zen-extracted-*")
 			if err != nil {
 				return "", err
 			}
@@ -218,7 +218,7 @@ func extractTarGz(tarPath string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("opencc binary not found in archive")
+	return "", fmt.Errorf("zen binary not found in archive")
 }
 
 func copyFile(src, dst string) error {

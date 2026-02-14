@@ -20,7 +20,7 @@ var pickCmd = &cobra.Command{
 func runPick(cmd *cobra.Command, args []string) error {
 	available := config.ProviderNames()
 	if len(available) == 0 {
-		fmt.Println("No providers configured. Run 'opencc config' to set up providers.")
+		fmt.Println("No providers configured. Run 'zen config' to set up providers.")
 		return nil
 	}
 

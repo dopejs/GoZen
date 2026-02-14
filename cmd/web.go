@@ -106,7 +106,7 @@ func init() {
 
 func runWeb(cmd *cobra.Command, args []string) error {
 	// If this is the daemon child process, run the server directly (no port override).
-	if os.Getenv("OPENCC_WEB_DAEMON") == "1" {
+	if os.Getenv("GOZEN_WEB_DAEMON") == "1" {
 		return runWebServer(0)
 	}
 
@@ -200,7 +200,7 @@ func startDaemon() error {
 	defer logFile.Close()
 
 	child := exec.Command(exe, "web")
-	child.Env = append(os.Environ(), "OPENCC_WEB_DAEMON=1")
+	child.Env = append(os.Environ(), "GOZEN_WEB_DAEMON=1")
 	child.Stdout = logFile
 	child.Stderr = logFile
 	child.SysProcAttr = daemon.DaemonSysProcAttr()

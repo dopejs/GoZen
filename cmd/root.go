@@ -23,10 +23,10 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "1.5.3"
+var Version = "2.0.0"
 
 var rootCmd = &cobra.Command{
-	Use:   "opencc [cli args...]",
+	Use:   "zen [cli args...]",
 	Short: "Multi-CLI environment switcher with proxy failover",
 	Long:  "Load environment variables and start CLI (Claude Code, Codex, or OpenCode) with proxy failover.",
 	// Allow unknown flags to pass through to claude
@@ -79,10 +79,10 @@ Usage:
   %s [command]
 
 Quick Start:
-  opencc                       Start with default profile
-  opencc -p <profile>          Start with specific profile
-  opencc --cli codex           Start with specific CLI
-  opencc config                Open TUI configuration
+  zen                       Start with default profile
+  zen -p <profile>          Start with specific profile
+  zen --cli codex           Start with specific CLI
+  zen config                Open TUI configuration
 
 Configuration:
   config                       Open TUI to manage providers and profiles
@@ -609,7 +609,7 @@ func validateProviderNames(names []string, profile string) ([]string, error) {
 	}
 
 	if len(valid) == 0 {
-		return nil, fmt.Errorf("no valid providers remaining. Run 'opencc config' to set up providers")
+		return nil, fmt.Errorf("no valid providers remaining. Run 'zen config' to set up providers")
 	}
 
 	return valid, nil
@@ -655,22 +655,22 @@ func setupCLIEnvironment(cliBin string, proxyURL string, logger *log.Logger) {
 	case CLICodex:
 		// Codex uses OpenAI environment variables
 		os.Setenv("OPENAI_BASE_URL", proxyURL)
-		os.Setenv("OPENAI_API_KEY", "opencc-proxy")
+		os.Setenv("OPENAI_API_KEY", "zen-proxy")
 		logger.Printf("Setting Codex env: OPENAI_BASE_URL=%s", proxyURL)
 
 	case CLIOpenCode:
 		// OpenCode supports multiple providers, set both
 		// It will use the appropriate one based on the model prefix
 		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)
-		os.Setenv("ANTHROPIC_API_KEY", "opencc-proxy")
+		os.Setenv("ANTHROPIC_API_KEY", "zen-proxy")
 		os.Setenv("OPENAI_BASE_URL", proxyURL)
-		os.Setenv("OPENAI_API_KEY", "opencc-proxy")
+		os.Setenv("OPENAI_API_KEY", "zen-proxy")
 		logger.Printf("Setting OpenCode env: ANTHROPIC_BASE_URL=%s, OPENAI_BASE_URL=%s", proxyURL, proxyURL)
 
 	default:
 		// Claude Code uses Anthropic environment variables
 		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)
-		os.Setenv("ANTHROPIC_AUTH_TOKEN", "opencc-proxy")
+		os.Setenv("ANTHROPIC_AUTH_TOKEN", "zen-proxy")
 		logger.Printf("Setting Claude env: ANTHROPIC_BASE_URL=%s", proxyURL)
 	}
 }

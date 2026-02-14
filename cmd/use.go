@@ -24,11 +24,11 @@ func runUse(cmd *cobra.Command, args []string) error {
 	available := config.ProviderNames()
 
 	if len(args) == 0 {
-		fmt.Println("Usage: opencc use <provider> [cli args...]")
+		fmt.Println("Usage: zen use <provider> [cli args...]")
 		if len(available) > 0 {
 			fmt.Printf("\nAvailable providers: %s\n", strings.Join(available, ", "))
 		} else {
-			fmt.Println("\nNo providers configured. Run 'opencc config' to set up providers.")
+			fmt.Println("\nNo providers configured. Run 'zen config' to set up providers.")
 		}
 		return nil
 	}
@@ -41,7 +41,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		if len(available) > 0 {
 			fmt.Printf("Available providers: %s\n", strings.Join(available, ", "))
 		} else {
-			fmt.Println("No providers configured. Run 'opencc config' to set up providers.")
+			fmt.Println("No providers configured. Run 'zen config' to set up providers.")
 		}
 		return nil
 	}

@@ -102,6 +102,9 @@ func (m LaunchModel) Update(msg tea.Msg) (LaunchModel, tea.Cmd) {
 		case "tab", "left", "right":
 			m.focusOnCLI = !m.focusOnCLI
 		case "enter", " ":
+			if len(m.profiles) == 0 {
+				return m, nil
+			}
 			m.selectedProfile = m.profiles[m.profileCursor]
 			m.selectedCLI = m.clis[m.cliCursor]
 			return m, func() tea.Msg {

@@ -167,7 +167,7 @@ setup_first_provider() {
 # --- Legacy cleanup ---
 
 cleanup_legacy() {
-  SUDO="$(need_sudo)"
+  SUDO="$(need_sudo || true)"
 
   # Remove old /usr/local/bin/opencc binary
   if [ -f "/usr/local/bin/opencc" ]; then
@@ -320,10 +320,10 @@ install_completions() {
     zdir="$(zsh_comp_dir)"
     if [ -n "$zdir" ]; then
       info "Installing zsh completion to $zdir/_zen"
-      "$BIN_TARGET" completion zsh > /tmp/_zen_comp
+      "$BIN_TARGET" completion zsh > "${_tmpdir}/_zen_comp"
       $SUDO mkdir -p "$zdir"
-      $SUDO cp /tmp/_zen_comp "$zdir/_zen"
-      rm -f /tmp/_zen_comp
+      $SUDO cp "${_tmpdir}/_zen_comp" "$zdir/_zen"
+      rm -f "${_tmpdir}/_zen_comp"
       rm -f "$HOME"/.zcompdump*
       ok "zsh completion installed"
     fi
@@ -334,9 +334,9 @@ install_completions() {
     bdir="$(bash_comp_dir)"
     if [ -n "$bdir" ]; then
       info "Installing bash completion to $bdir/zen"
-      "$BIN_TARGET" completion bash > /tmp/_zen_bash_comp
-      $SUDO cp /tmp/_zen_bash_comp "$bdir/zen"
-      rm -f /tmp/_zen_bash_comp
+      "$BIN_TARGET" completion bash > "${_tmpdir}/_zen_bash_comp"
+      $SUDO cp "${_tmpdir}/_zen_bash_comp" "$bdir/zen"
+      rm -f "${_tmpdir}/_zen_bash_comp"
       ok "bash completion installed"
     fi
   fi

@@ -9,7 +9,11 @@ set -eu
 # Binaries are placed in dist/ with naming: zen-<os>-<arch>
 # Upload them to GitHub Releases. install.sh will download them by this name.
 
-VERSION="$(grep 'var Version' cmd/root.go | sed 's/.*"\(.*\)"/\1/')"
+VERSION="$(grep 'var Version' cmd/root.go | sed 's/.*"\(.*\)"/\1/')" || { echo "Error: Version not found in cmd/root.go"; exit 1; }
+if [ -z "$VERSION" ]; then
+  echo "Error: Version not found in cmd/root.go"
+  exit 1
+fi
 DIST_DIR="dist"
 PROJECT="zen"
 

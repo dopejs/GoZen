@@ -91,7 +91,8 @@ func (m SettingsModel) Update(msg tea.Msg) (SettingsModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+s":
-			return m, m.save()
+			cmd := m.save()
+			return m, cmd
 		case "esc":
 			return m, func() tea.Msg { return SettingsCancelledMsg{} }
 		}
@@ -102,7 +103,7 @@ func (m SettingsModel) Update(msg tea.Msg) (SettingsModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m SettingsModel) save() tea.Cmd {
+func (m *SettingsModel) save() tea.Cmd {
 	values := m.form.GetValues()
 
 	// Validate and save default CLI

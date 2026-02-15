@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
-const GITHUB_API = "https://api.github.com/repos/dopejs/opencc/releases/latest";
-const CACHE_KEY = "opencc-latest-version";
+const GITHUB_API = "https://api.github.com/repos/dopejs/gozen/releases/latest";
+const CACHE_KEY = "gozen-latest-version";
 const CACHE_TTL = 1000 * 60 * 30; // 30 minutes
 
 interface CacheEntry {
@@ -27,8 +27,12 @@ export function useVersion() {
     }
 
     fetch(GITHUB_API)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) return;
+        return res.json();
+      })
       .then((data) => {
+        if (!data) return;
         const tag = data.tag_name as string;
         if (tag) {
           const v = tag.startsWith("v") ? tag : `v${tag}`;

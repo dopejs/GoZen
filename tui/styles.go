@@ -41,8 +41,12 @@ func LayoutDimensions(termWidth, termHeight int) (int, int, int, int) {
 	}
 
 	// Don't exceed terminal width minus margins
-	if contentWidth > termWidth-horizontalMargin*2 {
-		contentWidth = termWidth - horizontalMargin*2
+	maxWidth := termWidth - horizontalMargin*2
+	if maxWidth < 0 {
+		maxWidth = 0
+	}
+	if contentWidth > maxWidth {
+		contentWidth = maxWidth
 	}
 
 	// Calculate centering padding

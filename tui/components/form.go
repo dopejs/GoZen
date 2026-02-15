@@ -232,6 +232,7 @@ func (m FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 
 func (m *FormModel) focusNext() {
 	m.inputs[m.focused].Blur()
+	start := m.focused
 	m.focused++
 	for m.focused < len(m.fields) && m.fields[m.focused].Disabled {
 		m.focused++
@@ -242,6 +243,11 @@ func (m *FormModel) focusNext() {
 			m.focused++
 		}
 	}
+	if m.focused >= len(m.fields) {
+		// All fields disabled, reset to original
+		m.focused = start
+		return
+	}
 	if m.focused < len(m.inputs) {
 		m.inputs[m.focused].Focus()
 	}
@@ -249,6 +255,7 @@ func (m *FormModel) focusNext() {
 
 func (m *FormModel) focusPrev() {
 	m.inputs[m.focused].Blur()
+	start := m.focused
 	m.focused--
 	for m.focused >= 0 && m.fields[m.focused].Disabled {
 		m.focused--
@@ -258,6 +265,11 @@ func (m *FormModel) focusPrev() {
 		for m.focused >= 0 && m.fields[m.focused].Disabled {
 			m.focused--
 		}
+	}
+	if m.focused < 0 {
+		// All fields disabled, reset to original
+		m.focused = start
+		return
 	}
 	if m.focused >= 0 && m.focused < len(m.inputs) {
 		m.inputs[m.focused].Focus()

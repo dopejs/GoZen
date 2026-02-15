@@ -547,8 +547,14 @@ func (s *ProxyServer) mapModel(original string, body map[string]interface{}, p *
 }
 
 // updateSessionCache extracts token usage from the response and updates the session cache.
+// Only works for non-streaming (non-SSE) responses.
 func (s *ProxyServer) updateSessionCache(sessionID string, resp *http.Response) {
 	if sessionID == "" {
+		return
+	}
+
+	// Skip SSE streaming responses — body is consumed by copyResponse
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return
 	}
 
@@ -621,8 +627,8 @@ func isRequestRelatedError(body []byte) bool {
 
 	// Check message for context/token length issues
 	contextKeywords := []string{
-		"context", "token", "too long", "too large", "exceeds", "maximum",
-		"limit", "length", "size", "prompt",
+		"too long", "too large", "exceeds maximum", "context length",
+		"exceeds the maximum", "maximum context",
 	}
 	for _, kw := range contextKeywords {
 		if strings.Contains(errMsg, kw) {

@@ -91,7 +91,7 @@ func (s *Server) listProviders(w http.ResponseWriter, r *http.Request) {
 	for _, name := range names {
 		p := store.GetProvider(name)
 		if p != nil {
-			providers = append(providers, toProviderResponse(name, p, false))
+			providers = append(providers, toProviderResponse(name, p, true))
 		}
 	}
 	writeJSON(w, http.StatusOK, providers)
@@ -104,7 +104,7 @@ func (s *Server) getProvider(w http.ResponseWriter, r *http.Request, name string
 		writeError(w, http.StatusNotFound, "provider not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toProviderResponse(name, p, false))
+	writeJSON(w, http.StatusOK, toProviderResponse(name, p, true))
 }
 
 func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {

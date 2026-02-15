@@ -67,7 +67,9 @@ func DefaultStore() *Store {
 	defer defaultMu.Unlock()
 	if defaultStore == nil {
 		defaultStore = &Store{path: ConfigFilePath()}
-		defaultStore.Load()
+		if err := defaultStore.Load(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load config: %v\n", err)
+		}
 	} else {
 		// Check if config file has been modified since last load
 		if info, err := os.Stat(defaultStore.path); err == nil {
@@ -147,7 +149,7 @@ func (s *Store) ProviderNames() []string {
 	return names
 }
 
-// ProviderMap returns all providers.
+// ProviderMap returns a copy of all providers.
 func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -155,7 +157,12 @@ func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Providers
+	// Return a copy to avoid concurrent modification
+	copy := make(map[string]*ProviderConfig, len(s.config.Providers))
+	for k, v := range s.config.Providers {
+		copy[k] = v
+	}
+	return copy
 }
 
 // ExportProviderToEnv sets ANTHROPIC_* env vars for the named provider.
@@ -170,7 +177,7 @@ func (s *Store) ExportProviderToEnv(name string) error {
 
 // --- Profile operations ---
 
-// GetProfileOrder returns the provider list for a profile.
+// GetProfileOrder returns a copy of the provider list for a profile.
 func (s *Store) GetProfileOrder(profile string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -182,7 +189,10 @@ func (s *Store) GetProfileOrder(profile string) []string {
 	if pc == nil {
 		return nil
 	}
-	return pc.Providers
+	// Return a copy to avoid callers mutating internal state
+	out := make([]string, len(pc.Providers))
+	copy(out, pc.Providers)
+	return out
 }
 
 // SetProfileOrder sets the provider list for a profile and saves.

@@ -18,6 +18,8 @@ type DashboardModel struct {
 	focusLeft   bool // true = sidebar focused, false = detail focused
 	selectedID  string
 	selectedType string // "provider", "profile", "binding"
+	confirmDelete bool   // true when waiting for delete confirmation
+	deleteTarget  string // ID of item to delete
 
 	// Styles
 	borderStyle lipgloss.Style
@@ -166,6 +168,30 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 		// List size accounts for border (2) and internal padding (2)
 		m.list.SetSize(leftWidth-4, paneHeight-2)
 	case tea.KeyMsg:
+		// Handle delete confirmation first
+		if m.confirmDelete {
+			switch msg.String() {
+			case "y", "Y":
+				parts := strings.SplitN(m.deleteTarget, ":", 2)
+				if len(parts) == 2 {
+					switch parts[0] {
+					case "provider":
+						config.DeleteProviderByName(parts[1])
+					case "profile":
+						config.DeleteProfile(parts[1])
+					case "binding":
+						config.UnbindProject(parts[1])
+					}
+					m.refreshList()
+				}
+				m.confirmDelete = false
+				m.deleteTarget = ""
+			case "n", "N", "esc":
+				m.confirmDelete = false
+				m.deleteTarget = ""
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "esc", "q":
 			return m, func() tea.Msg { return DashboardBackMsg{} }
@@ -201,23 +227,8 @@ func (m DashboardModel) Update(msg tea.Msg) (DashboardModel, tea.Cmd) {
 		case "d":
 			_, _, item, ok := m.list.GetSelectedItem()
 			if ok {
-				parts := strings.SplitN(item.ID, ":", 2)
-				if len(parts) == 2 {
-					switch parts[0] {
-					case "provider":
-						config.DeleteProviderByName(parts[1])
-						m.refreshList()
-					case "profile":
-						if err := config.DeleteProfile(parts[1]); err != nil {
-							// Can't delete default profile - ignore
-						} else {
-							m.refreshList()
-						}
-					case "binding":
-						config.UnbindProject(parts[1])
-						m.refreshList()
-					}
-				}
+				m.confirmDelete = true
+				m.deleteTarget = item.ID
 			}
 		}
 	}
@@ -308,7 +319,11 @@ func (m DashboardModel) View() string {
 	}
 
 	// Help bar at bottom
-	helpBar := RenderHelpBar("a add • e edit • d delete • Tab switch pane • Esc back", m.width)
+	helpText := "a add • e edit • d delete • Tab switch pane • Esc back"
+	if m.confirmDelete {
+		helpText = "Delete? y/n"
+	}
+	helpBar := RenderHelpBar(helpText, m.width)
 	view.WriteString(helpBar)
 
 	return view.String()

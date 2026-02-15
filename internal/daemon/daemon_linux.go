@@ -54,7 +54,6 @@ func EnableService() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	tmpl := template.Must(template.New("unit").Parse(unitTemplate))
 	if err := tmpl.Execute(f, struct {
@@ -62,8 +61,10 @@ func EnableService() error {
 	}{
 		Executable: exe,
 	}); err != nil {
+		f.Close()
 		return err
 	}
+	f.Close() // Close before systemctl commands
 
 	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl daemon-reload failed: %s: %w", string(out), err)

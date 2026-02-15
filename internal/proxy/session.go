@@ -42,8 +42,10 @@ func GetSessionUsage(sessionID string) *SessionUsage {
 	}
 	if val, ok := globalSessionCache.data.Load(sessionID); ok {
 		usage := val.(*SessionUsage)
-		// Update timestamp to mark as recently used
+		// Update timestamp under lock to avoid race
+		globalSessionCache.mu.Lock()
 		usage.Timestamp = time.Now()
+		globalSessionCache.mu.Unlock()
 		return usage
 	}
 	return nil

@@ -71,7 +71,6 @@ func EnableService() error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	tmpl := template.Must(template.New("plist").Parse(plistTemplate))
 	if err := tmpl.Execute(f, struct {
@@ -83,8 +82,10 @@ func EnableService() error {
 		Executable: exe,
 		LogPath:    LogPath(),
 	}); err != nil {
+		f.Close()
 		return err
 	}
+	f.Close() // Close before launchctl load
 
 	out, err := exec.Command("launchctl", "load", plistPath).CombinedOutput()
 	if err != nil {

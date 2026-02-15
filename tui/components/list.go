@@ -162,7 +162,8 @@ func (m ListModel) Update(msg tea.Msg) (ListModel, tea.Cmd) {
 		case "down", "j":
 			m.moveCursor(1)
 		case "enter", " ":
-			return m, m.selectCurrent()
+			cmd := m.selectCurrent()
+			return m, cmd
 		case "tab":
 			// Toggle section if on header
 			if m.cursor >= 0 && m.cursor < len(m.flatItems) {
@@ -189,7 +190,7 @@ func (m *ListModel) moveCursor(delta int) {
 	}
 }
 
-func (m ListModel) selectCurrent() tea.Cmd {
+func (m *ListModel) selectCurrent() tea.Cmd {
 	if m.cursor < 0 || m.cursor >= len(m.flatItems) {
 		return nil
 	}

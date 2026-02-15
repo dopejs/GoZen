@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"syscall"
 )
 
@@ -18,27 +19,12 @@ func IsRunning() (int, bool) {
 	if err != nil {
 		return 0, false
 	}
-	// tasklist output contains the PID if the process exists.
-	if len(out) > 0 && fmt.Sprintf("%d", pid) != "" {
-		// Check if output contains the PID number
-		if contains(string(out), fmt.Sprintf(" %d ", pid)) {
-			return pid, true
-		}
+	// Check if output contains the PID as a whole number (word boundary match)
+	pattern := regexp.MustCompile(`\b` + fmt.Sprintf("%d", pid) + `\b`)
+	if pattern.Match(out) {
+		return pid, true
 	}
 	return 0, false
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && findSubstring(s, substr))
-}
-
-func findSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 // StopDaemon terminates the daemon process on Windows.

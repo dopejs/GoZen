@@ -286,11 +286,15 @@ func startProxy(names []string, pc *config.ProfileConfig, cli string, args []str
 	}()
 
 	if err := cliCmd.Run(); err != nil {
+		signal.Stop(sigCh)
+		close(sigCh)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
 		return err
 	}
+	signal.Stop(sigCh)
+	close(sigCh)
 	return nil
 }
 

@@ -169,8 +169,7 @@ func hasThinkingEnabled(body map[string]interface{}) bool {
 		if t, ok := m["type"].(string); ok {
 			return t == "enabled"
 		}
-		// Non-empty map without explicit "disabled" is considered enabled
-		return len(m) > 0
+		return false
 	}
 	return false
 }

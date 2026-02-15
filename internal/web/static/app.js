@@ -480,6 +480,9 @@
       return r.json().then(function(data) {
         if (!r.ok) throw new Error(data.error || "Request failed");
         return data;
+      }).catch(function(parseErr) {
+        if (!r.ok) throw new Error("Request failed: HTTP " + r.status);
+        throw parseErr;
       });
     });
   }
@@ -1032,25 +1035,31 @@
       return;
     }
     var done = 0;
+    var errors = 0;
     var total = selected.length;
     selected.forEach(function(profileName) {
       var profile = profiles.find(function(p) { return p.name === profileName });
-      if (!profile) { done++; return; }
+      if (!profile) { done++; checkDone(); return; }
       var updatedProviders = (profile.providers || []).concat(addToProfilesProviderName);
       var body = { providers: updatedProviders };
       if (profile.routing) body.routing = profile.routing;
       api("PUT", "/profiles/" + encodeURIComponent(profileName), body).then(function() {
         done++;
-        if (done === total) {
-          toast("Added to " + total + " profile(s)");
-          loadProfiles();
-        }
+        checkDone();
       }).catch(function(err) {
-        done++;
+        errors++;
         toast(err.message, "error");
+        checkDone();
       });
     });
     addToProfilesProviderName = null;
+
+    function checkDone() {
+      if (done + errors === total) {
+        if (done > 0) toast("Added to " + done + " profile(s)");
+        loadProfiles();
+      }
+    }
   }
 
   // --- Confirm dialog ---

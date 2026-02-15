@@ -37,7 +37,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	cliArgs := args[1:]
 
 	if err := config.ExportProviderToEnv(configName); err != nil {
-		fmt.Printf("Provider '%s' not found.\n", configName)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		if len(available) > 0 {
 			fmt.Printf("Available providers: %s\n", strings.Join(available, ", "))
 		} else {

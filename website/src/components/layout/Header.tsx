@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router";
-import { Menu, X, Sun, Moon, ChevronDown } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
 const languages = [
@@ -13,21 +13,9 @@ const languages = [
 export function Header() {
   const { t, i18n } = useTranslation();
   const location = useLocation();
-  const [dark, setDark] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("gozen-theme");
-    if (saved === "light") {
-      setDark(false);
-      document.documentElement.classList.remove("dark");
-    } else {
-      setDark(true);
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
 
   // Close lang dropdown on outside click
   useEffect(() => {
@@ -39,18 +27,6 @@ export function Header() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
-
-  const toggleTheme = () => {
-    const next = !dark;
-    setDark(next);
-    if (next) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("gozen-theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("gozen-theme", "light");
-    }
-  };
 
   const currentLang =
     languages.find((l) => l.code === i18n.language) ?? languages[0];
@@ -138,16 +114,6 @@ export function Header() {
               )}
             </div>
 
-            <button
-              onClick={toggleTheme}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-overlay hover:text-text-primary"
-            >
-              {dark ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </button>
             <button
               onClick={() => setMenuOpen(!menuOpen)}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-overlay hover:text-text-primary md:hidden"

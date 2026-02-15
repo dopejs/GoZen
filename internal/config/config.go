@@ -93,6 +93,14 @@ func (p *ProviderConfig) GetEnvVarsForCLI(cli string) map[string]string {
 func (p *ProviderConfig) ExportToEnv() {
 	os.Setenv("ANTHROPIC_BASE_URL", p.BaseURL)
 	os.Setenv("ANTHROPIC_AUTH_TOKEN", p.AuthToken)
+
+	// Clear optional model vars first to avoid stale values from previous provider
+	os.Unsetenv("ANTHROPIC_MODEL")
+	os.Unsetenv("ANTHROPIC_REASONING_MODEL")
+	os.Unsetenv("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+	os.Unsetenv("ANTHROPIC_DEFAULT_OPUS_MODEL")
+	os.Unsetenv("ANTHROPIC_DEFAULT_SONNET_MODEL")
+
 	if p.Model != "" {
 		os.Setenv("ANTHROPIC_MODEL", p.Model)
 	}

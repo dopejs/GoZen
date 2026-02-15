@@ -46,12 +46,14 @@ export function Hero() {
         <div className="mx-auto mb-8 max-w-3xl">
           <div
             onClick={handleCopy}
-            className="group flex cursor-pointer items-center gap-3 overflow-x-auto rounded-xl border border-border bg-bg-surface px-5 py-4 transition-all hover:border-border-strong hover:shadow-lg"
+            className="group flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-bg-surface px-5 py-4 transition-all hover:border-border-strong hover:shadow-lg"
           >
             <span className="flex-shrink-0 text-text-muted">$</span>
-            <code className="flex-1 whitespace-nowrap text-left text-sm text-text-primary">
-              {installCmd}
-            </code>
+            <div className="min-w-0 flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+              <code className="whitespace-nowrap text-left text-sm text-text-primary">
+                {installCmd}
+              </code>
+            </div>
             <span className="flex-shrink-0 text-text-muted transition-colors group-hover:text-text-primary">
               {copied ? (
                 <Check className="h-4 w-4 text-teal" />

@@ -47,12 +47,30 @@
     document.getElementById("pe-back").addEventListener("click", function() { switchTab("profiles") });
     document.getElementById("pe-save").addEventListener("click", function(e) { submitProfile(e) });
     document.getElementById("btn-reload").addEventListener("click", reloadConfig);
+    setupTheme();
     document.getElementById("atp-skip").addEventListener("click", function() { closeModal("add-to-profiles-modal") });
     document.getElementById("atp-confirm").addEventListener("click", confirmAddToProfiles);
     loadHealth();
     loadProviders();
     loadProfiles();
     loadSettings();
+  }
+
+  // --- Theme Toggle ---
+  function setupTheme() {
+    var saved = localStorage.getItem("gozen-theme");
+    if (saved === "light") applyTheme(true);
+    document.getElementById("btn-theme").addEventListener("click", function() {
+      var isLight = document.documentElement.classList.contains("light");
+      applyTheme(!isLight);
+      localStorage.setItem("gozen-theme", !isLight ? "light" : "dark");
+    });
+  }
+  function applyTheme(light) {
+    document.documentElement.classList.toggle("light", light);
+    document.getElementById("icon-sun").style.display = light ? "none" : "";
+    document.getElementById("icon-moon").style.display = light ? "" : "none";
+    document.getElementById("theme-label").textContent = light ? "Dark Mode" : "Light Mode";
   }
 
   // --- Navigation (hash-based routing) ---

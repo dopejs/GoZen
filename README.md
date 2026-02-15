@@ -1,5 +1,9 @@
 # GoZen
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dopejs/GoZen/main/assets/gozen.svg" alt="GoZen Logo" width="120">
+</p>
+
 [简体中文](docs/README.zh-CN.md) | [繁體中文](docs/README.zh-TW.md) | [Español](docs/README.es.md)
 
 > **Go Zen** — enter a zen-like flow state for programming. **Goes Env** — seamless environment switching.

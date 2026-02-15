@@ -78,7 +78,13 @@ body{
   display:flex;align-items:center;gap:10px;
   padding:0 8px 20px;
 }
-.brand-icon{width:28px;height:28px;color:var(--teal)}
+.brand-logo{
+  width:28px;height:28px;flex-shrink:0;
+  background-color:var(--teal);
+  -webkit-mask-image:url(logo.svg);mask-image:url(logo.svg);
+  -webkit-mask-size:contain;mask-size:contain;
+  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+}
 .brand-name{
   font-size:17px;font-weight:700;
   color:var(--text-primary);display:block;

@@ -1,5 +1,9 @@
 # GoZen
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dopejs/GoZen/main/assets/gozen.svg" alt="GoZen Logo" width="120">
+</p>
+
 [English](../README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 > **Go Zen** — entra en un estado de flujo zen para programar. **Goes Env** — cambio de entorno fluido.

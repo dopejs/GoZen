@@ -1,5 +1,9 @@
 # GoZen
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/dopejs/GoZen/main/assets/gozen.svg" alt="GoZen Logo" width="120">
+</p>
+
 [English](../README.md) | [简体中文](README.zh-CN.md) | [Español](README.es.md)
 
 > **Go Zen** — 進入禪意般的心流程式設計狀態。**Goes Env** — 無縫環境切換。諧音「夠禪」。

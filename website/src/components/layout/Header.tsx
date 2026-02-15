@@ -40,9 +40,20 @@ export function Header() {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 no-underline">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-dim">
-              <span className="text-lg font-bold text-teal">⌘</span>
-            </div>
+            <div
+              className="h-8 w-8 flex-shrink-0"
+              style={{
+                backgroundColor: 'var(--color-teal)',
+                WebkitMaskImage: 'url(/logo.svg)',
+                maskImage: 'url(/logo.svg)',
+                WebkitMaskSize: 'contain',
+                maskSize: 'contain',
+                WebkitMaskRepeat: 'no-repeat',
+                maskRepeat: 'no-repeat',
+              }}
+              role="img"
+              aria-label="GoZen logo"
+            />
             <span className="text-lg font-bold tracking-tight text-text-primary">
               GoZen
             </span>

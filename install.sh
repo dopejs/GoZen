@@ -61,6 +61,9 @@ fetch() {
     curl -fL --progress-bar -o "$_out" "$_url"
   elif command -v wget >/dev/null 2>&1; then
     wget --show-progress -qO "$_out" "$_url" 2>&1
+  else
+    err "curl or wget is required"
+    exit 1
   fi
 }
 
@@ -222,8 +225,8 @@ do_install() {
   fi
 
   # Download binary or tarball
-  TMPDIR="$(mktemp -d)"
-  trap 'rm -rf "$TMPDIR"' EXIT
+  _tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$_tmpdir"' EXIT
 
   if [ "$USE_TARBALL" -eq 1 ]; then
     # v1.4.0+: Download tar.gz
@@ -231,12 +234,12 @@ do_install() {
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
 
     info "Downloading ${DOWNLOAD_URL}..."
-    fetch "$DOWNLOAD_URL" "${TMPDIR}/zen.tar.gz"
+    fetch "$DOWNLOAD_URL" "${_tmpdir}/zen.tar.gz"
 
     info "Extracting..."
-    tar -xzf "${TMPDIR}/zen.tar.gz" -C "${TMPDIR}"
+    tar -xzf "${_tmpdir}/zen.tar.gz" -C "${_tmpdir}"
 
-    if [ ! -f "${TMPDIR}/zen" ]; then
+    if [ ! -f "${_tmpdir}/zen" ]; then
       err "Binary not found in tarball"
       exit 1
     fi
@@ -246,13 +249,13 @@ do_install() {
     DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET_NAME}"
 
     info "Downloading ${DOWNLOAD_URL}..."
-    fetch "$DOWNLOAD_URL" "${TMPDIR}/zen"
+    fetch "$DOWNLOAD_URL" "${_tmpdir}/zen"
   fi
 
   # Install binary
-  chmod +x "${TMPDIR}/zen"
+  chmod +x "${_tmpdir}/zen"
   info "Installing zen to ${BIN_TARGET}"
-  $SUDO cp "${TMPDIR}/zen" "$BIN_TARGET"
+  $SUDO cp "${_tmpdir}/zen" "$BIN_TARGET"
   $SUDO chmod +x "$BIN_TARGET"
 
   # On macOS, ad-hoc codesign to clear com.apple.provenance

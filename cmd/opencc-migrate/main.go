@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -33,7 +34,7 @@ func main() {
 	oldDir := filepath.Join(home, ".opencc")
 	newDir := filepath.Join(home, ".zen")
 
-	// Step 1: Migrate config
+	// Step 1: Migrate config (JSON and logs only; .db files after daemon stop)
 	migrateConfig(oldDir, newDir)
 
 	// Step 2: Download and install zen
@@ -45,6 +46,9 @@ func main() {
 
 	// Step 4: Stop opencc web daemon
 	stopDaemon(oldDir, newDir)
+
+	// Now safe to copy .db files (daemon is stopped, no active writes)
+	migrateDBFiles(oldDir, newDir)
 
 	// Re-enable service under new name if old one existed
 	if removed {
@@ -101,7 +105,10 @@ func migrateConfig(oldDir, newDir string) {
 		return
 	}
 
-	os.MkdirAll(newDir, 0755)
+	if err := os.MkdirAll(newDir, 0755); err != nil {
+		fmt.Printf("warning: cannot create ~/.zen/: %v\n", err)
+		return
+	}
 
 	// Copy opencc.json → zen.json
 	if err := copyFile(filepath.Join(oldDir, "opencc.json"), filepath.Join(newDir, "zen.json")); err != nil {
@@ -111,20 +118,34 @@ func migrateConfig(oldDir, newDir string) {
 		// Continue to copy auxiliary files even if opencc.json is missing
 	}
 
-	// Copy auxiliary files
+	// Copy log files only (skip .pid — stale; skip .db — daemon may be writing)
 	entries, _ := os.ReadDir(oldDir)
 	for _, e := range entries {
 		name := e.Name()
 		if name == "opencc.json" {
 			continue
 		}
-		ext := filepath.Ext(name)
-		if ext == ".pid" || ext == ".log" || ext == ".db" {
+		if filepath.Ext(name) == ".log" {
 			copyFile(filepath.Join(oldDir, name), filepath.Join(newDir, name))
 		}
 	}
 
 	fmt.Println("done")
+}
+
+// migrateDBFiles copies .db files after the daemon has been stopped.
+func migrateDBFiles(oldDir, newDir string) {
+	entries, _ := os.ReadDir(oldDir)
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".db" {
+			src := filepath.Join(oldDir, e.Name())
+			dst := filepath.Join(newDir, e.Name())
+			if _, err := os.Stat(dst); err == nil {
+				continue // already exists
+			}
+			copyFile(src, dst)
+		}
+	}
 }
 
 // --- Step 2: Download and install zen ---
@@ -144,7 +165,8 @@ func downloadZen() {
 	}
 
 	// Fetch latest release tag
-	resp, err := http.Get("https://api.github.com/repos/dopejs/gozen/releases/latest")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/dopejs/gozen/releases/latest")
 	if err != nil {
 		fatalf("failed to fetch release info: %v", err)
 	}
@@ -169,7 +191,7 @@ func downloadZen() {
 	url := fmt.Sprintf("https://github.com/dopejs/gozen/releases/download/%s/%s", tag, assetName)
 
 	// Download tarball
-	dlResp, err := http.Get(url)
+	dlResp, err := client.Get(url)
 	if err != nil {
 		fatalf("download failed: %v", err)
 	}
@@ -316,17 +338,15 @@ func removeSelf() {
 		return
 	}
 
-	// Resolve symlinks
-	exe, _ = filepath.EvalSymlinks(exe)
+	// Do NOT resolve symlinks — if opencc is a symlink to zen,
+	// we want to remove the symlink, not the zen binary.
 
 	if runtime.GOOS == "windows" {
-		// Windows can't delete running executable; inform user
 		fmt.Printf("please delete %s manually\n", exe)
 		return
 	}
 
 	if err := os.Remove(exe); err != nil {
-		// Try sudo — newline so password prompt doesn't collide with step prefix
 		fmt.Println()
 		if sudoErr := exec.Command("sudo", "rm", "-f", exe).Run(); sudoErr != nil {
 			fmt.Printf("please delete %s manually\n", exe)
@@ -349,10 +369,12 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func extractZenFromTarGz(path string) (string, error) {

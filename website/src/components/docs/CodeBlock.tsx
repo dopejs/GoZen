@@ -26,6 +26,7 @@ export function CodeBlock({
         const cleaned = { ...value } as Record<string, unknown>;
         delete cleaned.background;
         delete cleaned.backgroundColor;
+        delete cleaned.textShadow;
         style[key] = cleaned as React.CSSProperties;
       }
     }
@@ -39,7 +40,7 @@ export function CodeBlock({
   };
 
   return (
-    <div className="group relative rounded-lg border border-border bg-bg-base">
+    <div className="group relative rounded-lg border border-border" style={{ backgroundColor: '#0f1117' }}>
       {showCopy && (
         <button
           onClick={handleCopy}

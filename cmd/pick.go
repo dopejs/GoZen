@@ -9,12 +9,18 @@ import (
 )
 
 var pickCmd = &cobra.Command{
-	Use:           "pick [claude args...]",
+	Use:           "pick [cli args...]",
 	Short:         "Select providers interactively and start proxy",
 	Long:          "Launch a checkbox picker to select providers for this session, then start the proxy.",
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runPick,
+}
+
+var pickCLIFlag string
+
+func init() {
+	pickCmd.Flags().StringVar(&pickCLIFlag, "cli", "", "CLI to use (claude, codex, opencode)")
 }
 
 func runPick(cmd *cobra.Command, args []string) error {
@@ -37,5 +43,9 @@ func runPick(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return startProxy(selected, nil, config.GetDefaultCLI(), args)
+	cli := pickCLIFlag
+	if cli == "" {
+		cli = config.GetDefaultCLI()
+	}
+	return startProxy(selected, nil, cli, args)
 }

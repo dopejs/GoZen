@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gozen.dev/sitemap.xml

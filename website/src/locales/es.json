@@ -81,11 +81,16 @@
       "bindCli": "Vincular directorio actual a un CLI especificado",
       "unbind": "Desvincular directorio actual",
       "status": "Mostrar estado de vinculaci\u00f3n del directorio actual",
-      "webStart": "Iniciar interfaz de gesti\u00f3n Web",
-      "webOpen": "Abrir interfaz Web en el navegador",
-      "webStop": "Detener servidor Web",
+      "web": "Iniciar Web UI (primer plano, abre navegador)",
+      "webDaemon": "Iniciar Web UI como daemon en segundo plano",
+      "webStop": "Detener daemon Web",
+      "webStatus": "Mostrar estado del daemon Web",
+      "webRestart": "Reiniciar daemon Web",
+      "webEnable": "Instalar Web UI como servicio del sistema",
+      "webDisable": "Desinstalar servicio del sistema Web UI",
       "upgrade": "Actualizar a la \u00faltima versi\u00f3n",
-      "version": "Mostrar versi\u00f3n"
+      "version": "Mostrar versi\u00f3n",
+      "completion": "Generar script de completado de shell (zsh/bash/fish)"
     }
   },
   "footer": {

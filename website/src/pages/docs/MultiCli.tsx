@@ -48,7 +48,7 @@ export default function MultiCli() {
 zen config  # Settings → Default CLI
 
 # Via Web UI
-zen web open  # Settings page`}
+zen web  # Settings page`}
           language="bash"
         />
       </section>

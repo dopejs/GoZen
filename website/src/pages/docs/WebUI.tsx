@@ -16,14 +16,20 @@ export default function WebUI() {
           {t("docs.webUi.usageTitle")}
         </h2>
         <CodeBlock
-          code={`# Start (runs in background, port 19840)
-zen web start
+          code={`# Start foreground (opens browser automatically)
+zen web
 
-# Open browser
-zen web open
+# Start as background daemon
+zen web -d
 
-# Stop
-zen web stop`}
+# Daemon management
+zen web stop       # Stop daemon
+zen web status     # Show daemon status
+zen web restart    # Restart daemon
+
+# System service
+zen web enable     # Install as system service
+zen web disable    # Uninstall system service`}
           language="bash"
         />
       </section>

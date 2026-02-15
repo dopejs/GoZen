@@ -81,11 +81,16 @@
       "bindCli": "綁定目前目錄使用指定 CLI",
       "unbind": "解除目前目錄綁定",
       "status": "顯示目前目錄綁定狀態",
-      "webStart": "啟動 Web 管理介面",
-      "webOpen": "在瀏覽器中開啟 Web 介面",
-      "webStop": "停止 Web 服務",
+      "web": "啟動 Web 管理介面（前台執行，自動開啟瀏覽器）",
+      "webDaemon": "以背景守護程序啟動 Web 管理介面",
+      "webStop": "停止 Web 守護程序",
+      "webStatus": "查看 Web 守護程序狀態",
+      "webRestart": "重啟 Web 守護程序",
+      "webEnable": "將 Web 管理介面安裝為系統服務",
+      "webDisable": "解除安裝 Web 管理介面系統服務",
       "upgrade": "升級到最新版本",
-      "version": "顯示版本"
+      "version": "顯示版本",
+      "completion": "產生 Shell 補全腳本（zsh/bash/fish）"
     }
   },
   "footer": {

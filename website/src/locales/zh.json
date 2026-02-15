@@ -81,11 +81,16 @@
       "bindCli": "绑定当前目录使用指定 CLI",
       "unbind": "解除当前目录绑定",
       "status": "显示当前目录绑定状态",
-      "webStart": "启动 Web 管理界面",
-      "webOpen": "在浏览器中打开 Web 界面",
-      "webStop": "停止 Web 服务",
+      "web": "启动 Web 管理界面（前台运行，自动打开浏览器）",
+      "webDaemon": "以后台守护进程启动 Web 管理界面",
+      "webStop": "停止 Web 守护进程",
+      "webStatus": "查看 Web 守护进程状态",
+      "webRestart": "重启 Web 守护进程",
+      "webEnable": "将 Web 管理界面安装为系统服务",
+      "webDisable": "卸载 Web 管理界面系统服务",
       "upgrade": "升级到最新版本",
-      "version": "显示版本"
+      "version": "显示版本",
+      "completion": "生成 Shell 补全脚本（zsh/bash/fish）"
     }
   },
   "footer": {

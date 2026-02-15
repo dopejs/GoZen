@@ -81,11 +81,16 @@
       "bindCli": "Bind current directory to specified CLI",
       "unbind": "Unbind current directory",
       "status": "Show current directory binding status",
-      "webStart": "Start Web management interface",
-      "webOpen": "Open Web interface in browser",
-      "webStop": "Stop Web server",
+      "web": "Start Web UI (foreground, opens browser)",
+      "webDaemon": "Start Web UI as background daemon",
+      "webStop": "Stop Web daemon",
+      "webStatus": "Show Web daemon status",
+      "webRestart": "Restart Web daemon",
+      "webEnable": "Install Web UI as system service",
+      "webDisable": "Uninstall Web UI system service",
       "upgrade": "Upgrade to latest version",
-      "version": "Show version"
+      "version": "Show version",
+      "completion": "Generate shell completion (zsh/bash/fish)"
     }
   },
   "footer": {

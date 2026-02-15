@@ -14,11 +14,16 @@ const commands = [
   { cmd: "zen bind --cli <cli>", key: "bindCli" },
   { cmd: "zen unbind", key: "unbind" },
   { cmd: "zen status", key: "status" },
-  { cmd: "zen web start", key: "webStart" },
-  { cmd: "zen web open", key: "webOpen" },
+  { cmd: "zen web", key: "web" },
+  { cmd: "zen web -d", key: "webDaemon" },
   { cmd: "zen web stop", key: "webStop" },
+  { cmd: "zen web status", key: "webStatus" },
+  { cmd: "zen web restart", key: "webRestart" },
+  { cmd: "zen web enable", key: "webEnable" },
+  { cmd: "zen web disable", key: "webDisable" },
   { cmd: "zen upgrade", key: "upgrade" },
   { cmd: "zen version", key: "version" },
+  { cmd: "zen completion <shell>", key: "completion" },
 ];
 
 export function Commands() {

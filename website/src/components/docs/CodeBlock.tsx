@@ -40,7 +40,7 @@ export function CodeBlock({
   };
 
   return (
-    <div className="group relative rounded-lg border border-border" style={{ backgroundColor: '#0f1117' }}>
+    <div className="group relative max-w-full overflow-x-auto rounded-lg border border-border" style={{ backgroundColor: '#0f1117', WebkitOverflowScrolling: 'touch' }}>
       {showCopy && (
         <button
           onClick={handleCopy}
@@ -63,6 +63,9 @@ export function CodeBlock({
           background: "transparent",
           fontSize: "0.875rem",
           lineHeight: "1.6",
+          whiteSpace: "pre",
+          wordBreak: "normal",
+          overflowWrap: "normal",
         }}
       >
         {code}

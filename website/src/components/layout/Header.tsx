@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router";
-import { Menu, X, ChevronDown, Sun, Moon } from "lucide-react";
+import { Menu, X, ChevronDown, Sun, Moon, Github } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
 const languages = [
@@ -101,8 +101,9 @@ export function Header() {
               href="https://github.com/dopejs/gozen"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors no-underline hover:text-text-primary"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors no-underline hover:text-text-primary"
             >
+              <Github className="h-4 w-4" />
               {t("nav.github")}
             </a>
           </nav>
@@ -194,8 +195,9 @@ export function Header() {
               href="https://github.com/dopejs/gozen"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary no-underline"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-text-secondary no-underline"
             >
+              <Github className="h-4 w-4" />
               {t("nav.github")}
             </a>
           </nav>

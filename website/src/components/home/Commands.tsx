@@ -36,7 +36,8 @@ export function Commands() {
           {t("commands.title")}
         </h2>
 
-        <div className="overflow-hidden rounded-xl border border-border bg-bg-surface">
+        <div className="overflow-x-auto rounded-xl border border-border bg-bg-surface" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="min-w-[480px]">
           <div className="grid grid-cols-[minmax(200px,1fr)_2fr] border-b border-border bg-bg-elevated px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
             <span>{t("commands.command")}</span>
             <span>{t("commands.description")}</span>
@@ -47,12 +48,13 @@ export function Commands() {
                 key={item.key}
                 className="grid grid-cols-[minmax(200px,1fr)_2fr] px-5 py-3 transition-colors hover:bg-bg-elevated/50"
               >
-                <code className="text-sm text-teal">{item.cmd}</code>
+                <code className="whitespace-nowrap text-sm text-teal">{item.cmd}</code>
                 <span className="text-sm text-text-secondary">
                   {t(`commands.items.${item.key}`)}
                 </span>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>

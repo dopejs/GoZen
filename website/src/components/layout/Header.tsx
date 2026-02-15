@@ -52,19 +52,24 @@ export function Header() {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 no-underline">
             <div
-              className="h-8 w-8 flex-shrink-0"
-              style={{
-                backgroundColor: 'var(--color-teal)',
-                WebkitMaskImage: 'url(/logo.svg)',
-                maskImage: 'url(/logo.svg)',
-                WebkitMaskSize: 'contain',
-                maskSize: 'contain',
-                WebkitMaskRepeat: 'no-repeat',
-                maskRepeat: 'no-repeat',
-              }}
+              className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-lg"
+              style={{ backgroundColor: 'var(--color-teal)' }}
               role="img"
               aria-label="GoZen logo"
-            />
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundColor: 'var(--color-bg-base)',
+                  WebkitMaskImage: 'url(/logo.svg)',
+                  maskImage: 'url(/logo.svg)',
+                  WebkitMaskSize: 'contain',
+                  maskSize: 'contain',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                }}
+              />
+            </div>
             <span className="text-lg font-bold tracking-tight text-text-primary">
               GoZen
             </span>

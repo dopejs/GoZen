@@ -47,6 +47,7 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 ## Workflow Rules
 
 - **Commit often**: Each completed task/item should be committed individually, not batched into one large commit. After finishing a feature or fix, commit immediately before moving to the next task.
+- **Branch protection**: The `main` branch is protected. All changes MUST go through a pull request — never push directly to main. Create a feature branch, commit there, then use `gh pr create` to open a PR.
 - **Pre-release check**: Before tagging a release, check for unpushed commits (`git log origin/main..HEAD`) and push them first.
 - **Update version constant**: Before releasing, update `Version` in `cmd/root.go` to match the release tag.
 - **Update README**: Before releasing, check that `README.md` reflects all new features and changes. **All four language versions must be updated together**: `README.md` (English), `docs/README.zh-CN.md` (简体中文), `docs/README.zh-TW.md` (繁體中文), `docs/README.es.md` (Español).

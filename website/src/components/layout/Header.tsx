@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { Menu, X, ChevronDown, Sun, Moon } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
 const languages = [
@@ -15,7 +15,18 @@ export function Header() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [dark, setDark] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem("gozen-theme");
+    return stored ? stored === "dark" : true;
+  });
   const langRef = useRef<HTMLDivElement>(null);
+
+  // Sync dark class on <html>
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("gozen-theme", dark ? "dark" : "light");
+  }, [dark]);
 
   // Close lang dropdown on outside click
   useEffect(() => {
@@ -124,6 +135,15 @@ export function Header() {
                 </div>
               )}
             </div>
+
+            {/* Theme toggle */}
+            <button
+              onClick={() => setDark(!dark)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-overlay hover:text-text-primary"
+              aria-label="Toggle theme"
+            >
+              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
 
             <button
               onClick={() => setMenuOpen(!menuOpen)}

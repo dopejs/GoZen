@@ -6,7 +6,8 @@
   },
   "hero": {
     "title": "Multi-CLI Environment Switcher",
-    "tagline": "Go Zen — enter a zen-like flow state for programming. Goes Env — seamless environment switching.",
+    "tagline-1": "enter a zen-like flow state for programming.",
+    "tagline-2": "seamless environment switching.",
     "subtitle": "Unified management for Claude Code, Codex, and OpenCode configurations with API proxy auto-failover",
     "install": "Install",
     "getDocs": "Documentation",

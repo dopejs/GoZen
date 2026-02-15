@@ -6,7 +6,8 @@
   },
   "hero": {
     "title": "Conmutador de Entornos Multi-CLI",
-    "tagline": "Go Zen \u2014 entra en un estado de flujo zen para programar. Goes Env \u2014 cambio de entorno fluido.",
+    "tagline-1": "entra en un estado de flujo zen para programar.",
+    "tagline-2": "cambio de entorno fluido.",
     "subtitle": "Gesti\u00f3n unificada de configuraciones de Claude Code, Codex y OpenCode con conmutaci\u00f3n autom\u00e1tica de proxy API",
     "install": "Instalar",
     "getDocs": "Documentaci\u00f3n",

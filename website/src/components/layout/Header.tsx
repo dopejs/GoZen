@@ -52,12 +52,12 @@ export function Header() {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 no-underline">
             <div
-              className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-lg"
+              className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg"
               style={{ backgroundColor: 'var(--color-teal)' }}
               role="img"
               aria-label="GoZen logo"
             >
-              <div
+              <div 
                 className="absolute inset-0"
                 style={{
                   backgroundColor: 'var(--color-bg-base)',

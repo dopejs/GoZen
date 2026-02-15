@@ -31,15 +31,16 @@ export function Hero() {
 
         <h1 className="mb-6 text-4xl font-bold tracking-tight text-text-primary sm:text-5xl lg:text-6xl">
           <span className="text-teal">GoZen</span>
-          <span className="mt-3 block">{t("hero.title")}</span>
+          <span className="mt-4 block">{t("hero.title")}</span>
         </h1>
 
-        <p className="mx-auto mb-2 max-w-2xl text-sm italic text-text-muted">
-          {t("hero.tagline")}
+        <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
+          {t("hero.subtitle")}
         </p>
 
-        <p className="mx-auto mb-10 max-w-2xl text-lg text-text-secondary">
-          {t("hero.subtitle")}
+        <p className="mx-auto inline-flex flex-col gap-2 mb-10 text-left pl-4 text-sm italic text-text-muted border-l-2 border-teal">
+          <span className="flex flex-row"><strong className="w-[80px]">Go Zen</strong>{t("hero.tagline-1")}</span>
+          <span className="flex flex-row"><strong className="w-[80px] inline-block">Goes Env</strong>{t("hero.tagline-2")}</span>
         </p>
 
         {/* Install command */}
@@ -48,13 +49,13 @@ export function Hero() {
             onClick={handleCopy}
             className="group flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-bg-surface px-5 py-4 transition-all hover:border-border-strong hover:shadow-lg"
           >
-            <span className="flex-shrink-0 text-text-muted">$</span>
+            <span className="shrink-0 text-text-muted">$</span>
             <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <code className="whitespace-nowrap text-left text-sm text-text-primary">
                 {installCmd}
               </code>
             </div>
-            <span className="flex-shrink-0 text-text-muted transition-colors group-hover:text-text-primary">
+            <span className="shrink-0 text-text-muted transition-colors group-hover:text-text-primary">
               {copied ? (
                 <Check className="h-4 w-4 text-teal" />
               ) : (

@@ -6,7 +6,8 @@
   },
   "hero": {
     "title": "多 CLI 環境切換器",
-    "tagline": "Go Zen — 進入禪意般的心流程式設計狀態。Goes Env — 無縫環境切換。諧音「夠禪」。",
+    "tagline-1": "進入禪意般的心流程式設計狀態。",
+    "tagline-2": "無縫環境切換。",
     "subtitle": "統一管理 Claude Code、Codex、OpenCode 設定，帶 API 代理自動故障轉移",
     "install": "安裝",
     "getDocs": "查看文件",

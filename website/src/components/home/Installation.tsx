@@ -31,7 +31,7 @@ export function Installation() {
             <div key={step.key} className="flex gap-6">
               {/* Step number */}
               <div className="flex flex-col items-center">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-teal text-base font-bold text-bg-base">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal text-base font-bold text-bg-base">
                   {i + 1}
                 </div>
                 {i < steps.length - 1 && (
@@ -40,7 +40,7 @@ export function Installation() {
               </div>
 
               {/* Step content */}
-              <div className="flex-1 pb-4">
+              <div className="flex-1 pb-4 overflow-hidden">
                 <h3 className="mb-1 text-lg font-semibold text-text-primary">
                   {t(`install.${step.key}.title`)}
                 </h3>

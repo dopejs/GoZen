@@ -20,6 +20,12 @@ var useCmd = &cobra.Command{
 	RunE:              runUse,
 }
 
+var useCLIFlag string
+
+func init() {
+	useCmd.Flags().StringVar(&useCLIFlag, "cli", "", "CLI to use (claude, codex, opencode)")
+}
+
 func runUse(cmd *cobra.Command, args []string) error {
 	available := config.ProviderNames()
 
@@ -46,8 +52,11 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Get CLI binary name from config
-	cliBin := config.GetDefaultCLI()
+	// Get CLI binary name from flag or config
+	cliBin := useCLIFlag
+	if cliBin == "" {
+		cliBin = config.GetDefaultCLI()
+	}
 	if cliBin == "" {
 		cliBin = "claude"
 	}

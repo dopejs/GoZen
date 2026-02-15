@@ -36,7 +36,7 @@ export function Commands() {
           {t("commands.title")}
         </h2>
 
-        <div className="overflow-x-auto rounded-xl border border-border bg-bg-surface" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="no-scrollbar overflow-x-auto rounded-xl border border-border bg-bg-surface" style={{ WebkitOverflowScrolling: 'touch' }}>
           <div className="min-w-[480px]">
           <div className="grid grid-cols-[minmax(200px,1fr)_2fr] border-b border-border bg-bg-elevated px-5 py-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
             <span>{t("commands.command")}</span>

@@ -49,7 +49,7 @@ export function Hero() {
             className="group flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-bg-surface px-5 py-4 transition-all hover:border-border-strong hover:shadow-lg"
           >
             <span className="flex-shrink-0 text-text-muted">$</span>
-            <div className="min-w-0 flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <code className="whitespace-nowrap text-left text-sm text-text-primary">
                 {installCmd}
               </code>

@@ -432,6 +432,50 @@ func TestRemoveFromProfileOrder(t *testing.T) {
 	}
 }
 
+func TestProviderConfigExportToEnvClearsStaleVars(t *testing.T) {
+	// First export with all model fields set
+	p1 := &ProviderConfig{
+		BaseURL:        "https://first.com",
+		AuthToken:      "tok-1",
+		Model:          "m1",
+		ReasoningModel: "m2",
+		HaikuModel:     "m3",
+		OpusModel:      "m4",
+		SonnetModel:    "m5",
+	}
+	p1.ExportToEnv()
+
+	// Second export with no optional model fields
+	p2 := &ProviderConfig{
+		BaseURL:   "https://second.com",
+		AuthToken: "tok-2",
+	}
+	p2.ExportToEnv()
+
+	// All optional model vars should be cleared
+	staleVars := []string{
+		"ANTHROPIC_MODEL",
+		"ANTHROPIC_REASONING_MODEL",
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+		"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	}
+	for _, k := range staleVars {
+		if got := os.Getenv(k); got != "" {
+			t.Errorf("%s should be cleared after switching provider, got %q", k, got)
+		}
+	}
+
+	// Base fields should be updated
+	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != "https://second.com" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, "https://second.com")
+	}
+
+	// Cleanup
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+}
+
 func TestProviderConfigExportToEnv(t *testing.T) {
 	p := &ProviderConfig{
 		BaseURL:        "https://test.com",
@@ -1178,5 +1222,144 @@ func TestMigrateFromOpenCC(t *testing.T) {
 	}
 	if string(logData) != "log data" {
 		t.Errorf("proxy.log content = %q, want %q", string(logData), "log data")
+	}
+}
+
+// --- Compat convenience function tests ---
+
+func TestCompatGetSetProvider(t *testing.T) {
+	setTestHome(t)
+
+	if err := SetProvider("test", &ProviderConfig{
+		BaseURL:   "https://test.com",
+		AuthToken: "tok",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p := GetProvider("test")
+	if p == nil {
+		t.Fatal("expected provider")
+	}
+	if p.BaseURL != "https://test.com" {
+		t.Errorf("BaseURL = %q", p.BaseURL)
+	}
+
+	if GetProvider("nonexistent") != nil {
+		t.Error("expected nil for nonexistent provider")
+	}
+}
+
+func TestCompatProviderNames(t *testing.T) {
+	setTestHome(t)
+
+	SetProvider("b", &ProviderConfig{BaseURL: "u", AuthToken: "t"})
+	SetProvider("a", &ProviderConfig{BaseURL: "u", AuthToken: "t"})
+
+	names := ProviderNames()
+	if len(names) != 2 || names[0] != "a" || names[1] != "b" {
+		t.Errorf("ProviderNames() = %v", names)
+	}
+}
+
+func TestCompatExportProviderToEnv(t *testing.T) {
+	setTestHome(t)
+
+	SetProvider("x", &ProviderConfig{BaseURL: "https://x.com", AuthToken: "tok-x"})
+
+	if err := ExportProviderToEnv("x"); err != nil {
+		t.Fatal(err)
+	}
+	if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "https://x.com" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q", v)
+	}
+	os.Unsetenv("ANTHROPIC_BASE_URL")
+	os.Unsetenv("ANTHROPIC_AUTH_TOKEN")
+
+	if err := ExportProviderToEnv("nonexistent"); err == nil {
+		t.Error("expected error for nonexistent provider")
+	}
+}
+
+func TestCompatDefaultProfileAndCLI(t *testing.T) {
+	setTestHome(t)
+
+	// Default profile should be "default"
+	if p := GetDefaultProfile(); p != "default" {
+		t.Errorf("GetDefaultProfile() = %q", p)
+	}
+
+	WriteProfileOrder("work", []string{"a"})
+	if err := SetDefaultProfile("work"); err != nil {
+		t.Fatal(err)
+	}
+	if p := GetDefaultProfile(); p != "work" {
+		t.Errorf("GetDefaultProfile() = %q", p)
+	}
+
+	// CLI - set and get
+	if err := SetDefaultCLI("codex"); err != nil {
+		t.Fatal(err)
+	}
+	if cli := GetDefaultCLI(); cli != "codex" {
+		t.Errorf("GetDefaultCLI() = %q", cli)
+	}
+}
+
+func TestCompatWebPort(t *testing.T) {
+	setTestHome(t)
+
+	if err := SetWebPort(9090); err != nil {
+		t.Fatal(err)
+	}
+	if p := GetWebPort(); p != 9090 {
+		t.Errorf("GetWebPort() = %d", p)
+	}
+}
+
+func TestProviderConfigGetType(t *testing.T) {
+	// GetType returns the Type field, defaulting to "anthropic" when empty
+	p1 := &ProviderConfig{Type: ""}
+	if got := p1.GetType(); got != ProviderTypeAnthropic {
+		t.Errorf("GetType() for empty = %q, want %q", got, ProviderTypeAnthropic)
+	}
+
+	p2 := &ProviderConfig{Type: ProviderTypeOpenAI}
+	if got := p2.GetType(); got != ProviderTypeOpenAI {
+		t.Errorf("GetType() for openai = %q, want %q", got, ProviderTypeOpenAI)
+	}
+}
+
+func TestProviderConfigGetEnvVarsForCLI(t *testing.T) {
+	p := &ProviderConfig{
+		EnvVars:         map[string]string{"SHARED": "1"},
+		ClaudeEnvVars:   map[string]string{"CLAUDE_VAR": "c"},
+		CodexEnvVars:    map[string]string{"CODEX_VAR": "x"},
+		OpenCodeEnvVars: map[string]string{"OC_VAR": "o"},
+	}
+
+	// When CLI-specific vars exist, they take precedence over shared
+	vars := p.GetEnvVarsForCLI("claude")
+	if vars["CLAUDE_VAR"] != "c" {
+		t.Errorf("claude vars = %v", vars)
+	}
+
+	vars = p.GetEnvVarsForCLI("codex")
+	if vars["CODEX_VAR"] != "x" {
+		t.Errorf("codex vars = %v", vars)
+	}
+
+	vars = p.GetEnvVarsForCLI("opencode")
+	if vars["OC_VAR"] != "o" {
+		t.Errorf("opencode vars = %v", vars)
+	}
+
+	// When no CLI-specific vars, falls back to shared
+	p2 := &ProviderConfig{
+		EnvVars: map[string]string{"SHARED": "1"},
+	}
+	vars = p2.GetEnvVarsForCLI("claude")
+	if vars["SHARED"] != "1" {
+		t.Errorf("fallback vars = %v", vars)
 	}
 }

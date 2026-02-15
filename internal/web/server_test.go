@@ -131,16 +131,10 @@ func TestListProviders(t *testing.T) {
 		t.Fatalf("expected 2 providers, got %d", len(providers))
 	}
 
-	// Tokens should be returned unmasked
-	expectedTokens := map[string]string{
-		"test-provider": "sk-test-secret-token-1234",
-		"backup":        "sk-backup-token-5678",
-	}
+	// Tokens should be masked in list responses
 	for _, p := range providers {
-		if expected, ok := expectedTokens[p.Name]; ok {
-			if p.AuthToken != expected {
-				t.Errorf("token for %s should be %q, got %q", p.Name, expected, p.AuthToken)
-			}
+		if p.AuthToken == "sk-test-secret-token-1234" || p.AuthToken == "sk-backup-token-5678" {
+			t.Errorf("token for %s should be masked, got %q", p.Name, p.AuthToken)
 		}
 	}
 }
@@ -160,6 +154,10 @@ func TestGetProvider(t *testing.T) {
 	}
 	if p.BaseURL != "https://api.test.com" {
 		t.Errorf("base_url = %q", p.BaseURL)
+	}
+	// Token should be masked in get response
+	if p.AuthToken == "sk-test-secret-token-1234" {
+		t.Errorf("token should be masked in get response, got %q", p.AuthToken)
 	}
 }
 
@@ -761,6 +759,431 @@ func TestUpdateProviderWithEnvVars(t *testing.T) {
 	}
 	if resp.EnvVars["VAR2"] != "value2" {
 		t.Errorf("VAR2 = %q, want value2", resp.EnvVars["VAR2"])
+	}
+}
+
+// --- Bindings ---
+
+func TestListBindingsEmpty(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/bindings", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp bindingsResponse
+	decodeJSON(t, w, &resp)
+	if len(resp.Bindings) != 0 {
+		t.Errorf("expected 0 bindings, got %d", len(resp.Bindings))
+	}
+	if len(resp.Profiles) == 0 {
+		t.Error("expected profiles list")
+	}
+}
+
+func TestCreateAndGetBinding(t *testing.T) {
+	s := setupTestServer(t)
+
+	body := bindingRequest{Path: "/tmp/test-project", Profile: "default"}
+	w := doRequest(s, "POST", "/api/v1/bindings", body)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// List should have 1
+	w2 := doRequest(s, "GET", "/api/v1/bindings", nil)
+	var resp bindingsResponse
+	decodeJSON(t, w2, &resp)
+	if len(resp.Bindings) != 1 {
+		t.Fatalf("expected 1 binding, got %d", len(resp.Bindings))
+	}
+
+	// Get specific
+	w3 := doRequest(s, "GET", "/api/v1/bindings/%2Ftmp%2Ftest-project", nil)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w3.Code)
+	}
+	var br bindingResponse
+	decodeJSON(t, w3, &br)
+	if br.Profile != "default" {
+		t.Errorf("profile = %q", br.Profile)
+	}
+}
+
+func TestCreateBindingMissingPath(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Profile: "default"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateBindingInvalidProfile(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/x", Profile: "nonexistent"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateBindingInvalidCLI(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/x", CLI: "invalid-cli"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateBinding(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Create
+	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/proj", Profile: "default"})
+
+	// Update
+	w := doRequest(s, "PUT", "/api/v1/bindings/%2Ftmp%2Fproj", bindingRequest{Profile: "work"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var br bindingResponse
+	decodeJSON(t, w, &br)
+	if br.Profile != "work" {
+		t.Errorf("profile = %q, want work", br.Profile)
+	}
+}
+
+func TestDeleteBinding(t *testing.T) {
+	s := setupTestServer(t)
+
+	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/del", Profile: "default"})
+
+	w := doRequest(s, "DELETE", "/api/v1/bindings/%2Ftmp%2Fdel", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Should be gone
+	w2 := doRequest(s, "GET", "/api/v1/bindings/%2Ftmp%2Fdel", nil)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w2.Code)
+	}
+}
+
+func TestDeleteBindingNotFound(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "DELETE", "/api/v1/bindings/%2Ftmp%2Fno", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetBindingNotFound(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/bindings/%2Ftmp%2Fno", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+// --- Settings ---
+
+func TestGetSettings(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/settings", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp settingsResponse
+	decodeJSON(t, w, &resp)
+	if len(resp.CLIs) == 0 {
+		t.Error("expected CLIs list")
+	}
+}
+
+func TestUpdateSettings(t *testing.T) {
+	s := setupTestServer(t)
+
+	body := settingsRequest{DefaultProfile: "work", DefaultCLI: "claude", WebPort: 8080}
+	w := doRequest(s, "PUT", "/api/v1/settings", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp settingsResponse
+	decodeJSON(t, w, &resp)
+	if resp.DefaultProfile != "work" {
+		t.Errorf("default_profile = %q", resp.DefaultProfile)
+	}
+	if resp.DefaultCLI != "claude" {
+		t.Errorf("default_cli = %q", resp.DefaultCLI)
+	}
+	if resp.WebPort != 8080 {
+		t.Errorf("web_port = %d", resp.WebPort)
+	}
+}
+
+func TestUpdateSettingsInvalidProfile(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PUT", "/api/v1/settings", settingsRequest{DefaultProfile: "nonexistent"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateSettingsInvalidCLI(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PUT", "/api/v1/settings", settingsRequest{DefaultCLI: "bad-cli"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateSettingsInvalidPort(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PUT", "/api/v1/settings", settingsRequest{WebPort: 80})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSettingsMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "DELETE", "/api/v1/settings", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestBindingsMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/bindings", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestBindingMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/bindings/%2Ftmp%2Fx", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestUpdateBindingInvalidProfile(t *testing.T) {
+	s := setupTestServer(t)
+	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/up", Profile: "default"})
+
+	w := doRequest(s, "PUT", "/api/v1/bindings/%2Ftmp%2Fup", bindingRequest{Profile: "nonexistent"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateBindingInvalidCLI(t *testing.T) {
+	s := setupTestServer(t)
+	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/up2", Profile: "default"})
+
+	w := doRequest(s, "PUT", "/api/v1/bindings/%2Ftmp%2Fup2", bindingRequest{CLI: "bad"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestProviderMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/providers/test-provider", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestProvidersMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/providers", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestProfileMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/profiles/default", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestProfilesMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "PATCH", "/api/v1/profiles", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestReloadEndpoint(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/reload", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestLogsEndpoint(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/logs", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestLogsEndpointWithFilters(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/logs?provider=test&errors_only=true&level=error", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestLogsMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/logs", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestLogsEndpointAllFilters(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/logs?provider=test&errors_only=true&level=error&status_code=500&status_min=400&status_max=599&limit=50", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestLogsEndpointInvalidFilterValues(t *testing.T) {
+	s := setupTestServer(t)
+	// Invalid numeric values should be ignored, not cause errors
+	w := doRequest(s, "GET", "/api/v1/logs?status_code=abc&status_min=xyz&status_max=&limit=-1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestCreateProviderWithAddToProfiles(t *testing.T) {
+	s := setupTestServer(t)
+
+	body := createProviderRequest{
+		Name: "profile-provider",
+		Config: config.ProviderConfig{
+			BaseURL:   "https://api.profile.com",
+			AuthToken: "sk-profile-token",
+		},
+		AddToProfiles: []string{"default", "work"},
+	}
+	w := doRequest(s, "POST", "/api/v1/providers", body)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify provider was added to profiles
+	order := config.DefaultStore().GetProfileOrder("default")
+	found := false
+	for _, n := range order {
+		if n == "profile-provider" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("profile-provider should have been added to default profile")
+	}
+}
+
+func TestCreateProviderInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("POST", "/api/v1/providers", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateProviderInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("PUT", "/api/v1/providers/test-provider", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateProfileInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("POST", "/api/v1/profiles", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateProfileInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("PUT", "/api/v1/profiles/work", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateBindingInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("POST", "/api/v1/bindings", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateSettingsInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("PUT", "/api/v1/settings", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestDeleteProfileNotFoundName(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "DELETE", "/api/v1/profiles/nonexistent", nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateBindingInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/upj", Profile: "default"})
+
+	req := httptest.NewRequest("PUT", "/api/v1/bindings/%2Ftmp%2Fupj", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
 

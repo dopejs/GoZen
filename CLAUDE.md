@@ -65,6 +65,22 @@ When modifying `OpenCCConfig` or its nested types in a way that changes the JSON
 3. The version check in `loadLocked()` (`store.go`) automatically upgrades `cfg.Version < CurrentConfigVersion` to the current version after unmarshal.
 4. Add tests covering: old format parsing, mixed old/new format, field preservation on the fallback path, and marshal round-trip.
 
+## Brand Colors
+
+Primary palette for website, Web UI, and marketing materials:
+
+| Name | Dark Mode | Light Mode | Usage |
+|------|-----------|------------|-------|
+| Teal (Primary) | `#5eead4` | `#0d9488` | Primary accent, buttons, links |
+| Lavender (Secondary) | `#c4b5fd` | `#7c3aed` | Secondary accent, highlights |
+| Sage | `#86efac` | - | Success states |
+| Red | `#fb7185` | - | Error states |
+| Amber | `#fbbf24` | - | Warning states |
+| Blue | `#93c5fd` | - | Info states |
+
+Background (Dark): `#0f1117` → `#181a24` → `#1e2030` → `#252837`
+Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
+
 ## Key Conventions
 
 - Config convenience functions in `internal/config/compat.go` wrap `DefaultStore()` methods

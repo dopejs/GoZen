@@ -317,6 +317,13 @@ func TestStoreProviderMap(t *testing.T) {
 	if m["a"] == nil || m["b"] == nil {
 		t.Error("ProviderMap() missing entries")
 	}
+
+	// Mutating the returned map should not affect internal state
+	m["c"] = &ProviderConfig{BaseURL: "https://c.com", AuthToken: "tok"}
+	m2 := s.ProviderMap()
+	if len(m2) != 2 {
+		t.Errorf("ProviderMap() after external mutation has %d entries, want 2", len(m2))
+	}
 }
 
 func TestStoreSetProfileOrderNil(t *testing.T) {
@@ -327,5 +334,21 @@ func TestStoreSetProfileOrderNil(t *testing.T) {
 	order := s.GetProfileOrder("test")
 	if order == nil || len(order) != 0 {
 		t.Errorf("expected empty slice, got %v", order)
+	}
+}
+
+func TestStoreGetProfileOrderReturnsCopy(t *testing.T) {
+	s, _ := newTestStore(t)
+	s.Load()
+
+	s.SetProfileOrder("work", []string{"a", "b"})
+
+	order := s.GetProfileOrder("work")
+	// Mutating the returned slice should not affect internal state
+	order = append(order, "c")
+
+	order2 := s.GetProfileOrder("work")
+	if len(order2) != 2 {
+		t.Errorf("GetProfileOrder() after external append has %d entries, want 2", len(order2))
 	}
 }

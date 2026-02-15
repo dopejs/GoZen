@@ -52,6 +52,66 @@ func TestDetectScenarioThinkDisabled(t *testing.T) {
 	}
 }
 
+func TestDetectScenarioThinkEmptyMap(t *testing.T) {
+	// Empty thinking map without "type" key should NOT be treated as enabled
+	body := map[string]interface{}{
+		"model":    "claude-sonnet-4-5",
+		"thinking": map[string]interface{}{},
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	got := DetectScenario(body, 0, "")
+	if got != config.ScenarioDefault {
+		t.Errorf("DetectScenario() = %q, want %q (empty thinking map should not trigger think)", got, config.ScenarioDefault)
+	}
+}
+
+func TestDetectScenarioThinkMapWithBudget(t *testing.T) {
+	// Map with budget_tokens but no "type" key should NOT be treated as enabled
+	body := map[string]interface{}{
+		"model": "claude-sonnet-4-5",
+		"thinking": map[string]interface{}{
+			"budget_tokens": 10000,
+		},
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	got := DetectScenario(body, 0, "")
+	if got != config.ScenarioDefault {
+		t.Errorf("DetectScenario() = %q, want %q (thinking map without type key should not trigger think)", got, config.ScenarioDefault)
+	}
+}
+
+func TestDetectScenarioThinkBoolTrue(t *testing.T) {
+	body := map[string]interface{}{
+		"model":    "claude-sonnet-4-5",
+		"thinking": true,
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	got := DetectScenario(body, 0, "")
+	if got != config.ScenarioThink {
+		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioThink)
+	}
+}
+
+func TestDetectScenarioThinkBoolFalse(t *testing.T) {
+	body := map[string]interface{}{
+		"model":    "claude-sonnet-4-5",
+		"thinking": false,
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	got := DetectScenario(body, 0, "")
+	if got != config.ScenarioDefault {
+		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioDefault)
+	}
+}
+
 func TestDetectScenarioImage(t *testing.T) {
 	body := map[string]interface{}{
 		"model": "claude-sonnet-4-5",
@@ -420,5 +480,297 @@ func TestTokenCalculation(t *testing.T) {
 	// "Hello, how are you?" should be around 5-6 tokens
 	if tokens < 3 || tokens > 10 {
 		t.Errorf("calculateTokenCount() = %d, expected 3-10 tokens", tokens)
+	}
+}
+
+func TestSessionCacheConcurrentAccess(t *testing.T) {
+	// Test that concurrent GetSessionUsage and UpdateSessionUsage don't race.
+	// Run with -race flag to detect data races.
+	sessionID := "race-test-session"
+
+	UpdateSessionUsage(sessionID, &SessionUsage{
+		InputTokens:  1000,
+		OutputTokens: 100,
+	})
+
+	done := make(chan struct{})
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for j := 0; j < 100; j++ {
+				GetSessionUsage(sessionID)
+			}
+		}()
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for j := 0; j < 100; j++ {
+				UpdateSessionUsage(sessionID, &SessionUsage{
+					InputTokens:  int(j) * 100,
+					OutputTokens: int(j) * 10,
+				})
+			}
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		<-done
+	}
+
+	// Clean up
+	ClearSessionUsage(sessionID)
+}
+
+func TestCalculateTokenCountWithSystem(t *testing.T) {
+	body := map[string]interface{}{
+		"system": "You are a helpful assistant.",
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "Hello"},
+		},
+	}
+	tokens, err := calculateTokenCount(body)
+	if err != nil {
+		t.Fatalf("calculateTokenCount() error: %v", err)
+	}
+	if tokens < 5 {
+		t.Errorf("expected at least 5 tokens with system prompt, got %d", tokens)
+	}
+}
+
+func TestCalculateTokenCountWithTools(t *testing.T) {
+	body := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "Use the tool"},
+		},
+		"tools": []interface{}{
+			map[string]interface{}{
+				"name":        "get_weather",
+				"description": "Get the current weather for a location",
+				"input_schema": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"location": map[string]interface{}{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	tokens, err := calculateTokenCount(body)
+	if err != nil {
+		t.Fatalf("calculateTokenCount() error: %v", err)
+	}
+	if tokens < 10 {
+		t.Errorf("expected at least 10 tokens with tools, got %d", tokens)
+	}
+}
+
+func TestCalculateTokenCountContentBlocks(t *testing.T) {
+	body := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "What is this?"},
+					map[string]interface{}{"type": "tool_use", "input": map[string]interface{}{"query": "test"}},
+					map[string]interface{}{"type": "tool_result", "content": "The result is 42"},
+				},
+			},
+		},
+	}
+	tokens, err := calculateTokenCount(body)
+	if err != nil {
+		t.Fatalf("calculateTokenCount() error: %v", err)
+	}
+	if tokens < 5 {
+		t.Errorf("expected at least 5 tokens with content blocks, got %d", tokens)
+	}
+}
+
+func TestCalculateTokenCountSystemBlocks(t *testing.T) {
+	body := map[string]interface{}{
+		"system": []interface{}{
+			map[string]interface{}{"type": "text", "text": "You are helpful."},
+			map[string]interface{}{"type": "text", "text": "Be concise."},
+		},
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	tokens, err := calculateTokenCount(body)
+	if err != nil {
+		t.Fatalf("calculateTokenCount() error: %v", err)
+	}
+	if tokens < 5 {
+		t.Errorf("expected at least 5 tokens with system blocks, got %d", tokens)
+	}
+}
+
+func TestCalculateTokenCountToolResultBlocks(t *testing.T) {
+	body := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_result",
+						"content": []interface{}{
+							map[string]interface{}{"type": "text", "text": "nested result text"},
+						},
+					},
+				},
+			},
+		},
+	}
+	tokens, err := calculateTokenCount(body)
+	if err != nil {
+		t.Fatalf("calculateTokenCount() error: %v", err)
+	}
+	if tokens < 2 {
+		t.Errorf("expected at least 2 tokens for nested tool result, got %d", tokens)
+	}
+}
+
+func TestEstimateTokensFromCharsSystemBlocks(t *testing.T) {
+	body := map[string]interface{}{
+		"system": []interface{}{
+			map[string]interface{}{"type": "text", "text": "System prompt block one."},
+			map[string]interface{}{"type": "text", "text": "System prompt block two."},
+		},
+		"messages": []interface{}{
+			map[string]interface{}{"role": "user", "content": "hi"},
+		},
+	}
+	tokens := estimateTokensFromChars(body)
+	if tokens <= 0 {
+		t.Errorf("expected positive token estimate, got %d", tokens)
+	}
+}
+
+func TestEstimateTokensFromCharsContentBlocks(t *testing.T) {
+	body := map[string]interface{}{
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "Block content here."},
+				},
+			},
+		},
+	}
+	tokens := estimateTokensFromChars(body)
+	if tokens <= 0 {
+		t.Errorf("expected positive token estimate, got %d", tokens)
+	}
+}
+
+func TestUpdateSessionUsageEdgeCases(t *testing.T) {
+	// Empty session ID should be no-op
+	UpdateSessionUsage("", &SessionUsage{InputTokens: 100})
+	if GetSessionUsage("") != nil {
+		t.Error("empty session ID should return nil")
+	}
+
+	// Nil usage should be no-op
+	UpdateSessionUsage("nil-test", nil)
+	if GetSessionUsage("nil-test") != nil {
+		t.Error("nil usage should not be stored")
+	}
+}
+
+func TestSessionCacheEviction(t *testing.T) {
+	// Store more sessions than maxSize to trigger eviction
+	oldMax := globalSessionCache.maxSize
+	globalSessionCache.mu.Lock()
+	globalSessionCache.maxSize = 3
+	globalSessionCache.mu.Unlock()
+	defer func() {
+		globalSessionCache.mu.Lock()
+		globalSessionCache.maxSize = oldMax
+		globalSessionCache.mu.Unlock()
+	}()
+
+	UpdateSessionUsage("evict-1", &SessionUsage{InputTokens: 1})
+	UpdateSessionUsage("evict-2", &SessionUsage{InputTokens: 2})
+	UpdateSessionUsage("evict-3", &SessionUsage{InputTokens: 3})
+	UpdateSessionUsage("evict-4", &SessionUsage{InputTokens: 4})
+
+	// evict-1 should have been evicted
+	if GetSessionUsage("evict-1") != nil {
+		t.Error("evict-1 should have been evicted")
+	}
+	if GetSessionUsage("evict-4") == nil {
+		t.Error("evict-4 should still exist")
+	}
+
+	// Clean up
+	ClearSessionUsage("evict-2")
+	ClearSessionUsage("evict-3")
+	ClearSessionUsage("evict-4")
+}
+
+func TestHasWebSearchToolEdgeCases(t *testing.T) {
+	// No tools key
+	if hasWebSearchTool(map[string]interface{}{}) {
+		t.Error("expected false for no tools")
+	}
+	// Non-web-search tool
+	body := map[string]interface{}{
+		"tools": []interface{}{
+			map[string]interface{}{"type": "computer_20241022"},
+		},
+	}
+	if hasWebSearchTool(body) {
+		t.Error("expected false for non-web-search tool")
+	}
+	// Invalid tool entry
+	body2 := map[string]interface{}{
+		"tools": []interface{}{"not a map"},
+	}
+	if hasWebSearchTool(body2) {
+		t.Error("expected false for invalid tool entry")
+	}
+}
+
+func TestIsBackgroundRequestEdgeCases(t *testing.T) {
+	// No model
+	if isBackgroundRequest(map[string]interface{}{}) {
+		t.Error("expected false for no model")
+	}
+	// Non-haiku model
+	if isBackgroundRequest(map[string]interface{}{"model": "claude-sonnet-4-5"}) {
+		t.Error("expected false for sonnet model")
+	}
+	// Haiku model
+	if !isBackgroundRequest(map[string]interface{}{"model": "claude-3-5-haiku-20241022"}) {
+		t.Error("expected true for haiku model")
+	}
+}
+
+func TestEstimateJSONTokens(t *testing.T) {
+	enc, err := getTokenEncoder()
+	if err != nil {
+		t.Skip("tiktoken not available")
+	}
+
+	// String
+	tokens := estimateJSONTokens(enc, "hello world")
+	if tokens < 1 {
+		t.Errorf("expected positive tokens for string, got %d", tokens)
+	}
+
+	// Map
+	tokens = estimateJSONTokens(enc, map[string]interface{}{"key": "value"})
+	if tokens < 2 {
+		t.Errorf("expected at least 2 tokens for map, got %d", tokens)
+	}
+
+	// Array
+	tokens = estimateJSONTokens(enc, []interface{}{"a", "b"})
+	if tokens < 2 {
+		t.Errorf("expected at least 2 tokens for array, got %d", tokens)
+	}
+
+	// Number (default case)
+	tokens = estimateJSONTokens(enc, 42)
+	if tokens != 5 {
+		t.Errorf("expected 5 tokens for number, got %d", tokens)
 	}
 }

@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  go:
+    name: Go Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Go version
+        id: goversion
+        run: echo "version=$(grep '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Check coverage thresholds
+        run: |
+          check_pkg() {
+            pkg=$1
+            threshold=$2
+            output=$(go test -cover "./${pkg}" 2>&1)
+            pct=$(echo "$output" | sed -n 's/.*coverage: \([0-9]*\.[0-9]*\)%.*/\1/p')
+            if [ -z "$pct" ]; then pct="0"; fi
+            int_pct=$(echo "$pct" | cut -d. -f1)
+            if [ "$int_pct" -lt "$threshold" ]; then
+              echo "FAIL: ${pkg} coverage ${pct}% < ${threshold}%"
+              return 1
+            fi
+            echo "OK:   ${pkg} coverage ${pct}% >= ${threshold}%"
+            return 0
+          }
+
+          failed=0
+
+          # Core modules
+          check_pkg "internal/config" 80 || failed=1
+          check_pkg "internal/proxy" 80 || failed=1
+          check_pkg "internal/proxy/transform" 80 || failed=1
+          check_pkg "internal/web" 80 || failed=1
+          check_pkg "internal/update" 50 || failed=1
+
+          exit $failed
+
+  website:
+    name: Website Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+      - run: npx vite build

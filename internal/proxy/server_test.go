@@ -1821,3 +1821,76 @@ func TestStartProxyWithRoutingClientFormat(t *testing.T) {
 		t.Errorf("port = %d, want > 0", port)
 	}
 }
+
+func TestIsRequestRelatedError(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "invalid_request_error type",
+			body: `{"error":{"type":"invalid_request_error","message":"some error"}}`,
+			want: true,
+		},
+		{
+			name: "context length message",
+			body: `{"error":{"type":"error","message":"context length exceeded"}}`,
+			want: true,
+		},
+		{
+			name: "too long message",
+			body: `{"error":{"type":"error","message":"request is too long"}}`,
+			want: true,
+		},
+		{
+			name: "too large message",
+			body: `{"error":{"type":"error","message":"payload too large"}}`,
+			want: true,
+		},
+		{
+			name: "exceeds maximum message",
+			body: `{"error":{"type":"error","message":"input exceeds maximum allowed"}}`,
+			want: true,
+		},
+		{
+			name: "generic rate limit should not match",
+			body: `{"error":{"type":"rate_limit_error","message":"rate limit exceeded"}}`,
+			want: false,
+		},
+		{
+			name: "generic error with limit keyword should not match",
+			body: `{"error":{"type":"error","message":"rate limit reached"}}`,
+			want: false,
+		},
+		{
+			name: "generic error with token keyword should not match",
+			body: `{"error":{"type":"error","message":"invalid token"}}`,
+			want: false,
+		},
+		{
+			name: "generic error with size keyword should not match",
+			body: `{"error":{"type":"error","message":"unknown size"}}`,
+			want: false,
+		},
+		{
+			name: "empty body",
+			body: `{}`,
+			want: false,
+		},
+		{
+			name: "invalid json",
+			body: `not json`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRequestRelatedError([]byte(tt.body))
+			if got != tt.want {
+				t.Errorf("isRequestRelatedError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

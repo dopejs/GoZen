@@ -61,9 +61,11 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 		return nil, fmt.Errorf("create logs table: %w", err)
 	}
 
-	// Migrate existing tables: add session_id and client_type columns if missing
-	for _, col := range []string{"session_id", "client_type"} {
-		db.Exec(fmt.Sprintf("ALTER TABLE logs ADD COLUMN %s TEXT DEFAULT ''", col))
+	// Migrate existing tables: add session_id and client_type columns if missing.
+	// Check via PRAGMA to avoid running ALTER TABLE on every open.
+	if needsMigration(db, "logs", "session_id") {
+		db.Exec("ALTER TABLE logs ADD COLUMN session_id TEXT DEFAULT ''")
+		db.Exec("ALTER TABLE logs ADD COLUMN client_type TEXT DEFAULT ''")
 	}
 
 	for _, idx := range []string{
@@ -86,6 +88,29 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 	}
 	go ldb.flushLoop()
 	return ldb, nil
+}
+
+// needsMigration checks whether a column exists in a table using PRAGMA table_info.
+func needsMigration(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return true // assume migration needed on error
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == column {
+			return false
+		}
+	}
+	return true
 }
 
 // Insert queues a log entry for batched writing.

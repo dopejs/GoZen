@@ -11,6 +11,17 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Schema version history:
+//   v1: original schema (logs table with basic fields)
+//   v2: add session_id and client_type columns + indexes
+const currentSchemaVersion = 2
+
+// migrations is an ordered list of schema upgrade functions.
+// migrations[0] upgrades v1 → v2, migrations[1] upgrades v2 → v3, etc.
+var migrations = []func(tx *sql.Tx) error{
+	migrateV1ToV2,
+}
+
 // LogDB provides SQLite-backed log storage with batched writes.
 type LogDB struct {
 	db      *sql.DB
@@ -30,7 +41,6 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 		return nil, fmt.Errorf("open log database: %w", err)
 	}
 
-	// Configure for concurrent access
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("set WAL mode: %w", err)
@@ -40,7 +50,75 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
 
-	// Create table and indexes
+	if err := migrateSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate schema: %w", err)
+	}
+
+	ldb := &LogDB{
+		db:      db,
+		writeCh: make(chan LogEntry, 256),
+		done:    make(chan struct{}),
+	}
+	go ldb.flushLoop()
+	return ldb, nil
+}
+
+// migrateSchema ensures the database is at the latest schema version.
+// New databases get the full schema at currentSchemaVersion.
+// Existing databases are upgraded step by step.
+func migrateSchema(db *sql.DB) error {
+	// Ensure schema_version table exists
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create schema_version table: %w", err)
+	}
+
+	version := getSchemaVersion(db)
+
+	if version == 0 {
+		// Fresh database or pre-versioning database.
+		// Check if logs table already exists (pre-versioning v1 DB).
+		if tableExists(db, "logs") {
+			// Existing v1 database — set version to 1 and run migrations.
+			version = 1
+		} else {
+			// Brand new database — create full schema at latest version.
+			return initFreshSchema(db)
+		}
+	}
+
+	if version == currentSchemaVersion {
+		return nil
+	}
+	if version > currentSchemaVersion {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", version, currentSchemaVersion)
+	}
+
+	// Run migrations sequentially: version N → N+1 uses migrations[N-1]
+	for v := version; v < currentSchemaVersion; v++ {
+		idx := v - 1 // migrations[0] = v1→v2
+		if idx < 0 || idx >= len(migrations) {
+			return fmt.Errorf("no migration defined for v%d → v%d", v, v+1)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin migration v%d→v%d: %w", v, v+1, err)
+		}
+		if err := migrations[idx](tx); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration v%d→v%d: %w", v, v+1, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration v%d→v%d: %w", v, v+1, err)
+		}
+	}
+
+	setSchemaVersion(db, currentSchemaVersion)
+	return nil
+}
+
+// initFreshSchema creates the full schema for a brand new database.
+func initFreshSchema(db *sql.DB) error {
 	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS logs (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,15 +135,7 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 			client_type   TEXT DEFAULT ''
 		)
 	`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("create logs table: %w", err)
-	}
-
-	// Migrate existing tables: add session_id and client_type columns if missing.
-	// Check via PRAGMA to avoid running ALTER TABLE on every open.
-	if needsMigration(db, "logs", "session_id") {
-		db.Exec("ALTER TABLE logs ADD COLUMN session_id TEXT DEFAULT ''")
-		db.Exec("ALTER TABLE logs ADD COLUMN client_type TEXT DEFAULT ''")
+		return fmt.Errorf("create logs table: %w", err)
 	}
 
 	for _, idx := range []string{
@@ -76,41 +146,53 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 		"CREATE INDEX IF NOT EXISTS idx_logs_client_type ON logs(client_type)",
 	} {
 		if _, err := db.Exec(idx); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("create index: %w", err)
+			return fmt.Errorf("create index: %w", err)
 		}
 	}
 
-	ldb := &LogDB{
-		db:      db,
-		writeCh: make(chan LogEntry, 256),
-		done:    make(chan struct{}),
-	}
-	go ldb.flushLoop()
-	return ldb, nil
+	setSchemaVersion(db, currentSchemaVersion)
+	return nil
 }
 
-// needsMigration checks whether a column exists in a table using PRAGMA table_info.
-func needsMigration(db *sql.DB, table, column string) bool {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
-	if err != nil {
-		return true // assume migration needed on error
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-			continue
-		}
-		if name == column {
-			return false
+// --- Migrations ---
+
+// migrateV1ToV2 adds session_id, client_type columns and their indexes.
+func migrateV1ToV2(tx *sql.Tx) error {
+	for _, stmt := range []string{
+		"ALTER TABLE logs ADD COLUMN session_id TEXT DEFAULT ''",
+		"ALTER TABLE logs ADD COLUMN client_type TEXT DEFAULT ''",
+		"CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_provider ON logs(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_session_id ON logs(session_id)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_client_type ON logs(client_type)",
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
+}
+
+// --- Schema version helpers ---
+
+func getSchemaVersion(db *sql.DB) int {
+	var version int
+	if err := db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version); err != nil {
+		return 0
+	}
+	return version
+}
+
+func setSchemaVersion(db *sql.DB, version int) {
+	db.Exec("DELETE FROM schema_version")
+	db.Exec("INSERT INTO schema_version (version) VALUES (?)", version)
+}
+
+func tableExists(db *sql.DB, name string) bool {
+	var n int
+	err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", name).Scan(&n)
+	return err == nil && n > 0
 }
 
 // Insert queues a log entry for batched writing.
@@ -132,7 +214,6 @@ func (ldb *LogDB) flushLoop() {
 		select {
 		case entry, ok := <-ldb.writeCh:
 			if !ok {
-				// Channel closed — flush remaining and signal done.
 				ldb.flushBatch(batch)
 				close(ldb.done)
 				return
@@ -207,6 +288,7 @@ func (ldb *LogDB) Query(filter LogFilter) ([]LogEntry, error) {
 	if filter.ErrorsOnly {
 		conditions = append(conditions, "level IN ('error', 'warn')")
 	}
+
 	if filter.StatusCode > 0 {
 		conditions = append(conditions, "status_code = ?")
 		args = append(args, filter.StatusCode)

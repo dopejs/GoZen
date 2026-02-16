@@ -36,25 +36,13 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 	}
 
 	dbPath := filepath.Join(logDir, "logs.db")
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := openAndMigrate(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("open log database: %w", err)
-	}
-	// Restrict file permissions to owner only
-	os.Chmod(dbPath, 0600)
-
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set WAL mode: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-
-	if err := migrateSchema(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("migrate schema: %w", err)
+		// Database is corrupt or has incompatible schema — rebuild.
+		db, err = rebuildDatabase(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("rebuild log database: %w", err)
+		}
 	}
 
 	ldb := &LogDB{
@@ -64,6 +52,38 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 	}
 	go ldb.flushLoop()
 	return ldb, nil
+}
+
+// openAndMigrate opens the database, configures it, and runs schema migration.
+func openAndMigrate(dbPath string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
+	}
+	os.Chmod(dbPath, 0600)
+
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrateSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// rebuildDatabase removes the corrupt database and creates a fresh one.
+func rebuildDatabase(dbPath string) (*sql.DB, error) {
+	// Remove the main file and WAL/SHM sidecars
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		os.Remove(dbPath + suffix)
+	}
+	return openAndMigrate(dbPath)
 }
 
 // migrateSchema ensures the database is at the latest schema version.

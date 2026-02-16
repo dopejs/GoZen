@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -446,14 +445,76 @@ func TestSchemaVersionTooNew(t *testing.T) {
 		timestamp DATETIME NOT NULL,
 		level TEXT NOT NULL
 	)`)
+	rawDB.Exec(`INSERT INTO logs (timestamp, level) VALUES ('2024-01-01T00:00:00Z', 'info')`)
 	rawDB.Close()
 
-	_, err := OpenLogDB(dir)
-	if err == nil {
-		t.Fatal("expected error for future schema version")
+	// Should auto-rebuild instead of failing
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("expected auto-rebuild, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "newer than supported") {
-		t.Errorf("error = %q, want 'newer than supported'", err)
+	defer db.Close()
+
+	// Old data should be gone (rebuilt from scratch)
+	results, _ := db.Query(LogFilter{Limit: 100})
+	if len(results) != 0 {
+		t.Errorf("expected 0 entries after rebuild, got %d", len(results))
+	}
+
+	// Version should be current
+	ver := getSchemaVersion(db.db)
+	if ver != currentSchemaVersion {
+		t.Errorf("version after rebuild = %d, want %d", ver, currentSchemaVersion)
+	}
+}
+
+func TestCorruptDatabaseAutoRebuilds(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "logs.db")
+
+	// Write garbage to the file
+	os.WriteFile(dbPath, []byte("this is not a sqlite database"), 0600)
+
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("expected auto-rebuild for corrupt file, got error: %v", err)
+	}
+	defer db.Close()
+
+	// Should work normally after rebuild
+	db.Insert(LogEntry{Timestamp: time.Now(), Level: LogLevelInfo, Message: "after rebuild"})
+	time.Sleep(700 * time.Millisecond)
+
+	results, err := db.Query(LogFilter{Limit: 100})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(results) != 1 || results[0].Message != "after rebuild" {
+		t.Errorf("got %v, want 1 entry 'after rebuild'", results)
+	}
+}
+
+func TestBrokenSchemaAutoRebuilds(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "logs.db")
+
+	// Create a DB with logs table that has wrong columns
+	rawDB, _ := sql.Open("sqlite", dbPath)
+	rawDB.Exec("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+	rawDB.Exec("INSERT INTO schema_version (version) VALUES (1)")
+	rawDB.Exec("CREATE TABLE logs (id INTEGER, garbage TEXT)")
+	rawDB.Close()
+
+	// Migration will fail because ALTER TABLE on a mangled table — should rebuild
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("expected auto-rebuild, got error: %v", err)
+	}
+	defer db.Close()
+
+	ver := getSchemaVersion(db.db)
+	if ver != currentSchemaVersion {
+		t.Errorf("version = %d, want %d", ver, currentSchemaVersion)
 	}
 }
 

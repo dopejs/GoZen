@@ -40,6 +40,8 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open log database: %w", err)
 	}
+	// Restrict file permissions to owner only
+	os.Chmod(dbPath, 0600)
 
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()

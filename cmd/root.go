@@ -77,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(pickCmd)
 	rootCmd.AddCommand(webCmd)
+	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(bindCmd)
 	rootCmd.AddCommand(unbindCmd)
 	rootCmd.AddCommand(statusCmd)

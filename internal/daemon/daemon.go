@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"hash/fnv"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,7 +29,7 @@ func exeHash() string {
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
-// PidPath returns the path to the PID file for the current executable.
+// PidPath returns the path to the PID file for the current executable (legacy web daemon).
 func PidPath() string {
 	if hash := exeHash(); hash != "" {
 		return filepath.Join(config.ConfigDirPath(), fmt.Sprintf("web-%s.pid", hash))
@@ -96,4 +97,49 @@ func ReadPid() (int, error) {
 // RemovePid removes the PID file.
 func RemovePid() {
 	os.Remove(PidPath())
+}
+
+// --- zend PID management ---
+
+// WriteDaemonPid writes the zend daemon PID file atomically.
+func WriteDaemonPid(pid int) error {
+	dir := config.ConfigDirPath()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	pidPath := DaemonPidPath()
+	tmp := pidPath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strconv.Itoa(pid)+"\n"), 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, pidPath)
+}
+
+// ReadDaemonPid reads the zend daemon PID from the PID file.
+func ReadDaemonPid() (int, error) {
+	data, err := os.ReadFile(DaemonPidPath())
+	if err != nil {
+		return 0, fmt.Errorf("PID file not found")
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0, fmt.Errorf("invalid PID file: %w", err)
+	}
+	return pid, nil
+}
+
+// RemoveDaemonPid removes the zend daemon PID file.
+func RemoveDaemonPid() {
+	os.Remove(DaemonPidPath())
+}
+
+// IsDaemonPortListening checks if the given port is being listened on.
+// Used for PID-port validation to ensure the PID file corresponds to an actual zend process.
+func IsDaemonPortListening(port int) bool {
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*1e6) // 500ms
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }

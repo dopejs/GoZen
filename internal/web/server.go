@@ -18,6 +18,7 @@ import (
 // Server is the web configuration management server.
 type Server struct {
 	httpServer *http.Server
+	mux        *http.ServeMux
 	logger     *log.Logger
 	version    string
 	port       int
@@ -36,31 +37,37 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 		port:    port,
 	}
 
-	mux := http.NewServeMux()
+	s.mux = http.NewServeMux()
 
 	// API routes
-	mux.HandleFunc("/api/v1/health", s.handleHealth)
-	mux.HandleFunc("/api/v1/reload", s.handleReload)
-	mux.HandleFunc("/api/v1/providers", s.handleProviders)
-	mux.HandleFunc("/api/v1/providers/", s.handleProvider)
-	mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
-	mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
-	mux.HandleFunc("/api/v1/logs", s.handleLogs)
-	mux.HandleFunc("/api/v1/settings", s.handleSettings)
-	mux.HandleFunc("/api/v1/bindings", s.handleBindings)
-	mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
+	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("/api/v1/reload", s.handleReload)
+	s.mux.HandleFunc("/api/v1/providers", s.handleProviders)
+	s.mux.HandleFunc("/api/v1/providers/", s.handleProvider)
+	s.mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
+	s.mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
+	s.mux.HandleFunc("/api/v1/logs", s.handleLogs)
+	s.mux.HandleFunc("/api/v1/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/v1/bindings", s.handleBindings)
+	s.mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
 
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))
-	mux.Handle("/", fileServer)
+	s.mux.Handle("/", fileServer)
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: s.securityHeaders(mux),
+		Handler: s.securityHeaders(s.mux),
 	}
 
 	return s
+}
+
+// HandleFunc registers an additional handler on the server's mux.
+// Must be called before Start().
+func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, handler)
 }
 
 // Start begins listening. Returns an error if the port is already in use.

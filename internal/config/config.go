@@ -14,9 +14,12 @@ const (
 	LegacyOpenCCDir  = ".opencc"
 	LegacyOpenCCFile = "opencc.json"
 
-	DefaultWebPort = 19840
-	WebPidFile     = "web.pid"
-	WebLogFile     = "web.log"
+	DefaultWebPort   = 19840
+	DefaultProxyPort = 19841
+	WebPidFile       = "web.pid"
+	WebLogFile       = "web.log"
+	DaemonPidFile    = "zend.pid"
+	DaemonLogFile    = "zend.log"
 
 	DefaultProfileName  = "default"
 	DefaultClientName   = "claude"
@@ -259,7 +262,8 @@ type OpenCCConfig struct {
 	Version         int                         `json:"version,omitempty"`          // config file version
 	DefaultProfile  string                      `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
 	DefaultClient   string                      `json:"default_cli,omitempty"`      // default client (claude, codex, opencode); JSON key kept as "default_cli" for compat
-	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19841)
+	ProxyPort       int                         `json:"proxy_port,omitempty"`       // proxy port (defaults to 19841)
+	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19840)
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
@@ -282,6 +286,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		Version         int                            `json:"version,omitempty"`
 		DefaultProfile  string                         `json:"default_profile,omitempty"`
 		DefaultClient   string                         `json:"default_cli,omitempty"`
+		ProxyPort       int                            `json:"proxy_port,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
@@ -294,6 +299,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.Version = raw.Version
 	c.DefaultProfile = raw.DefaultProfile
 	c.DefaultClient = raw.DefaultClient
+	c.ProxyPort = raw.ProxyPort
 	c.WebPort = raw.WebPort
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles

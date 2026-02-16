@@ -366,6 +366,28 @@ func (s *Store) SetWebPort(port int) error {
 	return s.saveLocked()
 }
 
+// GetProxyPort returns the configured proxy port.
+// Returns DefaultProxyPort if not set.
+func (s *Store) GetProxyPort() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.ProxyPort == 0 {
+		return DefaultProxyPort
+	}
+	return s.config.ProxyPort
+}
+
+// SetProxyPort sets the proxy port.
+func (s *Store) SetProxyPort(port int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.ProxyPort = port
+	return s.saveLocked()
+}
+
 // --- I/O ---
 
 // reloadIfModified checks if the config file has been modified since last load

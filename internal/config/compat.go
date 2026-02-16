@@ -119,6 +119,16 @@ func SetWebPort(port int) error {
 	return DefaultStore().SetWebPort(port)
 }
 
+// GetProxyPort returns the configured proxy port.
+func GetProxyPort() int {
+	return DefaultStore().GetProxyPort()
+}
+
+// SetProxyPort sets the proxy port.
+func SetProxyPort(port int) error {
+	return DefaultStore().SetProxyPort(port)
+}
+
 // --- Project Bindings convenience functions ---
 
 // BindProject binds a directory path to a profile and/or CLI.

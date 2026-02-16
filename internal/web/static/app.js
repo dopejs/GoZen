@@ -1274,6 +1274,10 @@
     document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
     document.getElementById("btn-add-binding").addEventListener("click", openAddBinding);
     document.getElementById("binding-save").addEventListener("click", saveBinding);
+    document.getElementById("password-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      changePassword();
+    });
   }
 
   function loadSettings() {
@@ -1331,6 +1335,32 @@
         settings = data;
         renderSettings(data);
         toast("Settings saved", "success");
+      })
+      .catch(function(err) {
+        toast(err.message, "error");
+      });
+  }
+
+  function changePassword() {
+    var oldPw = document.getElementById("settings-old-password").value;
+    var newPw = document.getElementById("settings-new-password").value;
+    if (!newPw || newPw.length < 6) {
+      toast("Password must be at least 6 characters", "error");
+      return;
+    }
+    fetch(API + "/settings/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+    })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || "Failed"); });
+        return r.json();
+      })
+      .then(function() {
+        toast("Password updated", "success");
+        document.getElementById("settings-old-password").value = "";
+        document.getElementById("settings-new-password").value = "";
       })
       .catch(function(err) {
         toast(err.message, "error");

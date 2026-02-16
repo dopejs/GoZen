@@ -21,6 +21,7 @@ type Server struct {
 	logger     *log.Logger
 	version    string
 	port       int
+	auth       *AuthManager
 }
 
 // NewServer creates a new web server bound to 127.0.0.1 on the configured port.
@@ -34,9 +35,15 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 		logger:  logger,
 		version: version,
 		port:    port,
+		auth:    NewAuthManager(),
 	}
 
 	s.mux = http.NewServeMux()
+
+	// Auth routes (accessible without authentication)
+	s.mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("/api/v1/auth/check", s.handleAuthCheck)
 
 	// API routes
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
@@ -47,6 +54,7 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
 	s.mux.HandleFunc("/api/v1/logs", s.handleLogs)
 	s.mux.HandleFunc("/api/v1/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/v1/settings/password", s.handlePasswordChange)
 	s.mux.HandleFunc("/api/v1/bindings", s.handleBindings)
 	s.mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
 
@@ -57,7 +65,7 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: s.securityHeaders(s.mux),
+		Handler: s.securityHeaders(s.authMiddleware(s.mux)),
 	}
 
 	return s
@@ -72,6 +80,9 @@ func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
 // Start begins listening. Returns an error if the port is already in use.
 // Returns nil on graceful shutdown (http.ErrServerClosed).
 func (s *Server) Start() error {
+	// Start periodic session cleanup
+	go s.auth.sessionCleanupLoop()
+
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return fmt.Errorf("port %d is already in use: %w", s.port, err)

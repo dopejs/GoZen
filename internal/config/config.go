@@ -249,7 +249,8 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 5 (v1.5.0+): project bindings with CLI support
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
 // - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port
-const CurrentConfigVersion = 7
+// - Version 8 (v2.1.0+): added web_password_hash for Web UI access protection
+const CurrentConfigVersion = 8
 
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
@@ -264,6 +265,7 @@ type OpenCCConfig struct {
 	DefaultClient   string                      `json:"default_client,omitempty"`   // default client (claude, codex, opencode)
 	ProxyPort       int                         `json:"proxy_port,omitempty"`       // proxy port (defaults to 19841)
 	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19840)
+	WebPasswordHash string                      `json:"web_password_hash,omitempty"` // bcrypt hash for Web UI access password
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
@@ -283,6 +285,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		DefaultCLI      string                         `json:"default_cli,omitempty"`    // v6 compat
 		ProxyPort       int                            `json:"proxy_port,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
+		WebPasswordHash string                         `json:"web_password_hash,omitempty"` // v8+
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
 		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`
@@ -295,6 +298,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.DefaultProfile = raw.DefaultProfile
 	c.ProxyPort = raw.ProxyPort
 	c.WebPort = raw.WebPort
+	c.WebPasswordHash = raw.WebPasswordHash
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 

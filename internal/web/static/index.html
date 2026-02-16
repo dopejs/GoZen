@@ -309,6 +309,19 @@
           </div>
         </form>
 
+        <div class="form-divider"><span>Security</span></div>
+        <form id="password-form">
+          <div class="form-group">
+            <label for="settings-old-password">Current Password</label>
+            <input type="password" id="settings-old-password" autocomplete="current-password" placeholder="Enter current password">
+          </div>
+          <div class="form-group">
+            <label for="settings-new-password">New Password</label>
+            <input type="password" id="settings-new-password" autocomplete="new-password" placeholder="Enter new password (min 6 characters)">
+          </div>
+          <button type="submit" class="btn btn-secondary" id="btn-change-password">Change Password</button>
+        </form>
+
         <div class="form-divider"><span>Project Bindings</span></div>
         <p class="section-desc">Bind directories to specific profiles and clients. When running <code>zen</code> in a bound directory, it will automatically use the configured settings.</p>
         <div class="bindings-header">

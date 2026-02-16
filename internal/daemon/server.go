@@ -86,6 +86,15 @@ func (d *Daemon) Start() error {
 		d.logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
 
+	// Generate web password on first start if not configured
+	if config.GetWebPasswordHash() == "" {
+		if password, err := web.GeneratePassword(); err == nil {
+			d.logger.Printf("Web UI password generated: %s (change in Web UI Settings)", password)
+		} else {
+			d.logger.Printf("Warning: failed to generate web password: %v", err)
+		}
+	}
+
 	// Start proxy server
 	if err := d.startProxy(); err != nil {
 		return fmt.Errorf("proxy server: %w", err)

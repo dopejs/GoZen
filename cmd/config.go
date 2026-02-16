@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/web"
 	"github.com/dopejs/gozen/tui"
 	"github.com/spf13/cobra"
 )
@@ -335,6 +336,19 @@ func editGroup(name string) error {
 	return err
 }
 
+var configResetPasswordCmd = &cobra.Command{
+	Use:   "reset-password",
+	Short: "Reset Web UI access password",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		password, err := web.GeneratePassword()
+		if err != nil {
+			return fmt.Errorf("failed to generate password: %w", err)
+		}
+		fmt.Printf("New Web UI password: %s\n", password)
+		return nil
+	},
+}
+
 func init() {
 	configCmd.Flags().BoolVar(&configLegacyUI, "legacy", false, "use legacy TUI interface")
 
@@ -350,4 +364,5 @@ func init() {
 	configCmd.AddCommand(configAddCmd)
 	configCmd.AddCommand(configDeleteCmd)
 	configCmd.AddCommand(configEditCmd)
+	configCmd.AddCommand(configResetPasswordCmd)
 }

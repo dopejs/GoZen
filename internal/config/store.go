@@ -388,6 +388,27 @@ func (s *Store) SetProxyPort(port int) error {
 	return s.saveLocked()
 }
 
+// GetWebPasswordHash returns the stored bcrypt password hash.
+func (s *Store) GetWebPasswordHash() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return ""
+	}
+	return s.config.WebPasswordHash
+}
+
+// SetWebPasswordHash sets the bcrypt password hash and saves.
+func (s *Store) SetWebPasswordHash(hash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.WebPasswordHash = hash
+	return s.saveLocked()
+}
+
 // --- I/O ---
 
 // reloadIfModified checks if the config file has been modified since last load

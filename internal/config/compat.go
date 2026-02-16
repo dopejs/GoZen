@@ -150,3 +150,15 @@ func GetProjectBinding(path string) *ProjectBinding {
 func GetAllProjectBindings() map[string]*ProjectBinding {
 	return DefaultStore().GetAllProjectBindings()
 }
+
+// --- Web Password convenience functions ---
+
+// GetWebPasswordHash returns the stored bcrypt password hash.
+func GetWebPasswordHash() string {
+	return DefaultStore().GetWebPasswordHash()
+}
+
+// SetWebPasswordHash sets the bcrypt password hash.
+func SetWebPasswordHash(hash string) error {
+	return DefaultStore().SetWebPasswordHash(hash)
+}

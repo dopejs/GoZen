@@ -22,6 +22,7 @@ type Server struct {
 	version    string
 	port       int
 	auth       *AuthManager
+	keys       *KeyPair
 }
 
 // NewServer creates a new web server bound to 127.0.0.1 on the configured port.
@@ -38,12 +39,22 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 		auth:    NewAuthManager(),
 	}
 
+	// Generate RSA key pair for encrypted token transport
+	keys, err := GenerateKeyPair()
+	if err != nil {
+		if logger != nil {
+			logger.Printf("Warning: failed to generate RSA key pair: %v", err)
+		}
+	}
+	s.keys = keys
+
 	s.mux = http.NewServeMux()
 
 	// Auth routes (accessible without authentication)
 	s.mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("/api/v1/auth/check", s.handleAuthCheck)
+	s.mux.HandleFunc("/api/v1/auth/pubkey", s.handlePubKey)
 
 	// API routes
 	s.mux.HandleFunc("/api/v1/health", s.handleHealth)

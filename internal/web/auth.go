@@ -412,3 +412,24 @@ func (s *Server) handleAuthCheck(w http.ResponseWriter, r *http.Request) {
 		"is_local":          isLocalRequest(r),
 	})
 }
+
+// handlePubKey handles GET /api/v1/auth/pubkey — returns RSA public key for token encryption.
+func (s *Server) handlePubKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.keys == nil {
+		writeError(w, http.StatusServiceUnavailable, "encryption not available")
+		return
+	}
+
+	pemStr, err := s.keys.PublicKeyPEM()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to export public key")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"pubkey": pemStr})
+}

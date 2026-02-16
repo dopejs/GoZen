@@ -28,6 +28,7 @@
   var editingProfile = null;
   var settings = null;
   var currentEnvTab = "claude";
+  var _pubkeyCryptoKey = null; // cached CryptoKey for RSA-OAEP encryption
 
   // --- Init ---
   document.addEventListener("DOMContentLoaded", init);
@@ -554,6 +555,42 @@
     }).catch(function() {});
   }
 
+  // --- Token Encryption ---
+  function needsEncryption() {
+    var h = location.hostname;
+    return h !== "localhost" && h !== "127.0.0.1" && h !== "::1";
+  }
+
+  function fetchPubKey() {
+    if (_pubkeyCryptoKey) return Promise.resolve(_pubkeyCryptoKey);
+    return api("GET", "/auth/pubkey").then(function(data) {
+      var pem = data.pubkey;
+      var b64 = pem.replace(/-----BEGIN PUBLIC KEY-----/, "")
+                    .replace(/-----END PUBLIC KEY-----/, "")
+                    .replace(/\s/g, "");
+      var binary = atob(b64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return crypto.subtle.importKey("spki", bytes.buffer, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+    }).then(function(key) {
+      _pubkeyCryptoKey = key;
+      return key;
+    });
+  }
+
+  function encryptToken(plaintext) {
+    if (!plaintext || !needsEncryption()) return Promise.resolve(plaintext);
+    return fetchPubKey().then(function(key) {
+      var encoded = new TextEncoder().encode(plaintext);
+      return crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, encoded);
+    }).then(function(encrypted) {
+      var bytes = new Uint8Array(encrypted);
+      var binary = "";
+      for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return "ENC:" + btoa(binary);
+    });
+  }
+
   // --- Reload ---
   function reloadConfig() {
     api("POST", "/reload").then(function() {
@@ -697,24 +734,29 @@
     if (codexEnvVars) cfg.codex_env_vars = codexEnvVars;
     if (opencodeEnvVars) cfg.opencode_env_vars = opencodeEnvVars;
 
-    var promise;
-    if (editingProvider) {
-      promise = api("PUT", "/providers/" + encodeURIComponent(editingProvider), cfg);
-    } else {
-      var name = document.getElementById("prov-name").value.trim();
-      if (!name) { toast("Name is required", "error"); return; }
-      promise = api("POST", "/providers", { name: name, config: cfg });
-    }
-    promise.then(function(data) {
-      var isNew = !editingProvider;
-      var providerName = isNew ? document.getElementById("prov-name").value.trim() : editingProvider;
-      toast(isNew ? "Provider created" : "Provider updated");
-      loadProviders();
-      switchTab("providers");
-      if (isNew && profiles.length > 0) {
-        showAddToProfilesDialog(providerName);
+    // Encrypt auth_token for non-local access
+    encryptToken(cfg.auth_token).then(function(encrypted) {
+      cfg.auth_token = encrypted;
+
+      var promise;
+      if (editingProvider) {
+        promise = api("PUT", "/providers/" + encodeURIComponent(editingProvider), cfg);
+      } else {
+        var name = document.getElementById("prov-name").value.trim();
+        if (!name) { toast("Name is required", "error"); return; }
+        promise = api("POST", "/providers", { name: name, config: cfg });
       }
-    }).catch(function(err) { toast(err.message, "error") });
+      promise.then(function(data) {
+        var isNew = !editingProvider;
+        var providerName = isNew ? document.getElementById("prov-name").value.trim() : editingProvider;
+        toast(isNew ? "Provider created" : "Provider updated");
+        loadProviders();
+        switchTab("providers");
+        if (isNew && profiles.length > 0) {
+          showAddToProfilesDialog(providerName);
+        }
+      }).catch(function(err) { toast(err.message, "error") });
+    }).catch(function(err) { toast("Encryption failed: " + err.message, "error") });
   }
 
   // --- Profiles ---

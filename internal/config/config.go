@@ -248,9 +248,8 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 4 (v1.5.0+): default profile and web port settings
 // - Version 5 (v1.5.0+): project bindings with CLI support
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
-// - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port
-// - Version 8 (v2.1.0+): added web_password_hash for Web UI access protection
-const CurrentConfigVersion = 8
+// - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port, web_password_hash
+const CurrentConfigVersion = 7
 
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
@@ -285,7 +284,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		DefaultCLI      string                         `json:"default_cli,omitempty"`    // v6 compat
 		ProxyPort       int                            `json:"proxy_port,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
-		WebPasswordHash string                         `json:"web_password_hash,omitempty"` // v8+
+		WebPasswordHash string                         `json:"web_password_hash,omitempty"` // v7+
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
 		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`

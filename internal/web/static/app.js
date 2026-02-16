@@ -95,11 +95,15 @@
     }
     var section = document.getElementById("tab-" + tab);
     if (section) section.classList.add("active");
-    if (window.location.hash !== "#" + tab) {
-      history.replaceState(null, "", "#" + tab);
+    // Update hash without query params for non-logs tabs
+    if (tab !== "logs") {
+      if (window.location.hash !== "#" + tab) {
+        history.replaceState(null, "", "#" + tab);
+      }
     }
     // Load logs when switching to logs tab
     if (tab === "logs") {
+      restoreLogFiltersFromHash();
       loadLogs();
     }
     // Load settings when switching to settings tab
@@ -110,8 +114,46 @@
 
   function restoreTabFromHash() {
     var hash = window.location.hash.replace("#", "");
-    if (hash && document.getElementById("tab-" + hash)) {
-      switchTab(hash);
+    var tab = hash.split("?")[0];
+    if (tab && document.getElementById("tab-" + tab)) {
+      switchTab(tab);
+    }
+  }
+
+  function getHashParams() {
+    var hash = window.location.hash;
+    var idx = hash.indexOf("?");
+    if (idx === -1) return new URLSearchParams();
+    return new URLSearchParams(hash.substring(idx + 1));
+  }
+
+  function updateLogHashParams() {
+    var params = new URLSearchParams();
+    var provider = document.getElementById("logs-provider-filter").value;
+    if (provider) params.set("provider", provider);
+    var clientType = document.getElementById("logs-client-filter").value;
+    if (clientType) params.set("client_type", clientType);
+    var logType = document.getElementById("logs-type-filter").value;
+    if (logType) params.set("log_type", logType);
+    var statusFilter = document.getElementById("logs-status-filter").value;
+    if (statusFilter) params.set("status", statusFilter);
+    var qs = params.toString();
+    history.replaceState(null, "", "#logs" + (qs ? "?" + qs : ""));
+  }
+
+  function restoreLogFiltersFromHash() {
+    var params = getHashParams();
+    if (params.has("provider")) {
+      document.getElementById("logs-provider-filter").value = params.get("provider");
+    }
+    if (params.has("client_type")) {
+      document.getElementById("logs-client-filter").value = params.get("client_type");
+    }
+    if (params.has("log_type")) {
+      document.getElementById("logs-type-filter").value = params.get("log_type");
+    }
+    if (params.has("status")) {
+      document.getElementById("logs-status-filter").value = params.get("status");
     }
   }
 
@@ -1108,10 +1150,12 @@
 
   function setupLogs() {
     document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
-    document.getElementById("logs-provider-filter").addEventListener("change", loadLogs);
-    document.getElementById("logs-client-filter").addEventListener("change", loadLogs);
-    document.getElementById("logs-type-filter").addEventListener("change", loadLogs);
-    document.getElementById("logs-status-filter").addEventListener("change", loadLogs);
+    ["logs-provider-filter", "logs-client-filter", "logs-type-filter", "logs-status-filter"].forEach(function(id) {
+      document.getElementById(id).addEventListener("change", function() {
+        updateLogHashParams();
+        loadLogs();
+      });
+    });
   }
 
   function loadLogs() {

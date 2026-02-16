@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -432,15 +433,22 @@ func (s *Store) loadLocked() error {
 		}
 
 		// Check config version
+		needsMigration := false
 		if cfg.Version > CurrentConfigVersion {
-			// Config is newer than this version of zen can handle
-			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade zen to the latest version",
+			// Config was saved by a newer version of zen.
+			// Since json.Unmarshal succeeded, the data structure is compatible —
+			// Go's JSON decoder silently ignores unknown fields. Only truly
+			// incompatible changes (e.g. type changes from [] to {}) would have
+			// caused Unmarshal to fail above.
+			// We keep the original version number and avoid saving, so we don't
+			// lose any fields the newer version added.
+			log.Printf("Warning: config version %d is newer than this version of zen (supports up to %d). Data loaded successfully — consider upgrading zen.",
 				cfg.Version, CurrentConfigVersion)
-		}
-		needsMigration := cfg.Version < CurrentConfigVersion
-		if needsMigration {
-			// Older config (including version 0 = no version field), upgrade to current
-			cfg.Version = CurrentConfigVersion
+		} else {
+			needsMigration = cfg.Version < CurrentConfigVersion
+			if needsMigration {
+				cfg.Version = CurrentConfigVersion
+			}
 		}
 
 		if cfg.Providers == nil {

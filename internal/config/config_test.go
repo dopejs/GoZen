@@ -110,7 +110,7 @@ func TestConfigVersionTooNew(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write config with future version
+	// Write config with future version but compatible data structure
 	futureConfig := `{
   "version": 999,
   "providers": {
@@ -127,18 +127,102 @@ func TestConfigVersionTooNew(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Load should fail with version error
+	// Load should succeed — data structure is compatible even though version is higher
+	ResetDefaultStore()
+	store := &Store{path: configPath}
+	err := store.Load()
+
+	if err != nil {
+		t.Fatalf("compatible future config should load without error, got: %v", err)
+	}
+
+	// Version should be preserved (not downgraded)
+	if store.config.Version != 999 {
+		t.Errorf("version = %d, want 999 (should be preserved)", store.config.Version)
+	}
+
+	// Data should be loaded correctly
+	p := store.GetProvider("test")
+	if p == nil {
+		t.Fatal("provider 'test' should be loaded")
+	}
+	if p.BaseURL != "https://api.test.com" {
+		t.Errorf("base_url = %q, want %q", p.BaseURL, "https://api.test.com")
+	}
+}
+
+func TestConfigVersionTooNewIncompatible(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write config with incompatible structure (providers as array instead of object)
+	badConfig := `{
+  "version": 999,
+  "providers": ["not", "an", "object"]
+}`
+	if err := os.WriteFile(configPath, []byte(badConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	ResetDefaultStore()
 	store := &Store{path: configPath}
 	err := store.Load()
 
 	if err == nil {
-		t.Fatal("expected error for future config version")
+		t.Fatal("incompatible future config should fail to parse")
+	}
+}
+
+func TestConfigVersionTooNewPreservedOnSave(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
 	}
 
-	expectedMsg := "config version 999 is newer than supported version"
-	if !contains(err.Error(), expectedMsg) {
-		t.Errorf("error = %q, want to contain %q", err.Error(), expectedMsg)
+	futureConfig := `{
+  "version": 42,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": { "providers": ["test"] }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(futureConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := &Store{path: configPath}
+	if err := store.Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Modify something and save
+	if err := store.SetProvider("new-p", &ProviderConfig{BaseURL: "https://new.com", AuthToken: "tok"}); err != nil {
+		t.Fatalf("SetProvider: %v", err)
+	}
+
+	// Re-read the file and verify version was not downgraded
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]interface{}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if v := int(saved["version"].(float64)); v != 42 {
+		t.Errorf("saved version = %d, want 42 (should not be downgraded)", v)
 	}
 }
 

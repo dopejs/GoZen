@@ -322,25 +322,25 @@ func (s *Store) SetDefaultProfile(profile string) error {
 	return s.saveLocked()
 }
 
-// GetDefaultCLI returns the configured default CLI.
+// GetDefaultClient returns the configured default client.
 // Returns "claude" if not set.
-func (s *Store) GetDefaultCLI() string {
+func (s *Store) GetDefaultClient() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
-	if s.config == nil || s.config.DefaultCLI == "" {
-		return DefaultCLIName
+	if s.config == nil || s.config.DefaultClient == "" {
+		return DefaultClientName
 	}
-	return s.config.DefaultCLI
+	return s.config.DefaultClient
 }
 
-// SetDefaultCLI sets the default CLI.
-func (s *Store) SetDefaultCLI(cli string) error {
+// SetDefaultClient sets the default client.
+func (s *Store) SetDefaultClient(client string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
 	s.ensureConfig()
-	s.config.DefaultCLI = cli
+	s.config.DefaultClient = client
 	return s.saveLocked()
 }
 
@@ -592,14 +592,14 @@ func (s *Store) BindProject(path string, profile string, cli string) error {
 		}
 	}
 
-	// Verify CLI is valid if specified
-	if cli != "" && !IsValidCLI(cli) {
-		return fmt.Errorf("invalid CLI '%s' (must be %v)", cli, AvailableCLIs)
+	// Verify client is valid if specified
+	if cli != "" && !IsValidClient(cli) {
+		return fmt.Errorf("invalid client '%s' (must be %v)", cli, AvailableClients)
 	}
 
 	s.config.ProjectBindings[path] = &ProjectBinding{
 		Profile: profile,
-		CLI:     cli,
+		Client:  cli,
 	}
 	return s.saveLocked()
 }

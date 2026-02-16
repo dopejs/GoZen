@@ -55,7 +55,7 @@ var rootCmd = &cobra.Command{
 	RunE: runProxy,
 }
 
-var cliFlag string
+var clientFlag string
 var legacyTUI bool
 
 func init() {
@@ -65,7 +65,9 @@ func init() {
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
 	rootCmd.Flags().Lookup("fallback").NoOptDefVal = " "
 	rootCmd.Flags().Lookup("fallback").Hidden = true
-	rootCmd.Flags().StringVar(&cliFlag, "cli", "", "CLI to use (claude, codex, opencode)")
+	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
+	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
+	rootCmd.Flags().Lookup("cli").Hidden = true
 	rootCmd.Flags().BoolVar(&legacyTUI, "legacy", false, "use legacy TUI interface")
 	rootCmd.AddCommand(useCmd)
 	rootCmd.AddCommand(configCmd)
@@ -171,7 +173,12 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		profileFlag, _ = cmd.Flags().GetString("fallback")
 	}
 
-	providerNames, profile, cli, err := resolveProviderNamesAndCLI(profileFlag, cliFlag)
+	// Support --cli as alias for --client
+	if clientFlag == "" {
+		clientFlag, _ = cmd.Flags().GetString("cli")
+	}
+
+	providerNames, profile, client, err := resolveProviderNamesAndClient(profileFlag, clientFlag)
 	if err != nil {
 		return err
 	}
@@ -184,7 +191,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	// Get the full profile config for routing support
 	pc := config.GetProfileConfig(profile)
 
-	return startProxy(providerNames, pc, cli, args)
+	return startProxy(providerNames, pc, client, args)
 }
 
 func startProxy(names []string, pc *config.ProfileConfig, cli string, args []string) error {
@@ -226,7 +233,7 @@ func startProxy(names []string, pc *config.ProfileConfig, cli string, args []str
 	}
 
 	// Determine client format based on CLI type
-	clientFormat := GetCLIClientFormat(GetCLIType(cliBin))
+	clientFormat := GetClientFormat(GetClientType(cliBin))
 	logger.Printf("CLI: %s, Client format: %s", cliBin, clientFormat)
 
 	// Start proxy — with routing if configured, otherwise plain
@@ -260,7 +267,7 @@ func startProxy(names []string, pc *config.ProfileConfig, cli string, args []str
 
 	// Set environment variables based on CLI type
 	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	setupCLIEnvironment(cliBin, proxyURL, logger)
+	setupClientEnvironment(cliBin, proxyURL, logger)
 
 	// Find CLI binary
 	cliPath, err := exec.LookPath(cliBin)
@@ -378,7 +385,7 @@ func mergeProviderEnvVarsForCLI(providers []*proxy.Provider, cli string) map[str
 	}
 
 	for _, p := range providers {
-		envVars := p.GetEnvVarsForCLI(cli)
+		envVars := p.GetEnvVarsForClient(cli)
 		if envVars == nil {
 			continue
 		}
@@ -461,11 +468,11 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	}, nil
 }
 
-// resolveProviderNamesAndCLI determines the provider list and CLI based on flags and bindings.
-// Returns the provider names, the profile used, and the CLI to use.
-func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, string, string, error) {
+// resolveProviderNamesAndClient determines the provider list and client based on flags and bindings.
+// Returns the provider names, the profile used, and the client to use.
+func resolveProviderNamesAndClient(profileFlag string, clientFlag string) ([]string, string, string, error) {
 	// Determine CLI: flag > binding > default
-	cli := cliFlag
+	cli := clientFlag
 
 	// -f (no value, NoOptDefVal=" ") → interactive profile picker
 	if profileFlag == " " {
@@ -481,7 +488,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profile)
 		}
 		if cli == "" {
-			cli = config.GetDefaultCLI()
+			cli = config.GetDefaultClient()
 		}
 		return names, profile, cli, nil
 	}
@@ -496,7 +503,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profileFlag)
 		}
 		if cli == "" {
-			cli = config.GetDefaultCLI()
+			cli = config.GetDefaultClient()
 		}
 		return names, profileFlag, cli, nil
 	}
@@ -513,14 +520,14 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 			}
 
 			// Use binding CLI if not overridden by flag
-			if cli == "" && binding.CLI != "" {
-				cli = binding.CLI
+			if cli == "" && binding.Client != "" {
+				cli = binding.Client
 			}
 
 			names, err := config.ReadProfileOrder(profile)
 			if err == nil && len(names) > 0 {
 				if cli == "" {
-					cli = config.GetDefaultCLI()
+					cli = config.GetDefaultClient()
 				}
 				return names, profile, cli, nil
 			}
@@ -536,7 +543,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 	fbNames, err := config.ReadFallbackOrder()
 	if err == nil && len(fbNames) > 0 {
 		if cli == "" {
-			cli = config.GetDefaultCLI()
+			cli = config.GetDefaultClient()
 		}
 		return fbNames, defaultProfile, cli, nil
 	}
@@ -551,7 +558,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 		return nil, "", "", fmt.Errorf("cancelled")
 	}
 	if cli == "" {
-		cli = config.GetDefaultCLI()
+		cli = config.GetDefaultClient()
 	}
 	return names, defaultProfile, cli, nil
 }
@@ -638,31 +645,31 @@ func validateProviderNames(names []string, profile string) ([]string, error) {
 	return valid, nil
 }
 
-// CLIType represents the type of CLI being used.
-type CLIType string
+// ClientType represents the type of client being used.
+type ClientType string
 
 const (
-	CLIClaude   CLIType = "claude"
-	CLICodex    CLIType = "codex"
-	CLIOpenCode CLIType = "opencode"
+	ClientClaude   ClientType = "claude"
+	ClientCodex    ClientType = "codex"
+	ClientOpenCode ClientType = "opencode"
 )
 
-// GetCLIType returns the CLI type from the binary name.
-func GetCLIType(cliBin string) CLIType {
-	switch cliBin {
+// GetClientType returns the client type from the binary name.
+func GetClientType(clientBin string) ClientType {
+	switch clientBin {
 	case "codex":
-		return CLICodex
+		return ClientCodex
 	case "opencode":
-		return CLIOpenCode
+		return ClientOpenCode
 	default:
-		return CLIClaude
+		return ClientClaude
 	}
 }
 
-// GetCLIClientFormat returns the API format used by the CLI.
-func GetCLIClientFormat(cliType CLIType) string {
-	switch cliType {
-	case CLICodex:
+// GetClientFormat returns the API format used by the client.
+func GetClientFormat(clientType ClientType) string {
+	switch clientType {
+	case ClientCodex:
 		return config.ProviderTypeOpenAI
 	default:
 		// Claude Code and OpenCode use Anthropic format by default
@@ -670,18 +677,18 @@ func GetCLIClientFormat(cliType CLIType) string {
 	}
 }
 
-// setupCLIEnvironment sets the appropriate environment variables for the CLI.
-func setupCLIEnvironment(cliBin string, proxyURL string, logger *log.Logger) {
-	cliType := GetCLIType(cliBin)
+// setupClientEnvironment sets the appropriate environment variables for the client.
+func setupClientEnvironment(clientBin string, proxyURL string, logger *log.Logger) {
+	clientType := GetClientType(clientBin)
 
-	switch cliType {
-	case CLICodex:
+	switch clientType {
+	case ClientCodex:
 		// Codex uses OpenAI environment variables
 		os.Setenv("OPENAI_BASE_URL", proxyURL)
 		os.Setenv("OPENAI_API_KEY", "zen-proxy")
 		logger.Printf("Setting Codex env: OPENAI_BASE_URL=%s", proxyURL)
 
-	case CLIOpenCode:
+	case ClientOpenCode:
 		// OpenCode supports multiple providers, set both
 		// It will use the appropriate one based on the model prefix
 		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)

@@ -18,26 +18,26 @@ const (
 	WebPidFile     = "web.pid"
 	WebLogFile     = "web.log"
 
-	DefaultProfileName = "default"
-	DefaultCLIName     = "claude"
+	DefaultProfileName  = "default"
+	DefaultClientName   = "claude"
 
-	// Supported CLI names
-	CLIClaude   = "claude"
-	CLICodex    = "codex"
-	CLIOpenCode = "opencode"
+	// Supported client names
+	ClientClaude   = "claude"
+	ClientCodex    = "codex"
+	ClientOpenCode = "opencode"
 
 	// Provider API types
 	ProviderTypeAnthropic = "anthropic"
 	ProviderTypeOpenAI    = "openai"
 )
 
-// AvailableCLIs is the canonical list of supported CLI names.
-var AvailableCLIs = []string{CLIClaude, CLICodex, CLIOpenCode}
+// AvailableClients is the canonical list of supported client names.
+var AvailableClients = []string{ClientClaude, ClientCodex, ClientOpenCode}
 
-// IsValidCLI reports whether cli is a supported CLI name.
-func IsValidCLI(cli string) bool {
-	for _, c := range AvailableCLIs {
-		if c == cli {
+// IsValidClient reports whether name is a supported client name.
+func IsValidClient(name string) bool {
+	for _, c := range AvailableClients {
+		if c == name {
 			return true
 		}
 	}
@@ -68,10 +68,10 @@ func (p *ProviderConfig) GetType() string {
 	return p.Type
 }
 
-// GetEnvVarsForCLI returns the environment variables for a specific CLI.
-// Falls back to legacy EnvVars if CLI-specific vars are not set.
-func (p *ProviderConfig) GetEnvVarsForCLI(cli string) map[string]string {
-	switch cli {
+// GetEnvVarsForClient returns the environment variables for a specific client.
+// Falls back to legacy EnvVars if client-specific vars are not set.
+func (p *ProviderConfig) GetEnvVarsForClient(client string) map[string]string {
+	switch client {
 	case "codex":
 		if len(p.CodexEnvVars) > 0 {
 			return p.CodexEnvVars
@@ -251,14 +251,14 @@ const CurrentConfigVersion = 6
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
 	Profile string `json:"profile,omitempty"` // profile name (empty = use default)
-	CLI     string `json:"cli,omitempty"`     // CLI name (empty = use default)
+	Client  string `json:"cli,omitempty"`     // client name (empty = use default); JSON key kept as "cli" for compat
 }
 
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
 	Version         int                         `json:"version,omitempty"`          // config file version
 	DefaultProfile  string                      `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
-	DefaultCLI      string                      `json:"default_cli,omitempty"`      // default CLI (claude, codex, opencode)
+	DefaultClient   string                      `json:"default_cli,omitempty"`      // default client (claude, codex, opencode); JSON key kept as "default_cli" for compat
 	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19841)
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
@@ -281,7 +281,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Version         int                            `json:"version,omitempty"`
 		DefaultProfile  string                         `json:"default_profile,omitempty"`
-		DefaultCLI      string                         `json:"default_cli,omitempty"`
+		DefaultClient   string                         `json:"default_cli,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
@@ -293,7 +293,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 
 	c.Version = raw.Version
 	c.DefaultProfile = raw.DefaultProfile
-	c.DefaultCLI = raw.DefaultCLI
+	c.DefaultClient = raw.DefaultClient
 	c.WebPort = raw.WebPort
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles

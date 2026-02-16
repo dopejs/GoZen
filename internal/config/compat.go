@@ -99,14 +99,14 @@ func SetDefaultProfile(profile string) error {
 	return DefaultStore().SetDefaultProfile(profile)
 }
 
-// GetDefaultCLI returns the configured default CLI.
-func GetDefaultCLI() string {
-	return DefaultStore().GetDefaultCLI()
+// GetDefaultClient returns the configured default client.
+func GetDefaultClient() string {
+	return DefaultStore().GetDefaultClient()
 }
 
-// SetDefaultCLI sets the default CLI.
-func SetDefaultCLI(cli string) error {
-	return DefaultStore().SetDefaultCLI(cli)
+// SetDefaultClient sets the default client.
+func SetDefaultClient(client string) error {
+	return DefaultStore().SetDefaultClient(client)
 }
 
 // GetWebPort returns the configured web UI port.

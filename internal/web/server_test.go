@@ -827,7 +827,7 @@ func TestCreateBindingInvalidProfile(t *testing.T) {
 
 func TestCreateBindingInvalidCLI(t *testing.T) {
 	s := setupTestServer(t)
-	w := doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/x", CLI: "invalid-cli"})
+	w := doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/x", Client: "invalid-cli"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
@@ -894,7 +894,7 @@ func TestGetSettings(t *testing.T) {
 	}
 	var resp settingsResponse
 	decodeJSON(t, w, &resp)
-	if len(resp.CLIs) == 0 {
+	if len(resp.Clients) == 0 {
 		t.Error("expected CLIs list")
 	}
 }
@@ -902,7 +902,7 @@ func TestGetSettings(t *testing.T) {
 func TestUpdateSettings(t *testing.T) {
 	s := setupTestServer(t)
 
-	body := settingsRequest{DefaultProfile: "work", DefaultCLI: "claude", WebPort: 8080}
+	body := settingsRequest{DefaultProfile: "work", DefaultClient: "claude", WebPort: 8080}
 	w := doRequest(s, "PUT", "/api/v1/settings", body)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -912,8 +912,8 @@ func TestUpdateSettings(t *testing.T) {
 	if resp.DefaultProfile != "work" {
 		t.Errorf("default_profile = %q", resp.DefaultProfile)
 	}
-	if resp.DefaultCLI != "claude" {
-		t.Errorf("default_cli = %q", resp.DefaultCLI)
+	if resp.DefaultClient != "claude" {
+		t.Errorf("default_cli = %q", resp.DefaultClient)
 	}
 	if resp.WebPort != 8080 {
 		t.Errorf("web_port = %d", resp.WebPort)
@@ -930,7 +930,7 @@ func TestUpdateSettingsInvalidProfile(t *testing.T) {
 
 func TestUpdateSettingsInvalidCLI(t *testing.T) {
 	s := setupTestServer(t)
-	w := doRequest(s, "PUT", "/api/v1/settings", settingsRequest{DefaultCLI: "bad-cli"})
+	w := doRequest(s, "PUT", "/api/v1/settings", settingsRequest{DefaultClient: "bad-cli"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
@@ -982,7 +982,7 @@ func TestUpdateBindingInvalidCLI(t *testing.T) {
 	s := setupTestServer(t)
 	doRequest(s, "POST", "/api/v1/bindings", bindingRequest{Path: "/tmp/up2", Profile: "default"})
 
-	w := doRequest(s, "PUT", "/api/v1/bindings/%2Ftmp%2Fup2", bindingRequest{CLI: "bad"})
+	w := doRequest(s, "PUT", "/api/v1/bindings/%2Ftmp%2Fup2", bindingRequest{Client: "bad"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}

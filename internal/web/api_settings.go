@@ -10,16 +10,16 @@ import (
 // settingsResponse is the JSON shape for global settings.
 type settingsResponse struct {
 	DefaultProfile string   `json:"default_profile"`
-	DefaultCLI     string   `json:"default_cli"`
+	DefaultClient  string   `json:"default_cli"`     // JSON key kept as "default_cli" for frontend compat
 	WebPort        int      `json:"web_port"`
-	Profiles       []string `json:"profiles"`       // available profiles for selection
-	CLIs           []string `json:"clis"`           // available CLIs
+	Profiles       []string `json:"profiles"`        // available profiles for selection
+	Clients        []string `json:"clis"`            // available clients; JSON key kept as "clis" for frontend compat
 }
 
 // settingsRequest is the JSON shape for updating settings.
 type settingsRequest struct {
 	DefaultProfile string `json:"default_profile,omitempty"`
-	DefaultCLI     string `json:"default_cli,omitempty"`
+	DefaultClient  string `json:"default_cli,omitempty"`     // JSON key kept as "default_cli" for frontend compat
 	WebPort        int    `json:"web_port,omitempty"`
 }
 
@@ -40,14 +40,13 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 
 	resp := settingsResponse{
 		DefaultProfile: store.GetDefaultProfile(),
-		DefaultCLI:     store.GetDefaultCLI(),
+		DefaultClient:  store.GetDefaultClient(),
 		WebPort:        store.GetWebPort(),
 		Profiles:       profiles,
-		CLIs:           config.AvailableCLIs,
+		Clients:        config.AvailableClients,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
-
 func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 	var req settingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -57,9 +56,7 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 
 	store := config.DefaultStore()
 
-	// Update default profile if provided
 	if req.DefaultProfile != "" {
-		// Verify profile exists
 		if store.GetProfileOrder(req.DefaultProfile) == nil {
 			writeError(w, http.StatusBadRequest, "profile not found")
 			return
@@ -70,20 +67,17 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update default CLI if provided
-	if req.DefaultCLI != "" {
-		valid := config.IsValidCLI(req.DefaultCLI)
-		if !valid {
-			writeError(w, http.StatusBadRequest, "invalid CLI")
+	if req.DefaultClient != "" {
+		if !config.IsValidClient(req.DefaultClient) {
+			writeError(w, http.StatusBadRequest, "invalid client")
 			return
 		}
-		if err := store.SetDefaultCLI(req.DefaultCLI); err != nil {
+		if err := store.SetDefaultClient(req.DefaultClient); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
 
-	// Update web port if provided
 	if req.WebPort > 0 {
 		if req.WebPort < 1024 || req.WebPort > 65535 {
 			writeError(w, http.StatusBadRequest, "port must be between 1024 and 65535")
@@ -95,6 +89,5 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Return updated settings
 	s.getSettings(w, r)
 }

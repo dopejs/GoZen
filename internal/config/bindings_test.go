@@ -81,8 +81,8 @@ func TestProjectBindingsWithCLI(t *testing.T) {
 	if binding.Profile != "cli-profile" {
 		t.Errorf("binding.Profile = %q, want %q", binding.Profile, "cli-profile")
 	}
-	if binding.CLI != "codex" {
-		t.Errorf("binding.CLI = %q, want %q", binding.CLI, "codex")
+	if binding.Client != "codex" {
+		t.Errorf("binding.Client = %q, want %q", binding.Client, "codex")
 	}
 
 	// Test binding with CLI only (no profile)
@@ -99,8 +99,8 @@ func TestProjectBindingsWithCLI(t *testing.T) {
 	if binding2.Profile != "" {
 		t.Errorf("binding.Profile = %q, want empty", binding2.Profile)
 	}
-	if binding2.CLI != "opencode" {
-		t.Errorf("binding.CLI = %q, want %q", binding2.CLI, "opencode")
+	if binding2.Client != "opencode" {
+		t.Errorf("binding.Client = %q, want %q", binding2.Client, "opencode")
 	}
 }
 
@@ -163,8 +163,8 @@ func TestProjectBindingPersistence(t *testing.T) {
 	if binding.Profile != "persist-profile" {
 		t.Errorf("binding.Profile after reload = %q, want %q", binding.Profile, "persist-profile")
 	}
-	if binding.CLI != "claude" {
-		t.Errorf("binding.CLI after reload = %q, want %q", binding.CLI, "claude")
+	if binding.Client != "claude" {
+		t.Errorf("binding.Client after reload = %q, want %q", binding.Client, "claude")
 	}
 }
 
@@ -233,8 +233,8 @@ func TestProjectBindingSymlinkDedup(t *testing.T) {
 	if binding == nil {
 		t.Fatal("GetProjectBinding(realDir) returned nil after rebind")
 	}
-	if binding.CLI != "codex" {
-		t.Errorf("binding.CLI = %q, want %q after rebind via symlink", binding.CLI, "codex")
+	if binding.Client != "codex" {
+		t.Errorf("binding.Client = %q, want %q after rebind via symlink", binding.Client, "codex")
 	}
 
 	// Unbind via symlink should remove the binding
@@ -287,7 +287,7 @@ func TestConfigVersionWithBindings(t *testing.T) {
 	if binding.Profile != "test" {
 		t.Errorf("binding.Profile = %q, want %q", binding.Profile, "test")
 	}
-	if binding.CLI != "codex" {
-		t.Errorf("binding.CLI = %q, want %q", binding.CLI, "codex")
+	if binding.Client != "codex" {
+		t.Errorf("binding.Client = %q, want %q", binding.Client, "codex")
 	}
 }

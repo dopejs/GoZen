@@ -35,7 +35,7 @@ type SettingsCancelledMsg struct{}
 func NewSettingsModel() SettingsModel {
 	profiles := config.ListProfiles()
 	currentProfile := config.GetDefaultProfile()
-	currentCLI := config.GetDefaultCLI()
+	currentCLI := config.GetDefaultClient()
 	currentPort := config.GetWebPort()
 
 	fields := []components.Field{
@@ -44,7 +44,7 @@ func NewSettingsModel() SettingsModel {
 			Label:   "Default CLI",
 			Type:    components.FieldSelect,
 			Value:   currentCLI,
-			Options: config.AvailableCLIs,
+			Options: config.AvailableClients,
 		},
 		{
 			Key:     "default_profile",
@@ -108,7 +108,7 @@ func (m *SettingsModel) save() tea.Cmd {
 
 	// Validate and save default CLI
 	if cli := values["default_cli"]; cli != "" {
-		if err := config.SetDefaultCLI(cli); err != nil {
+		if err := config.SetDefaultClient(cli); err != nil {
 			m.err = err.Error()
 			return nil
 		}
@@ -208,7 +208,7 @@ func (m SettingsModel) View() string {
 // Refresh reloads settings from config.
 func (m *SettingsModel) Refresh() {
 	m.profiles = config.ListProfiles()
-	m.form.SetValue("default_cli", config.GetDefaultCLI())
+	m.form.SetValue("default_cli", config.GetDefaultClient())
 	m.form.SetValue("default_profile", config.GetDefaultProfile())
 	m.form.SetValue("web_port", strconv.Itoa(config.GetWebPort()))
 	m.saved = false

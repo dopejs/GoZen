@@ -20,10 +20,12 @@ var useCmd = &cobra.Command{
 	RunE:              runUse,
 }
 
-var useCLIFlag string
+var useClientFlag string
 
 func init() {
-	useCmd.Flags().StringVar(&useCLIFlag, "cli", "", "CLI to use (claude, codex, opencode)")
+	useCmd.Flags().StringVarP(&useClientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
+	useCmd.Flags().String("cli", "", "alias for --client (deprecated)")
+	useCmd.Flags().Lookup("cli").Hidden = true
 }
 
 func runUse(cmd *cobra.Command, args []string) error {
@@ -52,24 +54,28 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Get CLI binary name from flag or config
-	cliBin := useCLIFlag
-	if cliBin == "" {
-		cliBin = config.GetDefaultCLI()
+	// Get client binary name from flag or config
+	// Support --cli as alias for --client
+	clientBin := useClientFlag
+	if clientBin == "" {
+		clientBin, _ = cmd.Flags().GetString("cli")
 	}
-	if cliBin == "" {
-		cliBin = "claude"
+	if clientBin == "" {
+		clientBin = config.GetDefaultClient()
+	}
+	if clientBin == "" {
+		clientBin = "claude"
 	}
 
-	// Find CLI binary
-	cliPath, err := exec.LookPath(cliBin)
+	// Find client binary
+	clientPath, err := exec.LookPath(clientBin)
 	if err != nil {
-		return fmt.Errorf("%s not found in PATH: %w", cliBin, err)
+		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
 	}
 
-	// Replace process with CLI (like shell exec)
-	argv := append([]string{cliBin}, cliArgs...)
-	return syscall.Exec(cliPath, argv, os.Environ())
+	// Replace process with client (like shell exec)
+	argv := append([]string{clientBin}, cliArgs...)
+	return syscall.Exec(clientPath, argv, os.Environ())
 }
 
 func completeConfigNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

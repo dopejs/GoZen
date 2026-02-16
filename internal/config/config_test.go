@@ -938,8 +938,8 @@ func TestConfigVersionV3Bindings(t *testing.T) {
 	if bindingA.Profile != "default" {
 		t.Errorf("project-a profile = %q, want %q", bindingA.Profile, "default")
 	}
-	if bindingA.CLI != "" {
-		t.Errorf("project-a cli = %q, want empty", bindingA.CLI)
+	if bindingA.Client != "" {
+		t.Errorf("project-a cli = %q, want empty", bindingA.Client)
 	}
 
 	bindingB := bindings["/home/user/project-b"]
@@ -990,12 +990,12 @@ func TestConfigVersionV3MixedBindings(t *testing.T) {
 	}
 
 	old := cfg.ProjectBindings["/path/old"]
-	if old == nil || old.Profile != "my-profile" || old.CLI != "" {
+	if old == nil || old.Profile != "my-profile" || old.Client != "" {
 		t.Errorf("old binding = %+v, want {Profile:my-profile CLI:}", old)
 	}
 
 	newB := cfg.ProjectBindings["/path/new"]
-	if newB == nil || newB.Profile != "other" || newB.CLI != "codex" {
+	if newB == nil || newB.Profile != "other" || newB.Client != "codex" {
 		t.Errorf("new binding = %+v, want {Profile:other CLI:codex}", newB)
 	}
 }
@@ -1023,7 +1023,7 @@ func TestOpenCCConfigUnmarshalEdgeCases(t *testing.T) {
 			json: `{"version":5,"providers":{},"profiles":{},"project_bindings":{"/a":{"profile":"p","cli":"claude"}}}`,
 			wantBindingsLen: 1,
 			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
-				if b["/a"].Profile != "p" || b["/a"].CLI != "claude" {
+				if b["/a"].Profile != "p" || b["/a"].Client != "claude" {
 					t.Errorf("/a = %+v", b["/a"])
 				}
 			},
@@ -1033,7 +1033,7 @@ func TestOpenCCConfigUnmarshalEdgeCases(t *testing.T) {
 			json: `{"version":3,"providers":{},"profiles":{},"project_bindings":{"/x":"prof1","/y":"prof2"}}`,
 			wantBindingsLen: 2,
 			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
-				if b["/x"].Profile != "prof1" || b["/x"].CLI != "" {
+				if b["/x"].Profile != "prof1" || b["/x"].Client != "" {
 					t.Errorf("/x = %+v", b["/x"])
 				}
 				if b["/y"].Profile != "prof2" {
@@ -1056,7 +1056,7 @@ func TestOpenCCConfigUnmarshalEdgeCases(t *testing.T) {
 			json: `{"version":5,"providers":{},"profiles":{},"project_bindings":{"/e":{}}}`,
 			wantBindingsLen: 1,
 			checkBinding: func(t *testing.T, b map[string]*ProjectBinding) {
-				if b["/e"] == nil || b["/e"].Profile != "" || b["/e"].CLI != "" {
+				if b["/e"] == nil || b["/e"].Profile != "" || b["/e"].Client != "" {
 					t.Errorf("/e = %+v, want empty", b["/e"])
 				}
 			},
@@ -1118,8 +1118,8 @@ func TestOpenCCConfigUnmarshalPreservesAllFields(t *testing.T) {
 	if cfg.DefaultProfile != "work" {
 		t.Errorf("DefaultProfile = %q, want %q", cfg.DefaultProfile, "work")
 	}
-	if cfg.DefaultCLI != "codex" {
-		t.Errorf("DefaultCLI = %q, want %q", cfg.DefaultCLI, "codex")
+	if cfg.DefaultClient != "codex" {
+		t.Errorf("DefaultClient = %q, want %q", cfg.DefaultClient, "codex")
 	}
 	if cfg.WebPort != 9999 {
 		t.Errorf("WebPort = %d, want 9999", cfg.WebPort)
@@ -1298,11 +1298,11 @@ func TestCompatDefaultProfileAndCLI(t *testing.T) {
 	}
 
 	// CLI - set and get
-	if err := SetDefaultCLI("codex"); err != nil {
+	if err := SetDefaultClient("codex"); err != nil {
 		t.Fatal(err)
 	}
-	if cli := GetDefaultCLI(); cli != "codex" {
-		t.Errorf("GetDefaultCLI() = %q", cli)
+	if cli := GetDefaultClient(); cli != "codex" {
+		t.Errorf("GetDefaultClient() = %q", cli)
 	}
 }
 
@@ -1330,7 +1330,7 @@ func TestProviderConfigGetType(t *testing.T) {
 	}
 }
 
-func TestProviderConfigGetEnvVarsForCLI(t *testing.T) {
+func TestProviderConfigGetEnvVarsForClient(t *testing.T) {
 	p := &ProviderConfig{
 		EnvVars:         map[string]string{"SHARED": "1"},
 		ClaudeEnvVars:   map[string]string{"CLAUDE_VAR": "c"},
@@ -1339,17 +1339,17 @@ func TestProviderConfigGetEnvVarsForCLI(t *testing.T) {
 	}
 
 	// When CLI-specific vars exist, they take precedence over shared
-	vars := p.GetEnvVarsForCLI("claude")
+	vars := p.GetEnvVarsForClient("claude")
 	if vars["CLAUDE_VAR"] != "c" {
 		t.Errorf("claude vars = %v", vars)
 	}
 
-	vars = p.GetEnvVarsForCLI("codex")
+	vars = p.GetEnvVarsForClient("codex")
 	if vars["CODEX_VAR"] != "x" {
 		t.Errorf("codex vars = %v", vars)
 	}
 
-	vars = p.GetEnvVarsForCLI("opencode")
+	vars = p.GetEnvVarsForClient("opencode")
 	if vars["OC_VAR"] != "o" {
 		t.Errorf("opencode vars = %v", vars)
 	}
@@ -1358,7 +1358,7 @@ func TestProviderConfigGetEnvVarsForCLI(t *testing.T) {
 	p2 := &ProviderConfig{
 		EnvVars: map[string]string{"SHARED": "1"},
 	}
-	vars = p2.GetEnvVarsForCLI("claude")
+	vars = p2.GetEnvVarsForClient("claude")
 	if vars["SHARED"] != "1" {
 		t.Errorf("fallback vars = %v", vars)
 	}

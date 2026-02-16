@@ -17,10 +17,12 @@ var pickCmd = &cobra.Command{
 	RunE:          runPick,
 }
 
-var pickCLIFlag string
+var pickClientFlag string
 
 func init() {
-	pickCmd.Flags().StringVar(&pickCLIFlag, "cli", "", "CLI to use (claude, codex, opencode)")
+	pickCmd.Flags().StringVarP(&pickClientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
+	pickCmd.Flags().String("cli", "", "alias for --client (deprecated)")
+	pickCmd.Flags().Lookup("cli").Hidden = true
 }
 
 func runPick(cmd *cobra.Command, args []string) error {
@@ -43,9 +45,13 @@ func runPick(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	cli := pickCLIFlag
-	if cli == "" {
-		cli = config.GetDefaultCLI()
+	// Support --cli as alias for --client
+	client := pickClientFlag
+	if client == "" {
+		client, _ = cmd.Flags().GetString("cli")
 	}
-	return startProxy(selected, nil, cli, args)
+	if client == "" {
+		client = config.GetDefaultClient()
+	}
+	return startProxy(selected, nil, client, args)
 }

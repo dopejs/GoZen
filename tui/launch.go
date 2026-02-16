@@ -35,7 +35,7 @@ type LaunchModel struct {
 func NewLaunchModel() LaunchModel {
 	profiles := config.ListProfiles()
 	defaultProfile := config.GetDefaultProfile()
-	defaultCLI := config.GetDefaultCLI()
+	defaultCLI := config.GetDefaultClient()
 
 	// Find default profile index
 	profileIdx := 0
@@ -47,7 +47,7 @@ func NewLaunchModel() LaunchModel {
 	}
 
 	// Find default CLI index
-	clis := config.AvailableCLIs
+	clis := config.AvailableClients
 	cliIdx := 0
 	for i, c := range clis {
 		if c == defaultCLI {
@@ -262,7 +262,7 @@ func (m LaunchModel) View() string {
 func (m *LaunchModel) Refresh() {
 	m.profiles = config.ListProfiles()
 	defaultProfile := config.GetDefaultProfile()
-	defaultCLI := config.GetDefaultCLI()
+	defaultCLI := config.GetDefaultClient()
 
 	// Reset cursors to defaults
 	for i, p := range m.profiles {

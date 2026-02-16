@@ -247,6 +247,15 @@
             </select>
           </div>
           <div class="filter-group">
+            <label>Client</label>
+            <select id="logs-client-filter">
+              <option value="">All Clients</option>
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="opencode">OpenCode</option>
+            </select>
+          </div>
+          <div class="filter-group">
             <label>Log Type</label>
             <select id="logs-type-filter">
               <option value="">All Logs</option>
@@ -282,8 +291,8 @@
         </div>
         <form id="settings-form">
           <div class="form-group">
-            <label for="settings-default-cli">Default CLI</label>
-            <select id="settings-default-cli">
+            <label for="settings-default-client">Default Client</label>
+            <select id="settings-default-client">
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>
               <option value="opencode">OpenCode</option>
@@ -301,7 +310,7 @@
         </form>
 
         <div class="form-divider"><span>Project Bindings</span></div>
-        <p class="section-desc">Bind directories to specific profiles and CLIs. When running <code>zen</code> in a bound directory, it will automatically use the configured settings.</p>
+        <p class="section-desc">Bind directories to specific profiles and clients. When running <code>zen</code> in a bound directory, it will automatically use the configured settings.</p>
         <div class="bindings-header">
           <button class="btn btn-ghost btn-sm" id="btn-add-binding">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -380,8 +389,8 @@
             </select>
           </div>
           <div class="form-group">
-            <label for="binding-cli">CLI</label>
-            <select id="binding-cli">
+            <label for="binding-client">Client</label>
+            <select id="binding-client">
               <option value="">(Use default)</option>
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>

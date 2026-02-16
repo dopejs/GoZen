@@ -43,7 +43,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract and strip X-Zen-Client header
+	// Extract and strip X-Zen-Client header (from original request)
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
 
@@ -82,6 +82,11 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Override session ID extraction: use the route's cache key instead of body parsing
 	// We do this by setting a context value or header that ServeHTTP can pick up
 	r.Header.Set("X-Zen-Session", route.CacheKey())
+
+	// Pass client type to ProxyServer for logging
+	if clientType != "" {
+		r.Header.Set("X-Zen-Client", clientType)
+	}
 
 	srv.ServeHTTP(w, r)
 }

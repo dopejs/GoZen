@@ -189,7 +189,9 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 	filter := proxy.LogFilter{
-		Provider: query.Get("provider"),
+		Provider:   query.Get("provider"),
+		SessionID:  query.Get("session_id"),
+		ClientType: query.Get("client_type"),
 	}
 
 	if query.Get("errors_only") == "true" {

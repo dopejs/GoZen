@@ -897,6 +897,11 @@ select{
   flex-shrink:0;
   min-width:80px;
 }
+.log-client{
+  color:var(--teal);
+  font-size:11px;
+  flex-shrink:0;
+}
 .log-status{
   padding:2px 6px;
   border-radius:4px;

@@ -52,17 +52,26 @@ func OpenLogDB(logDir string) (*LogDB, error) {
 			method        TEXT DEFAULT '',
 			path          TEXT DEFAULT '',
 			error         TEXT DEFAULT '',
-			response_body TEXT DEFAULT ''
+			response_body TEXT DEFAULT '',
+			session_id    TEXT DEFAULT '',
+			client_type   TEXT DEFAULT ''
 		)
 	`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create logs table: %w", err)
 	}
 
+	// Migrate existing tables: add session_id and client_type columns if missing
+	for _, col := range []string{"session_id", "client_type"} {
+		db.Exec(fmt.Sprintf("ALTER TABLE logs ADD COLUMN %s TEXT DEFAULT ''", col))
+	}
+
 	for _, idx := range []string{
 		"CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_provider ON logs(provider)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_session_id ON logs(session_id)",
+		"CREATE INDEX IF NOT EXISTS idx_logs_client_type ON logs(client_type)",
 	} {
 		if _, err := db.Exec(idx); err != nil {
 			db.Close()
@@ -129,8 +138,8 @@ func (ldb *LogDB) flushBatch(batch []LogEntry) {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO logs (timestamp, level, provider, message, status_code, method, path, error, response_body)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO logs (timestamp, level, provider, message, status_code, method, path, error, response_body, session_id, client_type)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		tx.Rollback()
@@ -149,6 +158,8 @@ func (ldb *LogDB) flushBatch(batch []LogEntry) {
 			e.Path,
 			e.Error,
 			e.ResponseBody,
+			e.SessionID,
+			e.ClientType,
 		)
 	}
 
@@ -183,8 +194,16 @@ func (ldb *LogDB) Query(filter LogFilter) ([]LogEntry, error) {
 		conditions = append(conditions, "status_code <= ?")
 		args = append(args, filter.StatusMax)
 	}
+	if filter.SessionID != "" {
+		conditions = append(conditions, "session_id = ?")
+		args = append(args, filter.SessionID)
+	}
+	if filter.ClientType != "" {
+		conditions = append(conditions, "client_type = ?")
+		args = append(args, filter.ClientType)
+	}
 
-	query := "SELECT timestamp, level, provider, message, status_code, method, path, error, response_body FROM logs"
+	query := "SELECT timestamp, level, provider, message, status_code, method, path, error, response_body, session_id, client_type FROM logs"
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -208,7 +227,7 @@ func (ldb *LogDB) Query(filter LogFilter) ([]LogEntry, error) {
 		var e LogEntry
 		var tsStr string
 		var level string
-		if err := rows.Scan(&tsStr, &level, &e.Provider, &e.Message, &e.StatusCode, &e.Method, &e.Path, &e.Error, &e.ResponseBody); err != nil {
+		if err := rows.Scan(&tsStr, &level, &e.Provider, &e.Message, &e.StatusCode, &e.Method, &e.Path, &e.Error, &e.ResponseBody, &e.SessionID, &e.ClientType); err != nil {
 			continue
 		}
 		e.Level = LogLevel(level)

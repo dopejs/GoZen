@@ -1109,6 +1109,7 @@
   function setupLogs() {
     document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
     document.getElementById("logs-provider-filter").addEventListener("change", loadLogs);
+    document.getElementById("logs-client-filter").addEventListener("change", loadLogs);
     document.getElementById("logs-type-filter").addEventListener("change", loadLogs);
     document.getElementById("logs-status-filter").addEventListener("change", loadLogs);
   }
@@ -1118,6 +1119,9 @@
 
     var provider = document.getElementById("logs-provider-filter").value;
     if (provider) params.set("provider", provider);
+
+    var clientType = document.getElementById("logs-client-filter").value;
+    if (clientType) params.set("client_type", clientType);
 
     var logType = document.getElementById("logs-type-filter").value;
     if (logType === "errors") params.set("errors_only", "true");
@@ -1182,6 +1186,9 @@
       if (entry.provider) {
         html += '<span class="log-provider">' + esc(entry.provider) + '</span>';
       }
+      if (entry.client_type) {
+        html += '<span class="log-client">' + esc(entry.client_type) + '</span>';
+      }
       if (entry.status_code) {
         html += '<span class="log-status ' + statusClass + '">' + entry.status_code + '</span>';
       }
@@ -1239,9 +1246,9 @@
   }
 
   function renderSettings(data) {
-    // Default CLI
-    var cliSelect = document.getElementById("settings-default-cli");
-    cliSelect.value = data.default_cli || "claude";
+    // Default Client
+    var clientSelect = document.getElementById("settings-default-client");
+    clientSelect.value = data.default_client || "claude";
 
     // Default Profile
     var profileSelect = document.getElementById("settings-default-profile");
@@ -1262,7 +1269,7 @@
     e.preventDefault();
 
     var payload = {
-      default_cli: document.getElementById("settings-default-cli").value,
+      default_client: document.getElementById("settings-default-client").value,
       default_profile: document.getElementById("settings-default-profile").value,
       web_port: parseInt(document.getElementById("settings-web-port").value, 10)
     };
@@ -1316,7 +1323,7 @@
     html += '<div class="bindings-row bindings-header">';
     html += '<div class="bindings-cell">Directory</div>';
     html += '<div class="bindings-cell">Profile</div>';
-    html += '<div class="bindings-cell">CLI</div>';
+    html += '<div class="bindings-cell">Client</div>';
     html += '<div class="bindings-cell bindings-actions"></div>';
     html += '</div>';
 
@@ -1324,7 +1331,7 @@
       html += '<div class="bindings-row" data-path="' + esc(b.path) + '">';
       html += '<div class="bindings-cell bindings-path">' + esc(b.path) + '</div>';
       html += '<div class="bindings-cell">' + (b.profile ? '<span class="badge badge-lavender">' + esc(b.profile) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
-      html += '<div class="bindings-cell">' + (b.cli ? '<span class="badge badge-teal">' + esc(b.cli) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
+      html += '<div class="bindings-cell">' + (b.client ? '<span class="badge badge-teal">' + esc(b.client) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
       html += '<div class="bindings-cell bindings-actions">';
       html += '<button class="btn-icon" data-action="edit-binding" data-path="' + esc(b.path) + '" title="Edit">' + ICONS.edit + '</button>';
       html += '<button class="btn-icon danger" data-action="delete-binding" data-path="' + esc(b.path) + '" title="Delete">' + ICONS.trash + '</button>';
@@ -1355,7 +1362,7 @@
     document.getElementById("binding-path").disabled = false;
     document.getElementById("binding-path-group").style.display = "block";
     document.getElementById("binding-profile").value = "";
-    document.getElementById("binding-cli").value = "";
+    document.getElementById("binding-client").value = "";
     updateBindingProfileOptions();
     openModal("binding-modal");
   }
@@ -1370,7 +1377,7 @@
     document.getElementById("binding-path").disabled = true;
     document.getElementById("binding-path-group").style.display = "none";
     document.getElementById("binding-profile").value = b.profile || "";
-    document.getElementById("binding-cli").value = b.cli || "";
+    document.getElementById("binding-client").value = b.client || "";
     updateBindingProfileOptions();
     openModal("binding-modal");
   }
@@ -1391,14 +1398,14 @@
   function saveBinding() {
     var path = document.getElementById("binding-path").value.trim();
     var profile = document.getElementById("binding-profile").value;
-    var cli = document.getElementById("binding-cli").value;
+    var client = document.getElementById("binding-client").value;
 
     if (!path) {
       toast("Path is required", "error");
       return;
     }
 
-    var payload = { profile: profile, cli: cli };
+    var payload = { profile: profile, client: client };
     var promise;
 
     if (editingBindingPath) {

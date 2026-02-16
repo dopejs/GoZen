@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -19,12 +18,13 @@ import (
 
 // Daemon is the zend main server that hosts both the proxy and web UI.
 type Daemon struct {
-	webServer   *web.Server
-	proxyServer *http.Server
-	proxyMux    *http.ServeMux
-	logger      *log.Logger
-	version     string
-	watcher     *ConfigWatcher
+	webServer    *web.Server
+	proxyServer  *http.Server
+	proxyMux     *http.ServeMux
+	profileProxy *proxy.ProfileProxy
+	logger       *log.Logger
+	version      string
+	watcher      *ConfigWatcher
 
 	// Session tracking
 	mu       sync.RWMutex
@@ -118,6 +118,10 @@ func (d *Daemon) Start() error {
 func (d *Daemon) startProxy() error {
 	d.proxyMux = http.NewServeMux()
 
+	// Create profile-based proxy router
+	d.profileProxy = proxy.NewProfileProxy(d.logger)
+	d.profileProxy.TempProfiles = d
+
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
@@ -125,9 +129,9 @@ func (d *Daemon) startProxy() error {
 	d.proxyMux.HandleFunc("/api/v1/profiles/temp", d.handleTempProfiles)
 	d.proxyMux.HandleFunc("/api/v1/profiles/temp/", d.handleTempProfile)
 
-	// Default handler: proxy requests (profile-based routing will be added in Task #4)
-	// For now, return 502 since profile-based routing isn't implemented yet
-	d.proxyMux.HandleFunc("/", d.handleProxyPlaceholder)
+	// Default handler: profile-based proxy routing
+	// URL format: /<profile>/<session>/v1/messages
+	d.proxyMux.HandleFunc("/", d.profileProxy.ServeHTTP)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", d.proxyPort)
 	ln, err := net.Listen("tcp", addr)
@@ -147,18 +151,6 @@ func (d *Daemon) startProxy() error {
 
 	d.logger.Printf("proxy server listening on %s", addr)
 	return nil
-}
-
-// handleProxyPlaceholder returns 502 until profile-based routing is implemented.
-func (d *Daemon) handleProxyPlaceholder(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadGateway)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]string{
-			"type":    "proxy_not_configured",
-			"message": "Profile-based routing not yet configured. Use zen to start a session.",
-		},
-	})
 }
 
 // Shutdown gracefully stops the daemon.
@@ -252,6 +244,10 @@ func (d *Daemon) sessionCleanupLoop() {
 func (d *Daemon) onConfigReload() {
 	d.logger.Println("config file changed, reloading...")
 	config.ResetDefaultStore()
+	// Invalidate proxy cache so new config takes effect
+	if d.profileProxy != nil {
+		d.profileProxy.InvalidateCache()
+	}
 	d.logger.Println("config reloaded successfully")
 }
 
@@ -283,6 +279,16 @@ func (d *Daemon) RemoveTempProfile(id string) {
 	d.tmpMu.Lock()
 	defer d.tmpMu.Unlock()
 	delete(d.tmpProfiles, id)
+}
+
+// GetTempProfileProviders implements proxy.TempProfileProvider.
+func (d *Daemon) GetTempProfileProviders(id string) []string {
+	d.tmpMu.RLock()
+	defer d.tmpMu.RUnlock()
+	if tp, ok := d.tmpProfiles[id]; ok {
+		return tp.Providers
+	}
+	return nil
 }
 
 // randomID generates a short random hex ID.

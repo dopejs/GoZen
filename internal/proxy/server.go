@@ -141,11 +141,16 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	// Parse request body to extract session ID
-	var bodyMap map[string]interface{}
-	sessionID := ""
-	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
-		sessionID = extractSessionID(bodyMap)
+	// Determine session ID:
+	// 1. X-Zen-Session header (set by ProfileProxy with <profile>:<session> key)
+	// 2. Fallback: extract from request body metadata (legacy per-invocation proxy)
+	sessionID := r.Header.Get("X-Zen-Session")
+	r.Header.Del("X-Zen-Session")
+	if sessionID == "" {
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			sessionID = extractSessionID(bodyMap)
+		}
 	}
 
 	// Determine provider chain and per-provider model overrides from routing

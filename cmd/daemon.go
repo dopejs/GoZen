@@ -108,6 +108,9 @@ func runDaemonForeground() error {
 
 	d := daemon.NewDaemon(Version, logger)
 
+	// Clean up legacy web daemon PID files from v2.0 and earlier
+	daemon.CleanupLegacyPidFiles()
+
 	// Write PID file
 	daemon.WriteDaemonPid(os.Getpid())
 

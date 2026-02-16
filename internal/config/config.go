@@ -17,8 +17,6 @@ const (
 
 	DefaultWebPort   = 19840
 	DefaultProxyPort = 19841
-	WebPidFile       = "web.pid"
-	WebLogFile       = "web.log"
 	DaemonPidFile    = "zend.pid"
 	DaemonLogFile    = "zend.log"
 

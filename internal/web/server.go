@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
@@ -150,32 +149,6 @@ func maskToken(token string) string {
 		return "****"
 	}
 	return token[:5] + "..." + token[len(token)-4:]
-}
-
-// WaitForReady polls the health endpoint until the server is ready or ctx is cancelled.
-// If portOverride > 0, it is used instead of the configured port.
-func WaitForReady(ctx context.Context, portOverride int) error {
-	port := config.GetWebPort()
-	if portOverride > 0 {
-		port = portOverride
-	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/health", port)
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		resp, err := client.Get(url)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
 }
 
 // --- logs ---

@@ -6,12 +6,13 @@ import (
 	"os/exec"
 )
 
-const taskName = "zen-web"
+const taskName = "zend"
 
 // EnableService creates a Windows scheduled task that runs at logon.
 func EnableService() error {
-	// Clean up legacy opencc-web task if it exists
+	// Clean up legacy tasks
 	exec.Command("schtasks", "/delete", "/tn", "opencc-web", "/f").Run()
+	exec.Command("schtasks", "/delete", "/tn", "zen-web", "/f").Run()
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -21,7 +22,7 @@ func EnableService() error {
 	out, err := exec.Command("schtasks", "/create",
 		"/tn", taskName,
 		"/sc", "onlogon",
-		"/tr", fmt.Sprintf(`"%s" web`, exe),
+		"/tr", fmt.Sprintf(`"%s" daemon start --foreground`, exe),
 		"/f",
 	).CombinedOutput()
 	if err != nil {

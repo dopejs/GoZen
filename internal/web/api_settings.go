@@ -10,16 +10,16 @@ import (
 // settingsResponse is the JSON shape for global settings.
 type settingsResponse struct {
 	DefaultProfile string   `json:"default_profile"`
-	DefaultClient  string   `json:"default_cli"`     // JSON key kept as "default_cli" for frontend compat
+	DefaultClient  string   `json:"default_client"`
 	WebPort        int      `json:"web_port"`
-	Profiles       []string `json:"profiles"`        // available profiles for selection
-	Clients        []string `json:"clis"`            // available clients; JSON key kept as "clis" for frontend compat
+	Profiles       []string `json:"profiles"`
+	Clients        []string `json:"clients"`
 }
 
 // settingsRequest is the JSON shape for updating settings.
 type settingsRequest struct {
 	DefaultProfile string `json:"default_profile,omitempty"`
-	DefaultClient  string `json:"default_cli,omitempty"`     // JSON key kept as "default_cli" for frontend compat
+	DefaultClient  string `json:"default_client,omitempty"`
 	WebPort        int    `json:"web_port,omitempty"`
 }
 

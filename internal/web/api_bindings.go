@@ -13,21 +13,21 @@ import (
 type bindingResponse struct {
 	Path    string `json:"path"`
 	Profile string `json:"profile"`
-	Client  string `json:"cli"`     // JSON key kept as "cli" for frontend compat
+	Client  string `json:"client"`
 }
 
 // bindingsResponse is the JSON shape for listing all bindings.
 type bindingsResponse struct {
 	Bindings []bindingResponse `json:"bindings"`
-	Profiles []string          `json:"profiles"` // available profiles for selection
-	Clients  []string          `json:"clis"`     // available clients; JSON key kept as "clis" for frontend compat
+	Profiles []string          `json:"profiles"`
+	Clients  []string          `json:"clients"`
 }
 
 // bindingRequest is the JSON shape for creating/updating a binding.
 type bindingRequest struct {
 	Path    string `json:"path"`
 	Profile string `json:"profile"`
-	Client  string `json:"cli"`     // JSON key kept as "cli" for frontend compat
+	Client  string `json:"client"`
 }
 
 func (s *Server) handleBindings(w http.ResponseWriter, r *http.Request) {

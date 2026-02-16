@@ -416,7 +416,8 @@ func (s *Store) loadLocked() error {
 			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade zen to the latest version",
 				cfg.Version, CurrentConfigVersion)
 		}
-		if cfg.Version < CurrentConfigVersion {
+		needsMigration := cfg.Version < CurrentConfigVersion
+		if needsMigration {
 			// Older config (including version 0 = no version field), upgrade to current
 			cfg.Version = CurrentConfigVersion
 		}
@@ -431,6 +432,10 @@ func (s *Store) loadLocked() error {
 		// Update modification time
 		if info, statErr := os.Stat(s.path); statErr == nil {
 			s.modTime = info.ModTime()
+		}
+		// Auto-save if migration was needed (writes new JSON keys)
+		if needsMigration {
+			return s.saveLocked()
 		}
 		return nil
 	}

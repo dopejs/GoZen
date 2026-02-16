@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 )
@@ -249,19 +250,20 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 4 (v1.5.0+): default profile and web port settings
 // - Version 5 (v1.5.0+): project bindings with CLI support
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
-const CurrentConfigVersion = 6
+// - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port
+const CurrentConfigVersion = 7
 
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
 	Profile string `json:"profile,omitempty"` // profile name (empty = use default)
-	Client  string `json:"cli,omitempty"`     // client name (empty = use default); JSON key kept as "cli" for compat
+	Client  string `json:"client,omitempty"`  // client name (empty = use default)
 }
 
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
 	Version         int                         `json:"version,omitempty"`          // config file version
 	DefaultProfile  string                      `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
-	DefaultClient   string                      `json:"default_cli,omitempty"`      // default client (claude, codex, opencode); JSON key kept as "default_cli" for compat
+	DefaultClient   string                      `json:"default_client,omitempty"`   // default client (claude, codex, opencode)
 	ProxyPort       int                         `json:"proxy_port,omitempty"`       // proxy port (defaults to 19841)
 	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19840)
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
@@ -269,23 +271,18 @@ type OpenCCConfig struct {
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
 }
 
-// UnmarshalJSON supports both current format (project_bindings as map[string]*ProjectBinding)
-// and the v3 format (project_bindings as map[string]string where the value is just a profile name).
+// UnmarshalJSON supports multiple config versions:
+// - v7+: current format with "default_client" and "client" keys
+// - v5-v6: "default_cli" and "cli" keys (auto-migrated)
+// - v3: project_bindings as map[string]string (profile name only)
 func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
-	// Try standard unmarshal first (works for v5+ configs and configs without project_bindings)
-	type openCCConfigAlias OpenCCConfig
-	var alias openCCConfigAlias
-	if err := json.Unmarshal(data, &alias); err == nil {
-		*c = OpenCCConfig(alias)
-		return nil
-	}
-
-	// Standard unmarshal failed — likely v3 project_bindings with string values.
-	// Parse with raw messages for project_bindings.
+	// Use a raw struct that reads both old and new field names.
+	// This handles all versions in a single pass.
 	var raw struct {
 		Version         int                            `json:"version,omitempty"`
 		DefaultProfile  string                         `json:"default_profile,omitempty"`
-		DefaultClient   string                         `json:"default_cli,omitempty"`
+		DefaultClient   string                         `json:"default_client,omitempty"` // v7+
+		DefaultCLI      string                         `json:"default_cli,omitempty"`    // v6 compat
 		ProxyPort       int                            `json:"proxy_port,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
 		Providers       map[string]*ProviderConfig     `json:"providers"`
@@ -298,20 +295,41 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 
 	c.Version = raw.Version
 	c.DefaultProfile = raw.DefaultProfile
-	c.DefaultClient = raw.DefaultClient
 	c.ProxyPort = raw.ProxyPort
 	c.WebPort = raw.WebPort
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 
+	// Migrate default_cli → default_client
+	c.DefaultClient = raw.DefaultClient
+	if c.DefaultClient == "" && raw.DefaultCLI != "" {
+		c.DefaultClient = raw.DefaultCLI
+	}
+
+	// Parse project bindings (handles v3 string format, v5-v6 "cli" key, v7+ "client" key)
 	if len(raw.ProjectBindings) > 0 {
 		c.ProjectBindings = make(map[string]*ProjectBinding, len(raw.ProjectBindings))
 		for path, msg := range raw.ProjectBindings {
-			// Try as *ProjectBinding first (v5 format)
-			var pb ProjectBinding
-			if err := json.Unmarshal(msg, &pb); err == nil {
-				c.ProjectBindings[path] = &pb
-				continue
+			// Try as object first (v5+ format with "cli"/"client" keys, or empty object)
+			var pbRaw struct {
+				Profile string `json:"profile,omitempty"`
+				Client  string `json:"client,omitempty"` // v7+
+				CLI     string `json:"cli,omitempty"`    // v5-v6 compat
+			}
+			// Check if it's a JSON object (starts with '{')
+			trimmed := bytes.TrimSpace(msg)
+			if len(trimmed) > 0 && trimmed[0] == '{' {
+				if err := json.Unmarshal(msg, &pbRaw); err == nil {
+					client := pbRaw.Client
+					if client == "" {
+						client = pbRaw.CLI
+					}
+					c.ProjectBindings[path] = &ProjectBinding{
+						Profile: pbRaw.Profile,
+						Client:  client,
+					}
+					continue
+				}
 			}
 			// Try as plain string (v3 format: profile name only)
 			var profileName string

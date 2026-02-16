@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dopejs/gozen/internal/daemon"
 	"github.com/spf13/cobra"
@@ -145,10 +146,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Successfully upgraded to %s\n", target)
 
-	// Restart web daemon if it was running
-	if _, running := daemon.IsRunning(); running {
-		if err := restartWebDaemon(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	// Restart zend daemon if it was running
+	if _, running := daemon.IsDaemonRunning(); running {
+		fmt.Println("Restarting zend daemon...")
+		if err := daemon.StopDaemonProcess(30 * time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to stop zend: %v\n", err)
+		} else {
+			time.Sleep(300 * time.Millisecond)
+			// The daemon will be auto-started on next zen invocation
+			fmt.Println("zend stopped. It will restart automatically on next use.")
 		}
 	}
 

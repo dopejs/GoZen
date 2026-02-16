@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -13,8 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/daemon"
 	"github.com/dopejs/gozen/internal/proxy"
 	"github.com/dopejs/gozen/internal/update"
 	"github.com/dopejs/gozen/tui"
@@ -189,13 +194,147 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get the full profile config for routing support
-	pc := config.GetProfileConfig(profile)
+	// Legacy mode: start per-invocation proxy (old behavior)
+	if legacyTUI {
+		pc := config.GetProfileConfig(profile)
+		return startLegacyProxy(providerNames, pc, client, args)
+	}
 
-	return startProxy(providerNames, pc, client, args)
+	// New flow: use zend daemon
+	return startViaDaemon(profile, client, providerNames, args)
 }
 
-func startProxy(names []string, pc *config.ProfileConfig, cli string, args []string) error {
+// startViaDaemon starts a client session through the zend daemon.
+// 1. Ensure zend is running (auto-start if needed)
+// 2. Generate session UUID
+// 3. Set base URL to http://127.0.0.1:<proxy_port>/<profile>/<session>/v1
+// 4. Merge provider env vars
+// 5. Exec client binary
+func startViaDaemon(profile, client string, providerNames []string, args []string) error {
+	if err := ensureDaemonRunning(); err != nil {
+		return fmt.Errorf("failed to start zend: %w", err)
+	}
+
+	clientBin := client
+	if clientBin == "" {
+		clientBin = "claude"
+	}
+
+	// Generate session UUID
+	sessionID := generateSessionID()
+
+	// Build proxy URL with profile and session in path
+	proxyPort := config.GetProxyPort()
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d/%s/%s/v1", proxyPort, profile, sessionID)
+
+	// Merge env_vars from all providers for this client
+	providers, err := buildProviders(providerNames)
+	if err != nil {
+		return err
+	}
+	mergedEnvVars := mergeProviderEnvVarsForCLI(providers, clientBin)
+	for k, v := range mergedEnvVars {
+		os.Setenv(k, v)
+	}
+
+	// Set environment variables based on client type
+	logger := log.New(io.Discard, "", 0)
+	setupClientEnvironment(clientBin, baseURL, logger)
+
+	// Set X-Zen-Client header via env var (proxy strips it)
+	os.Setenv("X_ZEN_CLIENT", clientBin)
+
+	// Find client binary
+	cliPath, err := exec.LookPath(clientBin)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
+	}
+
+	// Start client as subprocess
+	cliCmd := exec.Command(cliPath, args...)
+	cliCmd.Stdin = os.Stdin
+	cliCmd.Stdout = os.Stdout
+	cliCmd.Stderr = os.Stderr
+
+	// Forward signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for sig := range sigCh {
+			if cliCmd.Process != nil {
+				cliCmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	if err := cliCmd.Run(); err != nil {
+		signal.Stop(sigCh)
+		close(sigCh)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return err
+	}
+	signal.Stop(sigCh)
+	close(sigCh)
+	return nil
+}
+
+// ensureDaemonRunning checks if zend is running and starts it if not.
+func ensureDaemonRunning() error {
+	if _, running := daemon.IsDaemonRunning(); running {
+		return nil
+	}
+
+	// Auto-start the daemon
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot determine executable path: %w", err)
+	}
+
+	logPath := daemon.DaemonLogPath()
+	logDir := config.ConfigDirPath()
+	os.MkdirAll(logDir, 0755)
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("cannot open log file: %w", err)
+	}
+	defer logFile.Close()
+
+	child := exec.Command(exe, "daemon", "start")
+	child.Env = append(os.Environ(), "GOZEN_DAEMON=1")
+	child.Stdout = logFile
+	child.Stderr = logFile
+	child.SysProcAttr = daemon.DaemonSysProcAttr()
+
+	if err := child.Start(); err != nil {
+		return fmt.Errorf("failed to start zend: %w", err)
+	}
+
+	daemon.WriteDaemonPid(child.Process.Pid)
+
+	// Wait for daemon to be ready
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return waitForDaemonReady(ctx)
+}
+
+// generateSessionID generates a short random hex session ID.
+func generateSessionID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use time-based
+		t := time.Now().UnixNano()
+		b[0] = byte(t >> 24)
+		b[1] = byte(t >> 16)
+		b[2] = byte(t >> 8)
+		b[3] = byte(t)
+	}
+	return hex.EncodeToString(b)
+}
+
+func startLegacyProxy(names []string, pc *config.ProfileConfig, cli string, args []string) error {
 	providers, err := buildProviders(names)
 	if err != nil {
 		return err

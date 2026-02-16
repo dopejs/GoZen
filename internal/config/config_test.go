@@ -1317,6 +1317,22 @@ func TestCompatWebPort(t *testing.T) {
 	}
 }
 
+func TestCompatProxyPort(t *testing.T) {
+	setTestHome(t)
+
+	// Default
+	if p := GetProxyPort(); p != DefaultProxyPort {
+		t.Errorf("GetProxyPort() default = %d, want %d", p, DefaultProxyPort)
+	}
+
+	if err := SetProxyPort(29841); err != nil {
+		t.Fatal(err)
+	}
+	if p := GetProxyPort(); p != 29841 {
+		t.Errorf("GetProxyPort() = %d, want 29841", p)
+	}
+}
+
 func TestProviderConfigGetType(t *testing.T) {
 	// GetType returns the Type field, defaulting to "anthropic" when empty
 	p1 := &ProviderConfig{Type: ""}

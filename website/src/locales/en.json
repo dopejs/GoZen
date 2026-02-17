@@ -47,6 +47,10 @@
       "title": "Web Interface",
       "desc": "Browser-based visual management for providers, profiles, and bindings"
     },
+    "configSync": {
+      "title": "Config Sync",
+      "desc": "Sync providers, profiles, and settings across devices with AES-256-GCM encryption"
+    },
     "comingSoon": "More features coming soon, stay tuned!"
   },
   "install": {
@@ -77,6 +81,7 @@
       "pick": "Interactively select provider to start",
       "list": "List all providers and profiles",
       "config": "Open TUI configuration interface",
+      "configSync": "Pull config from remote sync backend",
       "configLegacy": "Use legacy TUI interface",
       "bind": "Bind current directory to profile",
       "bindCli": "Bind current directory to specified CLI",
@@ -108,6 +113,7 @@
       "multiCli": "Multi-CLI Support",
       "webUi": "Web Interface",
       "tui": "TUI Interface",
+      "configSync": "Config Sync",
       "config": "Config Reference"
     },
     "index": {
@@ -192,7 +198,8 @@
         "providerManage": "Provider and Profile management",
         "bindingManage": "Project binding management",
         "settings": "Global settings (default CLI, default Profile, port)",
-        "logs": "Request log viewer",
+        "syncSettings": "Config sync settings",
+      "logs": "Request log viewer",
         "autocomplete": "Model field autocomplete"
       }
     },
@@ -222,6 +229,7 @@
         "file": "File",
         "description": "Description",
         "mainConfig": "Main configuration file",
+        "syncMeta": "Sync metadata (timestamps, device ID)",
         "proxyLog": "Proxy log",
         "webLog": "Web server log"
       },
@@ -234,7 +242,48 @@
         "webPort": "Web management interface port",
         "providers": "Provider configuration collection",
         "profiles": "Profile configuration collection",
-        "projectBindings": "Project binding configuration"
+        "projectBindings": "Project binding configuration",
+        "sync": "Config sync settings (optional)"
+      }
+    },
+    "configSync": {
+      "title": "Config Sync",
+      "intro": "Sync providers, profiles, default profile, and default client across devices. Auth tokens are encrypted with AES-256-GCM (PBKDF2-SHA256 key derivation) before upload.",
+      "backendsTitle": "Supported Backends",
+      "backendCol": "Backend",
+      "descCol": "Description",
+      "backends": {
+        "webdav": "Any WebDAV server (e.g. Nextcloud, ownCloud)",
+        "s3": "AWS S3 or S3-compatible storage (e.g. MinIO, Cloudflare R2)",
+        "gist": "Private gist (requires PAT with gist scope)",
+        "repo": "Repository file via Contents API (requires PAT with repo scope)"
+      },
+      "setupTitle": "Setup",
+      "setupWebUi": "Configure sync through the Web UI settings page:",
+      "setupCli": "Or pull manually via CLI:",
+      "configTitle": "Configuration Example",
+      "encryptionTitle": "Encryption",
+      "encryptionDesc": "When a passphrase is set, all auth tokens in the sync payload are encrypted with AES-256-GCM using a key derived via PBKDF2-SHA256 (600k iterations). The encryption salt is stored alongside the payload. Without a passphrase, data is uploaded as plaintext JSON.",
+      "conflictTitle": "Conflict Resolution",
+      "conflicts": {
+        "timestamp": "Per-entity timestamp merge: newer modification wins",
+        "tombstone": "Deleted entities use tombstones (expire after 30 days)",
+        "scalar": "Scalars (default profile/client): newer timestamp wins"
+      },
+      "scopeTitle": "Sync Scope",
+      "syncedTitle": "Synced",
+      "synced": {
+        "providers": "Providers (with encrypted tokens)",
+        "profiles": "Profiles",
+        "defaultProfile": "Default profile",
+        "defaultClient": "Default client"
+      },
+      "notSyncedTitle": "Not Synced",
+      "notSynced": {
+        "ports": "Web port settings",
+        "password": "Web password",
+        "bindings": "Project bindings",
+        "syncConfig": "Sync configuration itself"
       }
     },
     "copied": "Copied"

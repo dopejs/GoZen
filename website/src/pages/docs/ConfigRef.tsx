@@ -3,6 +3,7 @@ import { CodeBlock } from "@/components/docs/CodeBlock";
 
 const files = [
   { path: "~/.zen/zen.json", key: "mainConfig" },
+  { path: "~/.zen/sync_meta.json", key: "syncMeta" },
   { path: "~/.zen/proxy.log", key: "proxyLog" },
   { path: "~/.zen/web.log", key: "webLog" },
 ];
@@ -43,6 +44,7 @@ const fields = [
   { field: "providers", key: "providers" },
   { field: "profiles", key: "profiles" },
   { field: "project_bindings", key: "projectBindings" },
+  { field: "sync", key: "sync" },
 ];
 
 export default function ConfigRef() {

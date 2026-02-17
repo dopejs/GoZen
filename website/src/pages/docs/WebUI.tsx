@@ -44,6 +44,7 @@ zen web disable    # Uninstall system service`}
               "providerManage",
               "bindingManage",
               "settings",
+              "syncSettings",
               "logs",
               "autocomplete",
             ] as const

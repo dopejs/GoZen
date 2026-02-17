@@ -15,6 +15,10 @@
   },
   "features": {
     "title": "Caracter\u00edsticas",
+    "configSync": {
+      "title": "Sincronizaci\u00f3n de Config",
+      "desc": "Sincroniza proveedores, perfiles y ajustes entre dispositivos con cifrado AES-256-GCM"
+    },
     "comingSoon": "M\u00e1s funciones por venir, \u00a1est\u00e9n atentos!",
     "multiCli": {
       "title": "Soporte Multi-CLI",
@@ -77,6 +81,7 @@
       "pick": "Seleccionar proveedor de forma interactiva para iniciar",
       "list": "Listar todos los proveedores y perfiles",
       "config": "Abrir interfaz de configuraci\u00f3n TUI",
+      "configSync": "Extraer configuraci\u00f3n del backend de sincronizaci\u00f3n remota",
       "configLegacy": "Usar interfaz TUI cl\u00e1sica",
       "bind": "Vincular directorio actual a un perfil",
       "bindCli": "Vincular directorio actual a un CLI especificado",
@@ -108,6 +113,7 @@
       "multiCli": "Soporte Multi-CLI",
       "webUi": "Interfaz Web",
       "tui": "Interfaz TUI",
+      "configSync": "Sincronizaci\u00f3n de Config",
       "config": "Referencia de Configuraci\u00f3n"
     },
     "index": {
@@ -192,7 +198,8 @@
         "providerManage": "Gesti\u00f3n de proveedores y perfiles",
         "bindingManage": "Gesti\u00f3n de vinculaciones de proyecto",
         "settings": "Configuraci\u00f3n global (CLI predeterminado, perfil predeterminado, puerto)",
-        "logs": "Visor de registros de solicitudes",
+        "syncSettings": "Ajustes de sincronizaci\u00f3n de configuraci\u00f3n",
+      "logs": "Visor de registros de solicitudes",
         "autocomplete": "Autocompletado del campo de modelo"
       }
     },
@@ -222,6 +229,7 @@
         "file": "Archivo",
         "description": "Descripci\u00f3n",
         "mainConfig": "Archivo de configuraci\u00f3n principal",
+        "syncMeta": "Metadatos de sincronizaci\u00f3n (marcas de tiempo, ID de dispositivo)",
         "proxyLog": "Registro del proxy",
         "webLog": "Registro del servidor Web"
       },
@@ -234,7 +242,48 @@
         "webPort": "Puerto de la interfaz de gesti\u00f3n Web",
         "providers": "Colecci\u00f3n de configuraciones de proveedores",
         "profiles": "Colecci\u00f3n de configuraciones de perfiles",
-        "projectBindings": "Configuraci\u00f3n de vinculaciones de proyecto"
+        "projectBindings": "Configuraci\u00f3n de vinculaciones de proyecto",
+        "sync": "Ajustes de sincronizaci\u00f3n de configuraci\u00f3n (opcional)"
+      }
+    },
+    "configSync": {
+      "title": "Sincronizaci\u00f3n de Config",
+      "intro": "Sincroniza proveedores, perfiles, perfil predeterminado y cliente predeterminado entre dispositivos. Los tokens de autenticaci\u00f3n se cifran con AES-256-GCM (derivaci\u00f3n de clave PBKDF2-SHA256) antes de la carga.",
+      "backendsTitle": "Backends Soportados",
+      "backendCol": "Backend",
+      "descCol": "Descripci\u00f3n",
+      "backends": {
+        "webdav": "Cualquier servidor WebDAV (ej. Nextcloud, ownCloud)",
+        "s3": "AWS S3 o almacenamiento compatible con S3 (ej. MinIO, Cloudflare R2)",
+        "gist": "Gist privado (requiere PAT con alcance gist)",
+        "repo": "Archivo de repositorio v\u00eda Contents API (requiere PAT con alcance repo)"
+      },
+      "setupTitle": "Configuraci\u00f3n",
+      "setupWebUi": "Configura la sincronizaci\u00f3n a trav\u00e9s de la p\u00e1gina de ajustes de la Web UI:",
+      "setupCli": "O extrae manualmente v\u00eda CLI:",
+      "configTitle": "Ejemplo de Configuraci\u00f3n",
+      "encryptionTitle": "Cifrado",
+      "encryptionDesc": "Cuando se establece una frase de contrase\u00f1a, todos los tokens de autenticaci\u00f3n en la carga de sincronizaci\u00f3n se cifran con AES-256-GCM usando una clave derivada v\u00eda PBKDF2-SHA256 (600k iteraciones). La sal de cifrado se almacena junto con la carga. Sin frase de contrase\u00f1a, los datos se cargan como JSON en texto plano.",
+      "conflictTitle": "Resoluci\u00f3n de Conflictos",
+      "conflicts": {
+        "timestamp": "Fusi\u00f3n por marca de tiempo por entidad: la modificaci\u00f3n m\u00e1s reciente gana",
+        "tombstone": "Las entidades eliminadas usan l\u00e1pidas (expiran despu\u00e9s de 30 d\u00edas)",
+        "scalar": "Escalares (perfil/cliente predeterminado): la marca de tiempo m\u00e1s reciente gana"
+      },
+      "scopeTitle": "Alcance de Sincronizaci\u00f3n",
+      "syncedTitle": "Sincronizado",
+      "synced": {
+        "providers": "Proveedores (con tokens cifrados)",
+        "profiles": "Perfiles",
+        "defaultProfile": "Perfil predeterminado",
+        "defaultClient": "Cliente predeterminado"
+      },
+      "notSyncedTitle": "No Sincronizado",
+      "notSynced": {
+        "ports": "Configuraci\u00f3n de puerto Web",
+        "password": "Contrase\u00f1a Web",
+        "bindings": "Vinculaciones de proyecto",
+        "syncConfig": "La configuraci\u00f3n de sincronizaci\u00f3n en s\u00ed"
       }
     },
     "copied": "Copiado"

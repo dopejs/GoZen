@@ -9,6 +9,7 @@ const commands = [
   { cmd: "zen pick", key: "pick" },
   { cmd: "zen list", key: "list" },
   { cmd: "zen config", key: "config" },
+  { cmd: "zen config sync", key: "configSync" },
   { cmd: "zen config --legacy", key: "configLegacy" },
   { cmd: "zen bind <profile>", key: "bind" },
   { cmd: "zen bind --cli <cli>", key: "bindCli" },

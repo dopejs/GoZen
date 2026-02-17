@@ -20,6 +20,7 @@ Multi-CLI environment switcher for Claude Code, Codex, and OpenCode with API pro
 - **Environment Variables** — Configure CLI-specific environment variables at the provider level
 - **TUI Config Interface** — Interactive terminal UI with Dashboard and legacy modes
 - **Web Management UI** — Browser-based visual management for providers, profiles, and project bindings
+- **Config Sync** — Sync providers, profiles, and settings across devices via WebDAV, S3, GitHub Gist, or GitHub Repo with AES-256-GCM encryption
 - **Version Update Check** — Automatic non-blocking check for new versions on startup (24h cache)
 - **Self-Update** — One-command upgrade via `zen upgrade` with semver version matching
 - **Shell Completion** — Supports zsh / bash / fish
@@ -64,6 +65,7 @@ zen --cli codex
 | `zen pick` | Interactively select a provider to launch |
 | `zen list` | List all providers and profiles |
 | `zen config` | Open the TUI config interface |
+| `zen config sync` | Pull config from remote sync backend |
 | `zen config --legacy` | Use the legacy TUI interface |
 | `zen bind <profile>` | Bind current directory to a profile |
 | `zen bind --cli <cli>` | Bind current directory to a specific CLI |
@@ -208,8 +210,37 @@ Web UI features:
 - Provider and Profile management
 - Project binding management
 - Global settings (default CLI, default profile, port)
+- Config sync settings
 - Request log viewer
 - Model field autocomplete
+
+## Config Sync
+
+Sync providers, profiles, default profile, and default client across devices. Auth tokens are encrypted with AES-256-GCM (PBKDF2-SHA256 key derivation) before upload.
+
+Supported backends:
+- **WebDAV** — Any WebDAV server (e.g. Nextcloud, ownCloud)
+- **S3** — AWS S3 or S3-compatible storage (e.g. MinIO, Cloudflare R2)
+- **GitHub Gist** — Private gist (requires PAT with `gist` scope)
+- **GitHub Repo** — Repository file via Contents API (requires PAT with `repo` scope)
+
+### Setup via Web UI
+
+```sh
+zen web open  # Settings → Config Sync
+```
+
+### Manual Pull via CLI
+
+```sh
+zen config sync
+```
+
+### Conflict Resolution
+
+- Per-entity timestamp merge: newer modification wins
+- Deleted entities use tombstones (expire after 30 days)
+- Scalars (default profile/client): newer timestamp wins
 
 ## Environment Variables
 

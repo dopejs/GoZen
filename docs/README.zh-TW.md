@@ -20,6 +20,7 @@
 - **環境變數設定** — 在 provider 層級為每個 CLI 分別設定環境變數
 - **TUI 設定介面** — 互動式終端介面，支援 Dashboard 與傳統兩種模式
 - **Web 管理介面** — 瀏覽器視覺化管理 provider、profile 與專案綁定
+- **組態同步** — 透過 WebDAV、S3、GitHub Gist 或 GitHub Repo 跨裝置同步 provider、profile 與設定，使用 AES-256-GCM 加密
 - **版本更新檢查** — 啟動時自動非阻塞檢查新版本（24 小時快取）
 - **自動更新** — `zen upgrade` 一鍵升級，支援 semver 版本比對
 - **Shell 補全** — 支援 zsh / bash / fish
@@ -64,6 +65,7 @@ zen --cli codex
 | `zen pick` | 互動選擇 provider 啟動 |
 | `zen list` | 列出所有 provider 與 profile |
 | `zen config` | 開啟 TUI 設定介面 |
+| `zen config sync` | 從遠端同步後端拉取組態 |
 | `zen config --legacy` | 使用傳統 TUI 介面 |
 | `zen bind <profile>` | 將目前目錄綁定至 profile |
 | `zen bind --cli <cli>` | 將目前目錄綁定使用指定 CLI |
@@ -208,8 +210,37 @@ Web UI 功能：
 - Provider 與 Profile 管理
 - 專案綁定管理
 - 全域設定（預設 CLI、預設 Profile、連接埠）
+- 組態同步設定
 - 請求日誌檢視
 - 模型欄位自動補全
+
+## 組態同步
+
+跨裝置同步 provider、profile、預設 profile 與預設 client。認證令牌在上傳前使用 AES-256-GCM（PBKDF2-SHA256 金鑰衍生）加密。
+
+支援的後端：
+- **WebDAV** — 任何 WebDAV 伺服器（如 Nextcloud、ownCloud）
+- **S3** — AWS S3 或 S3 相容儲存（如 MinIO、Cloudflare R2）
+- **GitHub Gist** — 私有 gist（需要具有 `gist` 權限的 PAT）
+- **GitHub Repo** — 透過 Contents API 儲存至倉庫檔案（需要具有 `repo` 權限的 PAT）
+
+### 透過 Web UI 設定
+
+```sh
+zen web open  # Settings → Config Sync
+```
+
+### 透過 CLI 手動拉取
+
+```sh
+zen config sync
+```
+
+### 衝突解決
+
+- 按實體時間戳合併：較新的修改勝出
+- 刪除的實體使用墓碑標記（30 天後過期）
+- 純量值（預設 profile/client）：較新的時間戳勝出
 
 ## 環境變數設定
 

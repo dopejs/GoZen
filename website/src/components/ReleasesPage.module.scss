@@ -94,8 +94,15 @@
 }
 
 .content {
-  flex: 1;
+  width: calc(100% - 220px - 2rem);
+  flex-shrink: 0;
   min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .content {
+    width: 100%;
+  }
 }
 
 .release {

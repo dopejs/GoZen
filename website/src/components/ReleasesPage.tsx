@@ -19,7 +19,17 @@ function formatDate(iso: string): string {
 }
 
 function renderMarkdown(body: string): string {
-  return body
+  // Merge duplicate "Full Changelog" lines into one
+  const changelogUrls: string[] = [];
+  const cleaned = body.replace(
+    /\*?\*?Full Changelog\*?\*?:\s*(https?:\/\/[^\s]+)/g,
+    (_match, url) => {
+      changelogUrls.push(url);
+      return '';
+    },
+  );
+
+  let result = cleaned
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
@@ -30,6 +40,14 @@ function renderMarkdown(body: string): string {
     .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\n{2,}/g, '<br/><br/>')
     .replace(/\n/g, '<br/>');
+
+  // Append single merged changelog link at the end
+  if (changelogUrls.length > 0) {
+    const lastUrl = changelogUrls[changelogUrls.length - 1];
+    result += `<br/><br/><strong>Full Changelog</strong>: <a href="${lastUrl}" target="_blank" rel="noopener noreferrer">${lastUrl}</a>`;
+  }
+
+  return result;
 }
 
 export default function ReleasesPage(props: {releases: Release[]}) {

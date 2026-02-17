@@ -14,15 +14,16 @@ Multi-CLI environment switcher for Claude Code, Codex, and OpenCode with API pro
 
 - **Multi-CLI Support** — Supports Claude Code, Codex, and OpenCode, configurable per project
 - **Multi-Config Management** — Manage all API configurations in `~/.zen/zen.json`
+- **Unified Daemon** — Single `zend` process hosts both the proxy server and the Web UI
 - **Proxy Failover** — Built-in HTTP proxy that automatically switches to backup providers when the primary is unavailable
 - **Scenario Routing** — Intelligent routing based on request characteristics (thinking, image, longContext, etc.)
 - **Project Bindings** — Bind directories to specific profiles and CLIs for project-level auto-configuration
 - **Environment Variables** — Configure CLI-specific environment variables at the provider level
-- **TUI Config Interface** — Interactive terminal UI with Dashboard and legacy modes
-- **Web Management UI** — Browser-based visual management for providers, profiles, and project bindings
+- **Web Management UI** — Browser-based visual management with password-protected access
+- **Web UI Security** — Auto-generated access password, session-based auth, RSA encryption for token transport
 - **Config Sync** — Sync providers, profiles, and settings across devices via WebDAV, S3, GitHub Gist, or GitHub Repo with AES-256-GCM encryption
 - **Version Update Check** — Automatic non-blocking check for new versions on startup (24h cache)
-- **Self-Update** — One-command upgrade via `zen upgrade` with semver version matching
+- **Self-Update** — One-command upgrade via `zen upgrade` with semver version matching (supports prerelease versions)
 - **Shell Completion** — Supports zsh / bash / fish
 
 ## Installation
@@ -40,8 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/uninstall.sh | sh
 ## Quick Start
 
 ```sh
-# Open the TUI config interface and create your first provider
-zen config
+# Add your first provider
+zen config add provider
 
 # Launch (using default profile)
 zen
@@ -64,19 +65,48 @@ zen --cli codex
 | `zen use <provider>` | Directly use a specific provider (no proxy) |
 | `zen pick` | Interactively select a provider to launch |
 | `zen list` | List all providers and profiles |
-| `zen config` | Open the TUI config interface |
+| `zen config` | Show config subcommands |
+| `zen config add provider` | Add a new provider |
+| `zen config add profile` | Add a new profile |
+| `zen config default-client` | Set the default CLI client |
+| `zen config default-profile` | Set the default profile |
+| `zen config reset-password` | Reset the Web UI access password |
 | `zen config sync` | Pull config from remote sync backend |
-| `zen config --legacy` | Use the legacy TUI interface |
+| `zen daemon start` | Start the zend daemon |
+| `zen daemon stop` | Stop the daemon |
+| `zen daemon restart` | Restart the daemon |
+| `zen daemon status` | Show daemon status |
+| `zen daemon enable` | Install daemon as system service |
+| `zen daemon disable` | Uninstall daemon system service |
 | `zen bind <profile>` | Bind current directory to a profile |
 | `zen bind --cli <cli>` | Bind current directory to a specific CLI |
 | `zen unbind` | Remove binding for current directory |
 | `zen status` | Show binding status for current directory |
-| `zen web start` | Start the Web management UI |
-| `zen web open` | Open the Web UI in browser |
-| `zen web stop` | Stop the Web server |
-| `zen web restart` | Restart the Web server |
+| `zen web` | Open the Web management UI in browser |
 | `zen upgrade` | Upgrade to the latest version |
 | `zen version` | Show version |
+
+## Daemon Architecture
+
+In v2.1, GoZen uses a unified daemon process (`zend`) that hosts both the HTTP proxy and the Web UI:
+
+- **Proxy server** runs on port `19841` (configurable via `proxy_port`)
+- **Web UI** runs on port `19840` (configurable via `web_port`)
+- The daemon starts automatically when you run `zen` or `zen web`
+- Config changes are hot-reloaded via file watching
+- Sync auto-push (debounced 2s) and auto-pull are handled by the daemon
+
+```sh
+# Manual daemon management
+zen daemon start          # Start the daemon
+zen daemon stop           # Stop the daemon
+zen daemon restart        # Restart the daemon
+zen daemon status         # Check daemon status
+
+# System service (auto-start on boot)
+zen daemon enable         # Install as system service
+zen daemon disable        # Remove system service
+```
 
 ## Multi-CLI Support
 
@@ -91,11 +121,10 @@ zen supports three AI coding assistant CLIs:
 ### Set Default CLI
 
 ```sh
-# Via TUI
-zen config  # Settings → Default CLI
+zen config default-client
 
-# Via Web UI
-zen web open  # Settings page
+# Or via Web UI
+zen web  # Settings page
 ```
 
 ### Per-Project CLI
@@ -171,48 +200,37 @@ zen unbind
 
 **Priority**: Command-line args > Project binding > Global default
 
-## TUI Config Interface
-
-```sh
-zen config
-```
-
-v1.5 introduces a new Dashboard interface:
-
-- **Left panel**: Providers, Profiles, Project Bindings
-- **Right panel**: Details for the selected item
-- **Keyboard shortcuts**:
-  - `a` - Add new item
-  - `e` - Edit selected item
-  - `d` - Delete selected item
-  - `Tab` - Switch focus
-  - `q` - Back / Quit
-
-Use `--legacy` to switch to the legacy interface.
-
 ## Web Management UI
 
 ```sh
-# Start (runs in background, port 19840)
-zen web start
-
-# Open in browser
-zen web open
-
-# Stop
-zen web stop
-
-# Restart
-zen web restart
+# Open in browser (auto-starts daemon if needed)
+zen web
 ```
 
 Web UI features:
 - Provider and Profile management
 - Project binding management
-- Global settings (default CLI, default profile, port)
+- Global settings (default client, default profile, ports)
 - Config sync settings
-- Request log viewer
+- Request log viewer with auto-refresh
 - Model field autocomplete
+
+### Web UI Security
+
+When the daemon starts for the first time, it auto-generates an access password. Non-local requests (outside 127.0.0.1/::1) require login.
+
+- **Session-based auth** with configurable expiry
+- **Brute-force protection** with exponential backoff
+- **RSA encryption** for sensitive token transport (API keys encrypted in-browser before sending)
+- Local access (127.0.0.1) bypasses authentication
+
+```sh
+# Reset the Web UI password
+zen config reset-password
+
+# Change password via Web UI
+zen web  # Settings → Change Password
+```
 
 ## Config Sync
 
@@ -227,7 +245,7 @@ Supported backends:
 ### Setup via Web UI
 
 ```sh
-zen web open  # Settings → Config Sync
+zen web  # Settings → Config Sync
 ```
 
 ### Manual Pull via CLI
@@ -316,16 +334,18 @@ Configuration example:
 | File | Description |
 |------|-------------|
 | `~/.zen/zen.json` | Main configuration file |
-| `~/.zen/proxy.log` | Proxy log |
-| `~/.zen/web.log` | Web server log |
+| `~/.zen/zend.log` | Daemon log |
+| `~/.zen/zend.pid` | Daemon PID file |
+| `~/.zen/logs.db` | Request log database (SQLite) |
 
 ### Full Configuration Example
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "default_profile": "default",
-  "default_cli": "claude",
+  "default_client": "claude",
+  "proxy_port": 19841,
   "web_port": 19840,
   "providers": {
     "anthropic": {
@@ -345,7 +365,7 @@ Configuration example:
   "project_bindings": {
     "/path/to/project": {
       "profile": "work",
-      "cli": "codex"
+      "client": "codex"
     }
   }
 }
@@ -360,6 +380,9 @@ zen upgrade
 # Specific version
 zen upgrade 2.1
 zen upgrade 2.1.0
+
+# Prerelease version
+zen upgrade 2.1.0-alpha.1
 ```
 
 ## Migrating from Older Versions
@@ -381,8 +404,8 @@ go test ./...
 Release: Push a tag and GitHub Actions will build automatically.
 
 ```sh
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ## License

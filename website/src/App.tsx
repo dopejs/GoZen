@@ -11,7 +11,6 @@ import Routing from "@/pages/docs/Routing";
 import Bindings from "@/pages/docs/Bindings";
 import MultiCli from "@/pages/docs/MultiCli";
 import WebUI from "@/pages/docs/WebUI";
-import TUI from "@/pages/docs/TUI";
 import ConfigRef from "@/pages/docs/ConfigRef";
 import ConfigSync from "@/pages/docs/ConfigSync";
 
@@ -32,7 +31,6 @@ export default function App() {
               <Route path="bindings" element={<Bindings />} />
               <Route path="multi-cli" element={<MultiCli />} />
               <Route path="web-ui" element={<WebUI />} />
-              <Route path="tui" element={<TUI />} />
               <Route path="config" element={<ConfigRef />} />
               <Route path="config-sync" element={<ConfigSync />} />
             </Route>

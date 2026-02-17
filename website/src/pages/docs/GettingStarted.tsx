@@ -33,7 +33,7 @@ export default function GettingStarted() {
         <p className="mb-3 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep1")}
         </p>
-        <CodeBlock code="zen config" />
+        <CodeBlock code="zen config add provider" />
 
         <p className="mb-3 mt-6 text-text-secondary">
           {t("docs.gettingStarted.firstRunStep2")}

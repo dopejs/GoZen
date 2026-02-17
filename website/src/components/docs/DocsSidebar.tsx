@@ -8,7 +8,6 @@ import {
   FolderSymlink,
   Terminal,
   Globe,
-  Monitor,
   FileJson,
   RefreshCw,
 } from "lucide-react";
@@ -21,7 +20,6 @@ const navItems = [
   { path: "/docs/bindings", key: "bindings", icon: FolderSymlink },
   { path: "/docs/multi-cli", key: "multiCli", icon: Terminal },
   { path: "/docs/web-ui", key: "webUi", icon: Globe },
-  { path: "/docs/tui", key: "tui", icon: Monitor },
   { path: "/docs/config", key: "config", icon: FileJson },
   { path: "/docs/config-sync", key: "configSync", icon: RefreshCw },
 ];

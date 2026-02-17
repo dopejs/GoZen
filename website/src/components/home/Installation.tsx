@@ -8,7 +8,7 @@ const steps = [
   },
   {
     key: "step2",
-    code: "zen config",
+    code: "zen config add provider",
   },
   {
     key: "step3",

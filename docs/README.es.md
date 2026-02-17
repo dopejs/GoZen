@@ -14,15 +14,16 @@ Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutac
 
 - **Soporte multi-CLI** — Compatible con Claude Code, Codex y OpenCode, configurable por proyecto
 - **Gestión multi-configuración** — Gestiona todas las configuraciones de API en `~/.zen/zen.json`
+- **Daemon unificado** — Un único proceso `zend` aloja tanto el servidor proxy como la interfaz web
 - **Conmutación por fallos del proxy** — Proxy HTTP integrado que cambia automáticamente a proveedores de respaldo cuando el principal no está disponible
 - **Enrutamiento por escenarios** — Enrutamiento inteligente basado en características de la solicitud (thinking, image, longContext, etc.)
 - **Vinculación de proyectos** — Vincula directorios a perfiles y CLIs específicos para configuración automática por proyecto
 - **Variables de entorno** — Configura variables de entorno específicas por CLI a nivel de proveedor
-- **Interfaz TUI** — Interfaz de terminal interactiva con modos Dashboard y legado
-- **Interfaz web de gestión** — Gestión visual desde el navegador para proveedores, perfiles y vinculaciones de proyectos
+- **Interfaz web de gestión** — Gestión visual desde el navegador con acceso protegido por contraseña
+- **Seguridad web** — Contraseña de acceso autogenerada, autenticación basada en sesiones, cifrado RSA para transporte de tokens
 - **Sincronización de configuración** — Sincroniza proveedores, perfiles y ajustes entre dispositivos vía WebDAV, S3, GitHub Gist o GitHub Repo con cifrado AES-256-GCM
 - **Verificación de actualizaciones** — Verificación automática no bloqueante de nuevas versiones al iniciar (caché de 24h)
-- **Autoactualización** — Actualización con un solo comando vía `zen upgrade` con coincidencia de versiones semver
+- **Autoactualización** — Actualización con un solo comando vía `zen upgrade` con coincidencia de versiones semver (compatible con versiones preliminares)
 - **Autocompletado de Shell** — Compatible con zsh / bash / fish
 
 ## Instalación
@@ -40,8 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/uninstall.sh | sh
 ## Inicio rápido
 
 ```sh
-# Abrir la interfaz TUI y crear el primer proveedor
-zen config
+# Añadir el primer proveedor
+zen config add provider
 
 # Iniciar (usando el perfil predeterminado)
 zen
@@ -64,19 +65,48 @@ zen --cli codex
 | `zen use <provider>` | Usar directamente un proveedor específico (sin proxy) |
 | `zen pick` | Seleccionar interactivamente un proveedor para iniciar |
 | `zen list` | Listar todos los proveedores y perfiles |
-| `zen config` | Abrir la interfaz TUI de configuración |
+| `zen config` | Mostrar subcomandos de configuración |
+| `zen config add provider` | Añadir un nuevo proveedor |
+| `zen config add profile` | Añadir un nuevo perfil |
+| `zen config default-client` | Establecer el cliente CLI predeterminado |
+| `zen config default-profile` | Establecer el perfil predeterminado |
+| `zen config reset-password` | Restablecer la contraseña de acceso a la interfaz web |
 | `zen config sync` | Obtener configuración del backend de sincronización remoto |
-| `zen config --legacy` | Usar la interfaz TUI legada |
+| `zen daemon start` | Iniciar el daemon zend |
+| `zen daemon stop` | Detener el daemon |
+| `zen daemon restart` | Reiniciar el daemon |
+| `zen daemon status` | Mostrar estado del daemon |
+| `zen daemon enable` | Instalar el daemon como servicio del sistema |
+| `zen daemon disable` | Desinstalar el servicio del sistema |
 | `zen bind <profile>` | Vincular el directorio actual a un perfil |
 | `zen bind --cli <cli>` | Vincular el directorio actual a un CLI específico |
 | `zen unbind` | Eliminar la vinculación del directorio actual |
 | `zen status` | Mostrar el estado de vinculación del directorio actual |
-| `zen web start` | Iniciar la interfaz web de gestión |
-| `zen web open` | Abrir la interfaz web en el navegador |
-| `zen web stop` | Detener el servidor web |
-| `zen web restart` | Reiniciar el servidor web |
+| `zen web` | Abrir la interfaz web de gestión en el navegador |
 | `zen upgrade` | Actualizar a la última versión |
 | `zen version` | Mostrar versión |
+
+## Arquitectura del daemon
+
+En v2.1, GoZen utiliza un proceso daemon unificado (`zend`) que aloja tanto el proxy HTTP como la interfaz web:
+
+- **Servidor proxy** ejecutándose en el puerto `19841` (configurable vía `proxy_port`)
+- **Interfaz web** ejecutándose en el puerto `19840` (configurable vía `web_port`)
+- El daemon se inicia automáticamente al ejecutar `zen` o `zen web`
+- Los cambios de configuración se recargan en caliente mediante monitoreo de archivos
+- El auto-push de sincronización (con antirrebote de 2s) y el auto-pull son gestionados por el daemon
+
+```sh
+# Gestión manual del daemon
+zen daemon start          # Iniciar el daemon
+zen daemon stop           # Detener el daemon
+zen daemon restart        # Reiniciar el daemon
+zen daemon status         # Ver estado del daemon
+
+# Servicio del sistema (inicio automático al arrancar)
+zen daemon enable         # Instalar como servicio del sistema
+zen daemon disable        # Eliminar servicio del sistema
+```
 
 ## Soporte multi-CLI
 
@@ -91,11 +121,10 @@ zen es compatible con tres CLIs de asistentes de programación con IA:
 ### Establecer CLI predeterminado
 
 ```sh
-# Vía TUI
-zen config  # Settings → Default CLI
+zen config default-client
 
 # Vía Web UI
-zen web open  # Página de Settings
+zen web  # Página de Settings
 ```
 
 ### CLI por proyecto
@@ -171,48 +200,37 @@ zen unbind
 
 **Prioridad**: Argumentos de línea de comandos > Vinculación de proyecto > Predeterminado global
 
-## Interfaz TUI de configuración
-
-```sh
-zen config
-```
-
-v1.5 introduce una nueva interfaz Dashboard:
-
-- **Panel izquierdo**: Proveedores, Perfiles, Vinculaciones de proyectos
-- **Panel derecho**: Detalles del elemento seleccionado
-- **Atajos de teclado**:
-  - `a` - Añadir nuevo elemento
-  - `e` - Editar elemento seleccionado
-  - `d` - Eliminar elemento seleccionado
-  - `Tab` - Cambiar foco
-  - `q` - Volver / Salir
-
-Usa `--legacy` para cambiar a la interfaz legada.
-
 ## Interfaz web de gestión
 
 ```sh
-# Iniciar (se ejecuta en segundo plano, puerto 19840)
-zen web start
-
-# Abrir en el navegador
-zen web open
-
-# Detener
-zen web stop
-
-# Reiniciar
-zen web restart
+# Abrir en el navegador (inicia el daemon automáticamente si es necesario)
+zen web
 ```
 
 Funcionalidades de la interfaz web:
 - Gestión de proveedores y perfiles
 - Gestión de vinculaciones de proyectos
-- Configuración global (CLI predeterminado, perfil predeterminado, puerto)
+- Configuración global (cliente predeterminado, perfil predeterminado, puertos)
 - Configuración de sincronización
-- Visor de registros de solicitudes
+- Visor de registros de solicitudes con actualización automática
 - Autocompletado del campo de modelo
+
+### Seguridad de la interfaz web
+
+Al iniciar el daemon por primera vez, se genera automáticamente una contraseña de acceso. Las solicitudes no locales (fuera de 127.0.0.1/::1) requieren inicio de sesión.
+
+- **Autenticación basada en sesiones** con expiración configurable
+- **Protección contra fuerza bruta** con retroceso exponencial
+- **Cifrado RSA** para transporte de tokens sensibles (las claves API se cifran en el navegador antes de enviar)
+- El acceso local (127.0.0.1) no requiere autenticación
+
+```sh
+# Restablecer la contraseña de la interfaz web
+zen config reset-password
+
+# Cambiar contraseña vía Web UI
+zen web  # Settings → Change Password
+```
 
 ## Sincronización de configuración
 
@@ -227,7 +245,7 @@ Backends compatibles:
 ### Configuración vía Web UI
 
 ```sh
-zen web open  # Settings → Config Sync
+zen web  # Settings → Config Sync
 ```
 
 ### Pull manual vía CLI
@@ -316,16 +334,18 @@ Ejemplo de configuración:
 | Archivo | Descripción |
 |---------|-------------|
 | `~/.zen/zen.json` | Archivo de configuración principal |
-| `~/.zen/proxy.log` | Registro del proxy |
-| `~/.zen/web.log` | Registro del servidor web |
+| `~/.zen/zend.log` | Registro del daemon |
+| `~/.zen/zend.pid` | Archivo PID del daemon |
+| `~/.zen/logs.db` | Base de datos de registros de solicitudes (SQLite) |
 
 ### Ejemplo de configuración completa
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "default_profile": "default",
-  "default_cli": "claude",
+  "default_client": "claude",
+  "proxy_port": 19841,
   "web_port": 19840,
   "providers": {
     "anthropic": {
@@ -345,7 +365,7 @@ Ejemplo de configuración:
   "project_bindings": {
     "/path/to/project": {
       "profile": "work",
-      "cli": "codex"
+      "client": "codex"
     }
   }
 }
@@ -360,6 +380,9 @@ zen upgrade
 # Versión específica
 zen upgrade 2.1
 zen upgrade 2.1.0
+
+# Versión preliminar
+zen upgrade 2.1.0-alpha.1
 ```
 
 ## Migración desde versiones anteriores
@@ -381,8 +404,8 @@ go test ./...
 Publicación: Empuja un tag y GitHub Actions compilará automáticamente.
 
 ```sh
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ## License

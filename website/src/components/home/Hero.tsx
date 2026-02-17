@@ -1,13 +1,13 @@
-import { useTranslation } from "react-i18next";
-import { Link } from "react-router";
-import { useState } from "react";
-import { Check, Copy, ArrowRight } from "lucide-react";
+import {useState} from 'react';
+import {translate} from '@docusaurus/Translate';
+import Link from '@docusaurus/Link';
+import {Check, Copy, ArrowRight} from 'lucide-react';
+import styles from './Hero.module.scss';
 
 const installCmd =
   'curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh';
 
 export function Hero() {
-  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -17,69 +17,51 @@ export function Hero() {
   };
 
   return (
-    <section className="relative overflow-hidden py-20 sm:py-32">
-      {/* Background gradient */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="h-[500px] w-[800px] rounded-full bg-teal/5 blur-[120px]" />
+    <section className={styles.hero}>
+      <div className={styles.bgGlow}>
+        <div className={styles.bgGlowInner} />
       </div>
-
-      <div className="relative mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-bg-surface px-4 py-1.5 text-sm text-text-secondary">
-          <span className="inline-block h-2 w-2 rounded-full bg-teal" />
+      <div className={styles.container}>
+        <div className={styles.badge}>
+          <span className={styles.badgeDot} />
           Open Source CLI Tool
         </div>
-
-        <h1 className="mb-6 text-4xl font-bold tracking-tight text-text-primary sm:text-5xl lg:text-6xl">
-          <span className="text-teal">GoZen</span>
-          <span className="mt-4 block">{t("hero.title")}</span>
+        <h1 className={styles.title}>
+          <span className={styles.titleAccent}>GoZen</span>
+          <span style={{display: 'block', marginTop: '1rem'}}>
+            {translate({id: 'hero.title', message: 'Multi-CLI Environment Switcher'})}
+          </span>
         </h1>
-
-        <p className="mx-auto mb-6 max-w-2xl text-lg text-text-secondary">
-          {t("hero.subtitle")}
+        <p className={styles.subtitle}>
+          {translate({id: 'hero.subtitle', message: 'Unified management for Claude Code, Codex, and OpenCode configurations with API proxy auto-failover'})}
         </p>
-
-        <p className="mx-auto inline-flex flex-col gap-2 mb-10 text-left pl-4 text-sm italic text-text-muted border-l-2 border-teal">
-          <span className="flex flex-row"><strong className="w-[80px]">Go Zen</strong>{t("hero.tagline-1")}</span>
-          <span className="flex flex-row"><strong className="w-[80px] inline-block">Goes Env</strong>{t("hero.tagline-2")}</span>
+        <p className={styles.tagline}>
+          <span className={styles.taglineRow}>
+            <strong className={styles.taglineLabel}>Go Zen</strong>
+            {translate({id: 'hero.tagline-1', message: 'enter a zen-like flow state for programming.'})}
+          </span>
+          <span className={styles.taglineRow}>
+            <strong className={styles.taglineLabel}>Goes Env</strong>
+            {translate({id: 'hero.tagline-2', message: 'seamless environment switching.'})}
+          </span>
         </p>
-
-        {/* Install command */}
-        <div className="mx-auto mb-8 max-w-3xl">
-          <div
-            onClick={handleCopy}
-            className="group flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-bg-surface px-5 py-4 transition-all hover:border-border-strong hover:shadow-lg"
-          >
-            <span className="shrink-0 text-text-muted">$</span>
-            <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-              <code className="whitespace-nowrap text-left text-sm text-text-primary">
-                {installCmd}
-              </code>
+        <div className={styles.installBox}>
+          <div className={styles.installCmd} onClick={handleCopy} role="button" tabIndex={0}>
+            <span className={styles.dollar}>$</span>
+            <div className={styles.cmdText}>
+              <code className={styles.cmdCode}>{installCmd}</code>
             </div>
-            <span className="shrink-0 text-text-muted transition-colors group-hover:text-text-primary">
-              {copied ? (
-                <Check className="h-4 w-4 text-teal" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
+            <span className={copied ? styles.copiedIcon : styles.copyIcon}>
+              {copied ? <Check size={16} /> : <Copy size={16} />}
             </span>
           </div>
         </div>
-
-        {/* CTA buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <Link
-            to="/docs/getting-started"
-            className="inline-flex items-center gap-2 rounded-xl bg-teal px-6 py-3 text-sm font-semibold text-bg-base shadow-[0_1px_3px_rgba(94,234,212,0.2)] transition-all no-underline hover:shadow-[0_2px_8px_rgba(94,234,212,0.3)]"
-          >
-            {t("hero.getDocs")}
-            <ArrowRight className="h-4 w-4" />
+        <div className={styles.cta}>
+          <Link to="/docs/getting-started" className={styles.ctaPrimary}>
+            {translate({id: 'hero.getDocs', message: 'Documentation'})}
+            <ArrowRight size={16} />
           </Link>
-          <a
-            href="https://github.com/dopejs/gozen"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-bg-surface px-6 py-3 text-sm font-semibold text-text-primary transition-all no-underline hover:border-border-strong hover:bg-bg-elevated"
-          >
+          <a href="https://github.com/dopejs/gozen" target="_blank" rel="noopener noreferrer" className={styles.ctaSecondary}>
             GitHub
           </a>
         </div>

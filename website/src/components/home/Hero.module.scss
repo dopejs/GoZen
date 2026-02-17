@@ -1,0 +1,216 @@
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding: 5rem 0 5rem;
+}
+
+@media (min-width: 640px) {
+  .hero { padding: 8rem 0 8rem; }
+}
+
+.bgGlow {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bgGlowInner {
+  height: 500px;
+  width: 800px;
+  border-radius: 9999px;
+  background: rgba(var(--zen-teal-rgb, 94, 234, 212), 0.05);
+  filter: blur(120px);
+}
+
+.container {
+  position: relative;
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-surface);
+  padding: 0.375rem 1rem;
+  font-size: 0.875rem;
+  color: var(--zen-text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+.badgeDot {
+  display: inline-block;
+  height: 0.5rem;
+  width: 0.5rem;
+  border-radius: 9999px;
+  background: var(--zen-teal);
+}
+
+.title {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--zen-text-primary);
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .title { font-size: 3rem; }
+}
+@media (min-width: 1024px) {
+  .title { font-size: 3.75rem; }
+}
+
+.titleAccent {
+  color: var(--zen-teal);
+}
+
+.subtitle {
+  max-width: 42rem;
+  margin: 0 auto 1.5rem;
+  font-size: 1.125rem;
+  color: var(--zen-text-secondary);
+}
+
+.tagline {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 2.5rem;
+  text-align: left;
+  padding-left: 1rem;
+  font-size: 0.875rem;
+  font-style: italic;
+  color: var(--zen-text-muted);
+  border-left: 2px solid var(--zen-teal);
+}
+
+.taglineRow {
+  display: flex;
+  flex-direction: row;
+}
+
+.taglineLabel {
+  width: 80px;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.installBox {
+  max-width: 48rem;
+  margin: 0 auto 2rem;
+}
+
+.installCmd {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-surface);
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.installCmd:hover {
+  border-color: var(--zen-border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dollar {
+  flex-shrink: 0;
+  color: var(--zen-text-muted);
+}
+
+.cmdText {
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.cmdText::-webkit-scrollbar {
+  display: none;
+}
+
+.cmdCode {
+  white-space: nowrap;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--zen-text-primary);
+}
+
+.copyIcon {
+  flex-shrink: 0;
+  color: var(--zen-text-muted);
+  transition: color 0.15s;
+}
+
+.installCmd:hover .copyIcon {
+  color: var(--zen-text-primary);
+}
+
+.copiedIcon {
+  color: var(--zen-teal);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.ctaPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  background: var(--zen-teal);
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--zen-bg-base);
+  text-decoration: none;
+  transition: all 0.15s;
+  box-shadow: 0 1px 3px rgba(94, 234, 212, 0.2);
+}
+
+.ctaPrimary:hover {
+  box-shadow: 0 2px 8px rgba(94, 234, 212, 0.3);
+  color: var(--zen-bg-base);
+  text-decoration: none;
+}
+
+.ctaSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-surface);
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--zen-text-primary);
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.ctaSecondary:hover {
+  border-color: var(--zen-border-strong);
+  background: var(--zen-bg-elevated);
+  color: var(--zen-text-primary);
+  text-decoration: none;
+}

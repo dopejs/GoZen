@@ -1,0 +1,81 @@
+.section {
+  padding: 5rem 0;
+}
+
+.container {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (min-width: 640px) {
+  .container { padding: 0 1.5rem; }
+}
+
+.heading {
+  margin-bottom: 3rem;
+  text-align: center;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--zen-text-primary);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--zen-border);
+  background: var(--zen-bg-surface);
+  -webkit-overflow-scrolling: touch;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tableWrap::-webkit-scrollbar {
+  display: none;
+}
+
+.tableInner {
+  min-width: 480px;
+}
+
+.tableHeader {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 2fr;
+  border-bottom: 1px solid var(--zen-border);
+  background: var(--zen-bg-elevated);
+  padding: 0.75rem 1.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--zen-text-muted);
+}
+
+.tableBody {
+  & > div + div {
+    border-top: 1px solid var(--zen-border);
+  }
+}
+
+.tableRow {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 2fr;
+  padding: 0.75rem 1.25rem;
+  transition: background 0.15s;
+}
+
+.tableRow:hover {
+  background: color-mix(in srgb, var(--zen-bg-elevated) 50%, transparent);
+}
+
+.cmdCode {
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: var(--zen-teal);
+}
+
+.cmdDesc {
+  font-size: 0.875rem;
+  color: var(--zen-text-secondary);
+}

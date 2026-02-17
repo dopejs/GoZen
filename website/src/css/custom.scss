@@ -1,0 +1,112 @@
+/* GoZen brand colors mapped to Infima CSS variables */
+
+:root {
+  --ifm-color-primary: #0d9488;
+  --ifm-color-primary-dark: #0b8278;
+  --ifm-color-primary-darker: #0a7a71;
+  --ifm-color-primary-darkest: #08655d;
+  --ifm-color-primary-light: #0fa698;
+  --ifm-color-primary-lighter: #10ae9f;
+  --ifm-color-primary-lightest: #14c4b3;
+  --ifm-background-color: #f8fafc;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-font-color-base: #0f172a;
+  --ifm-font-color-secondary: #475569;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  /* Brand tokens */
+  --zen-teal: #0d9488;
+  --zen-teal-dim: rgba(13, 148, 136, 0.1);
+  --zen-lavender: #7c3aed;
+  --zen-lavender-dim: rgba(124, 58, 237, 0.1);
+  --zen-sage: #86efac;
+  --zen-red: #fb7185;
+  --zen-amber: #fbbf24;
+  --zen-blue: #93c5fd;
+  --zen-bg-base: #f8fafc;
+  --zen-bg-surface: #ffffff;
+  --zen-bg-elevated: #f1f5f9;
+  --zen-bg-overlay: #e2e8f0;
+  --zen-text-primary: #0f172a;
+  --zen-text-secondary: #475569;
+  --zen-text-muted: #64748b;
+  --zen-border: rgba(0, 0, 0, 0.08);
+  --zen-border-strong: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #5eead4;
+  --ifm-color-primary-dark: #3de5ca;
+  --ifm-color-primary-darker: #2de2c5;
+  --ifm-color-primary-darkest: #1bc4a8;
+  --ifm-color-primary-light: #7fefde;
+  --ifm-color-primary-lighter: #8ff1e3;
+  --ifm-color-primary-lightest: #b0f5ea;
+  --ifm-background-color: #0f1117;
+  --ifm-background-surface-color: #181a24;
+  --ifm-font-color-base: #e2e8f0;
+  --ifm-font-color-secondary: #94a3b8;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+
+  --zen-teal: #5eead4;
+  --zen-teal-dim: rgba(94, 234, 212, 0.12);
+  --zen-lavender: #c4b5fd;
+  --zen-lavender-dim: rgba(196, 181, 253, 0.12);
+  --zen-bg-base: #0f1117;
+  --zen-bg-surface: #181a24;
+  --zen-bg-elevated: #1e2030;
+  --zen-bg-overlay: #252837;
+  --zen-text-primary: #e2e8f0;
+  --zen-text-secondary: #94a3b8;
+  --zen-text-muted: #64748b;
+  --zen-border: rgba(255, 255, 255, 0.06);
+  --zen-border-strong: rgba(255, 255, 255, 0.1);
+
+  --ifm-navbar-background-color: #181a24;
+  --ifm-footer-background-color: #0f1117;
+}
+
+/* Global styles */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--zen-border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--zen-text-muted);
+}
+
+/* Navbar logo mask for SVG coloring */
+.navbar__logo img {
+  height: 28px;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

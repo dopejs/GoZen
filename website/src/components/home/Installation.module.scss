@@ -1,0 +1,79 @@
+.section {
+  padding: 5rem 0;
+}
+
+.container {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (min-width: 640px) {
+  .container { padding: 0 1.5rem; }
+}
+
+.heading {
+  margin-bottom: 3rem;
+  text-align: center;
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--zen-text-primary);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.step {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.stepLeft {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stepNumber {
+  display: flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--zen-teal);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--zen-bg-base);
+}
+
+.stepLine {
+  width: 1px;
+  flex: 1;
+  margin: 0.5rem 0;
+  background: var(--zen-border);
+}
+
+.stepContent {
+  flex: 1;
+  padding-bottom: 1rem;
+  overflow: hidden;
+}
+
+.stepTitle {
+  margin-bottom: 0.25rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--zen-text-primary);
+}
+
+.stepDesc {
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--zen-text-secondary);
+}

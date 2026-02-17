@@ -1,0 +1,7 @@
+{
+  "title": {"message": "GoZen"},
+  "logo.alt": {"message": "GoZen Logo"},
+  "item.label.Docs": {"message": "Documentos"},
+  "item.label.Releases": {"message": "Lanzamientos"},
+  "item.label.GitHub": {"message": "GitHub"}
+}

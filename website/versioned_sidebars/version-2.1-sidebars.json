@@ -1,0 +1,13 @@
+{
+  "docs": [
+    "getting-started",
+    "providers",
+    "profiles",
+    "routing",
+    "bindings",
+    "multi-cli",
+    "web-ui",
+    "config",
+    "config-sync"
+  ]
+}

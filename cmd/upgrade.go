@@ -23,12 +23,15 @@ var upgradeCmd = &cobra.Command{
 	Use:   "upgrade [version]",
 	Short: "Upgrade zen to latest or specified version",
 	Long: `Upgrade zen to the latest version, or a specific version.
+Prereleases (alpha/beta) are only installed when explicitly requested.
 
 Examples:
-  zen upgrade          # latest version
-  zen upgrade 2        # latest 2.x.x
-  zen upgrade 2.1      # latest 2.1.x
-  zen upgrade 2.1.0    # exact version 2.1.0`,
+  zen upgrade                  # latest stable version
+  zen upgrade 2                # latest stable 2.x.x
+  zen upgrade 2.1              # latest stable 2.1.x
+  zen upgrade 2.1.0            # exact version 2.1.0
+  zen upgrade 2.1.0-alpha      # latest 2.1.0-alpha.x prerelease
+  zen upgrade 2.1.0-alpha.1    # exact prerelease`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runUpgrade,
 }
@@ -36,7 +39,8 @@ Examples:
 const repoAPI = "https://api.github.com/repos/dopejs/gozen/releases"
 
 type ghRelease struct {
-	TagName string `json:"tag_name"`
+	TagName    string `json:"tag_name"`
+	Prerelease bool   `json:"prerelease"`
 }
 
 func runUpgrade(cmd *cobra.Command, args []string) error {
@@ -173,7 +177,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 // shouldUseTarball returns true if the version should use tar.gz format.
 // v1.4.0+ uses tar.gz, earlier versions use raw binary.
 func shouldUseTarball(version string) bool {
-	parts := strings.Split(version, ".")
+	base, _ := splitPrerelease(version)
+	parts := strings.Split(base, ".")
 	if len(parts) < 2 {
 		return false
 	}
@@ -297,7 +302,8 @@ func formatBytes(b int64) string {
 }
 
 // resolveVersion finds the best matching version for the given prefix.
-// "" → latest, "1" → latest 1.x.x, "1.2" → latest 1.2.x, "1.2.3" → exact
+// "" → latest stable, "1" → latest 1.x.x, "1.2" → latest 1.2.x, "1.2.3" → exact
+// Prereleases are excluded unless the prefix contains "-" (e.g. "2.1.0-alpha").
 func resolveVersion(prefix string) (string, error) {
 	resp, err := http.Get(repoAPI)
 	if err != nil {
@@ -319,8 +325,14 @@ func resolveVersion(prefix string) (string, error) {
 		return "", fmt.Errorf("failed to parse releases: %w", err)
 	}
 
+	prefix = strings.TrimPrefix(prefix, "v")
+	includePrerelease := strings.Contains(prefix, "-")
+
 	var versions []string
 	for _, r := range releases {
+		if r.Prerelease && !includePrerelease {
+			continue
+		}
 		v := strings.TrimPrefix(r.TagName, "v")
 		if v != "" {
 			versions = append(versions, v)
@@ -337,7 +349,6 @@ func resolveVersion(prefix string) (string, error) {
 	}
 
 	// Filter by prefix match
-	prefix = strings.TrimPrefix(prefix, "v")
 	var matched []string
 	for _, v := range versions {
 		if matchVersionPrefix(v, prefix) {
@@ -355,8 +366,17 @@ func resolveVersion(prefix string) (string, error) {
 
 // matchVersionPrefix checks if version matches the given prefix.
 // "1" matches "1.x.x", "1.2" matches "1.2.x", "1.2.3" matches exactly.
+// If prefix contains "-", it matches including the prerelease suffix:
+// "2.1.0-alpha" matches "2.1.0-alpha.1", "2.1.0-alpha.2", etc.
 func matchVersionPrefix(version, prefix string) bool {
-	vParts := strings.Split(version, ".")
+	if strings.Contains(prefix, "-") {
+		// Prerelease prefix: match full string as prefix
+		return strings.HasPrefix(version, prefix)
+	}
+
+	// Strip prerelease from version for base matching
+	vBase, _ := splitPrerelease(version)
+	vParts := strings.Split(vBase, ".")
 	pParts := strings.Split(prefix, ".")
 
 	for i, p := range pParts {
@@ -377,10 +397,26 @@ func sortVersions(versions []string) {
 	})
 }
 
+// splitPrerelease splits a version into base and prerelease parts.
+// e.g. "2.1.0-alpha.1" → ("2.1.0", "alpha.1"), "2.1.0" → ("2.1.0", "")
+func splitPrerelease(v string) (string, string) {
+	// Find first '-' that comes after the base version (digits and dots)
+	idx := strings.Index(v, "-")
+	if idx < 0 {
+		return v, ""
+	}
+	return v[:idx], v[idx+1:]
+}
+
 // compareVersions returns -1, 0, or 1.
+// Handles prerelease suffixes per semver: 2.1.0 > 2.1.0-beta.1 > 2.1.0-alpha.2 > 2.1.0-alpha.1
 func compareVersions(a, b string) int {
-	ap := strings.Split(a, ".")
-	bp := strings.Split(b, ".")
+	aBase, aPre := splitPrerelease(a)
+	bBase, bPre := splitPrerelease(b)
+
+	// Compare base versions numerically
+	ap := strings.Split(aBase, ".")
+	bp := strings.Split(bBase, ".")
 
 	maxLen := len(ap)
 	if len(bp) > maxLen {
@@ -400,6 +436,51 @@ func compareVersions(a, b string) int {
 		}
 		if ai > bi {
 			return 1
+		}
+	}
+
+	// Bases are equal — compare prerelease
+	if aPre == "" && bPre == "" {
+		return 0
+	}
+	// No prerelease > has prerelease (stable wins)
+	if aPre == "" {
+		return 1
+	}
+	if bPre == "" {
+		return -1
+	}
+
+	// Both have prerelease: compare parts lexically/numerically
+	aParts := strings.Split(aPre, ".")
+	bParts := strings.Split(bPre, ".")
+	maxPre := len(aParts)
+	if len(bParts) > maxPre {
+		maxPre = len(bParts)
+	}
+	for i := 0; i < maxPre; i++ {
+		if i >= len(aParts) {
+			return -1 // fewer parts = lower precedence
+		}
+		if i >= len(bParts) {
+			return 1
+		}
+		ai, aErr := strconv.Atoi(aParts[i])
+		bi, bErr := strconv.Atoi(bParts[i])
+		if aErr == nil && bErr == nil {
+			if ai < bi {
+				return -1
+			}
+			if ai > bi {
+				return 1
+			}
+		} else {
+			if aParts[i] < bParts[i] {
+				return -1
+			}
+			if aParts[i] > bParts[i] {
+				return 1
+			}
 		}
 	}
 	return 0

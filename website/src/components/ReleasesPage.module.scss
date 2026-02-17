@@ -94,9 +94,9 @@
 }
 
 .content {
-  width: calc(100% - 220px - 2rem);
-  flex-shrink: 0;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 768px) {
@@ -139,6 +139,7 @@
   font-size: 0.9375rem;
   line-height: 1.7;
   color: var(--zen-text-secondary);
+  overflow-wrap: break-word;
 
   h1, h2, h3 {
     color: var(--zen-text-primary);

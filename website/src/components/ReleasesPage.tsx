@@ -21,13 +21,16 @@ function formatDate(iso: string): string {
 function renderMarkdown(body: string): string {
   // Merge duplicate "Full Changelog" lines into one
   const changelogUrls: string[] = [];
-  const cleaned = body.replace(
+  let cleaned = body.replace(
     /\*?\*?Full Changelog\*?\*?:\s*(https?:\/\/[^\s]+)/g,
     (_match, url) => {
       changelogUrls.push(url);
       return '';
     },
   );
+
+  // Trim and collapse blank lines
+  cleaned = cleaned.trim().replace(/\n{3,}/g, '\n\n');
 
   let result = cleaned
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
@@ -38,8 +41,11 @@ function renderMarkdown(body: string): string {
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
     .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/\n{2,}/g, '<br/><br/>')
-    .replace(/\n/g, '<br/>');
+    .replace(/\n\n/g, '<br/>')
+    .replace(/\n/g, ' ');
+
+  // Remove trailing/leading <br/> tags
+  result = result.replace(/^(<br\s*\/?>)+/, '').replace(/(<br\s*\/?>)+$/, '');
 
   // Append single merged changelog link at the end
   if (changelogUrls.length > 0) {

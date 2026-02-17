@@ -51,6 +51,7 @@ type Store struct {
 	path     string
 	config   *OpenCCConfig
 	modTime  time.Time // last known modification time of config file
+	onSave   func()    // called after saveLocked() succeeds
 }
 
 var (
@@ -567,6 +568,10 @@ func (s *Store) saveLocked() error {
 	if info, statErr := os.Stat(s.path); statErr == nil {
 		s.modTime = info.ModTime()
 	}
+	// Notify save callback (e.g. sync auto-push)
+	if s.onSave != nil {
+		go s.onSave()
+	}
 	return nil
 }
 
@@ -597,6 +602,38 @@ func (s *Store) ensureConfig() {
 	if s.config.Version == 0 {
 		s.config.Version = CurrentConfigVersion
 	}
+}
+
+// --- Save callback ---
+
+// SetOnSave registers a callback that is invoked (in a goroutine) after every successful save.
+func (s *Store) SetOnSave(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onSave = fn
+}
+
+// --- Sync Config ---
+
+// GetSyncConfig returns the sync configuration, or nil if not configured.
+func (s *Store) GetSyncConfig() *SyncConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Sync
+}
+
+// SetSyncConfig sets the sync configuration and saves.
+func (s *Store) SetSyncConfig(cfg *SyncConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Sync = cfg
+	return s.saveLocked()
 }
 
 // --- helpers ---

@@ -364,6 +364,136 @@
           </button>
         </div>
         <div id="bindings-list" class="bindings-container"></div>
+
+        <div class="form-divider"><span>Config Sync</span></div>
+        <p class="section-desc">Sync providers, profiles, and settings across devices. Tokens are encrypted with AES-256-GCM before upload.</p>
+        <div id="sync-status-bar" class="sync-status-bar" style="display:none"></div>
+        <form id="sync-form">
+          <div class="form-group">
+            <label for="sync-backend">Backend</label>
+            <select id="sync-backend">
+              <option value="">Disabled</option>
+              <option value="webdav">WebDAV</option>
+              <option value="s3">S3</option>
+              <option value="gist">GitHub Gist</option>
+              <option value="repo">GitHub Repo</option>
+            </select>
+          </div>
+          <div id="sync-fields-webdav" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-webdav-endpoint">WebDAV URL</label>
+              <input type="url" id="sync-webdav-endpoint" placeholder="https://dav.example.com/zen-sync.json" autocomplete="off">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-webdav-username">Username</label>
+                <input type="text" id="sync-webdav-username" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-webdav-password">Password</label>
+                <input type="password" id="sync-webdav-password" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-s3" class="sync-backend-fields" style="display:none">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-s3-endpoint">S3 Endpoint</label>
+                <input type="text" id="sync-s3-endpoint" placeholder="s3.amazonaws.com" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-s3-region">Region</label>
+                <input type="text" id="sync-s3-region" placeholder="us-east-1" autocomplete="off">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="sync-s3-bucket">Bucket</label>
+              <input type="text" id="sync-s3-bucket" placeholder="my-zen-sync" autocomplete="off">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-s3-access-key">Access Key</label>
+                <input type="text" id="sync-s3-access-key" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-s3-secret-key">Secret Key</label>
+                <input type="password" id="sync-s3-secret-key" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-gist" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-gist-token">GitHub PAT <span class="label-hint">(<a href="https://github.com/settings/tokens/new?scopes=gist&description=GoZen+Sync" target="_blank" rel="noopener">create token</a> with <code>gist</code> scope)</span></label>
+              <input type="password" id="sync-gist-token" autocomplete="off" placeholder="ghp_...">
+            </div>
+            <div class="form-group">
+              <label for="sync-gist-id">Gist ID <span class="label-hint">(or create one automatically)</span></label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="sync-gist-id" autocomplete="off" placeholder="abc123..." style="flex:1">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-create-gist">Create Gist</button>
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-repo" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-repo-token">GitHub PAT <span class="label-hint">(<a href="https://github.com/settings/tokens/new?scopes=repo&description=GoZen+Sync" target="_blank" rel="noopener">create token</a> with <code>repo</code> scope)</span></label>
+              <input type="password" id="sync-repo-token" autocomplete="off" placeholder="ghp_...">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-repo-owner">Owner</label>
+                <input type="text" id="sync-repo-owner" autocomplete="off" placeholder="username">
+              </div>
+              <div class="form-group">
+                <label for="sync-repo-name">Repository</label>
+                <input type="text" id="sync-repo-name" autocomplete="off" placeholder="my-zen-config">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-repo-path">File Path</label>
+                <input type="text" id="sync-repo-path" autocomplete="off" placeholder="zen-sync.json">
+              </div>
+              <div class="form-group">
+                <label for="sync-repo-branch">Branch</label>
+                <input type="text" id="sync-repo-branch" autocomplete="off" placeholder="main">
+              </div>
+            </div>
+          </div>
+          <div id="sync-common-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-passphrase">Encryption Passphrase</label>
+              <input type="password" id="sync-passphrase" autocomplete="off" placeholder="Enter passphrase to encrypt tokens">
+              <p class="form-hint">Used to encrypt auth tokens before upload. Must be the same on all devices.</p>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="toggle-label">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="sync-auto-pull">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  Auto Pull
+                </label>
+              </div>
+              <div class="form-group">
+                <label for="sync-pull-interval">Pull Interval</label>
+                <select id="sync-pull-interval">
+                  <option value="60">1 min</option>
+                  <option value="300" selected>5 min</option>
+                  <option value="600">10 min</option>
+                  <option value="1800">30 min</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </form>
+        <div id="sync-actions" class="sync-actions" style="display:none">
+          <button class="btn btn-primary" id="btn-save-sync">Save Sync Settings</button>
+          <button class="btn btn-ghost" id="btn-test-sync">Test Connection</button>
+          <button class="btn btn-ghost" id="btn-sync-pull">Pull Now</button>
+          <button class="btn btn-ghost" id="btn-sync-push">Push Now</button>
+        </div>
       </section>
     </div>
   </div>

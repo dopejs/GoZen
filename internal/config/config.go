@@ -257,6 +257,26 @@ type ProjectBinding struct {
 	Client  string `json:"client,omitempty"`  // client name (empty = use default)
 }
 
+// SyncConfig holds configuration for remote config sync.
+type SyncConfig struct {
+	Backend      string `json:"backend"`                   // "webdav"|"s3"|"gist"|"repo"
+	Endpoint     string `json:"endpoint,omitempty"`        // WebDAV URL or S3 endpoint
+	Bucket       string `json:"bucket,omitempty"`          // S3
+	Region       string `json:"region,omitempty"`          // S3
+	AccessKey    string `json:"access_key,omitempty"`      // S3
+	SecretKey    string `json:"secret_key,omitempty"`      // S3
+	GistID       string `json:"gist_id,omitempty"`         // Gist
+	RepoOwner    string `json:"repo_owner,omitempty"`      // Repo
+	RepoName     string `json:"repo_name,omitempty"`       // Repo
+	RepoPath     string `json:"repo_path,omitempty"`       // Repo (default: "zen-sync.json")
+	RepoBranch   string `json:"repo_branch,omitempty"`     // Repo (default: "main")
+	Token        string `json:"token,omitempty"`           // PAT or WebDAV password
+	Username     string `json:"username,omitempty"`        // WebDAV
+	Passphrase   string `json:"passphrase,omitempty"`      // encryption passphrase (local only)
+	AutoPull     bool   `json:"auto_pull,omitempty"`       // enable periodic pull
+	PullInterval int    `json:"pull_interval,omitempty"`   // seconds (default: 300)
+}
+
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
 	Version         int                         `json:"version,omitempty"`          // config file version
@@ -268,6 +288,7 @@ type OpenCCConfig struct {
 	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
+	Sync            *SyncConfig                 `json:"sync,omitempty"`             // remote sync configuration
 }
 
 // UnmarshalJSON supports multiple config versions:

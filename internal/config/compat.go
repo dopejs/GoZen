@@ -162,3 +162,15 @@ func GetWebPasswordHash() string {
 func SetWebPasswordHash(hash string) error {
 	return DefaultStore().SetWebPasswordHash(hash)
 }
+
+// --- Sync Config convenience functions ---
+
+// GetSyncConfig returns the sync configuration, or nil if not configured.
+func GetSyncConfig() *SyncConfig {
+	return DefaultStore().GetSyncConfig()
+}
+
+// SetSyncConfig sets the sync configuration.
+func SetSyncConfig(cfg *SyncConfig) error {
+	return DefaultStore().SetSyncConfig(cfg)
+}

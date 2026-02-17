@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
 	"github.com/dopejs/gozen/tui"
 	"github.com/spf13/cobra"
@@ -304,6 +307,30 @@ var configResetPasswordCmd = &cobra.Command{
 	},
 }
 
+var configSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Pull config from remote sync backend",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := config.GetSyncConfig()
+		if cfg == nil || cfg.Backend == "" {
+			fmt.Println("Sync not configured. Visit Web UI to set up: zen web")
+			return nil
+		}
+		mgr, err := gosync.NewSyncManager(cfg)
+		if err != nil {
+			return fmt.Errorf("sync init: %w", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		fmt.Printf("Pulling from %s...\n", cfg.Backend)
+		if err := mgr.Pull(ctx); err != nil {
+			return fmt.Errorf("sync pull: %w", err)
+		}
+		fmt.Println("Sync pull completed.")
+		return nil
+	},
+}
+
 func init() {
 	configAddCmd.AddCommand(configAddProviderCmd)
 	configAddCmd.AddCommand(configAddGroupCmd)
@@ -320,4 +347,5 @@ func init() {
 	configCmd.AddCommand(configDefaultClientCmd)
 	configCmd.AddCommand(configDefaultProfileCmd)
 	configCmd.AddCommand(configResetPasswordCmd)
+	configCmd.AddCommand(configSyncCmd)
 }

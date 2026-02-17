@@ -13,6 +13,7 @@ import (
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
+	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
 )
 
@@ -33,6 +34,11 @@ type Daemon struct {
 	// Temporary profiles (for zen pick)
 	tmpMu       sync.RWMutex
 	tmpProfiles map[string]*TempProfile
+
+	// Sync
+	syncMgr    *gosync.SyncManager
+	syncCancel context.CancelFunc // cancels auto-pull ticker
+	pushTimer  *time.Timer        // debounced auto-push
 
 	startTime time.Time
 	proxyPort int
@@ -117,6 +123,9 @@ func (d *Daemon) Start() error {
 	// Start session cleanup goroutine
 	go d.sessionCleanupLoop()
 
+	// Initialize sync if configured
+	d.initSync()
+
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
 	// Start web server (blocks)
@@ -165,6 +174,14 @@ func (d *Daemon) startProxy() error {
 // Shutdown gracefully stops the daemon.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.logger.Println("shutting down zend...")
+
+	// Stop sync auto-pull ticker
+	if d.syncCancel != nil {
+		d.syncCancel()
+	}
+	if d.pushTimer != nil {
+		d.pushTimer.Stop()
+	}
 
 	// Stop config watcher
 	if d.watcher != nil {
@@ -257,7 +274,88 @@ func (d *Daemon) onConfigReload() {
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()
 	}
+	// Reinitialize sync if config changed
+	d.initSync()
 	d.logger.Println("config reloaded successfully")
+}
+
+// initSync initializes or reinitializes the sync manager from current config.
+func (d *Daemon) initSync() {
+	// Stop existing auto-pull
+	if d.syncCancel != nil {
+		d.syncCancel()
+		d.syncCancel = nil
+	}
+
+	cfg := config.GetSyncConfig()
+	if cfg == nil || cfg.Backend == "" {
+		d.syncMgr = nil
+		if d.webServer != nil {
+			d.webServer.SetSyncManager(nil)
+		}
+		return
+	}
+
+	mgr, err := gosync.NewSyncManager(cfg)
+	if err != nil {
+		d.logger.Printf("sync init failed: %v", err)
+		return
+	}
+	d.syncMgr = mgr
+
+	// Pass to web server
+	if d.webServer != nil {
+		d.webServer.SetSyncManager(mgr)
+	}
+
+	// Register auto-push hook (debounced)
+	store := config.DefaultStore()
+	store.SetOnSave(func() {
+		if mgr.IsPulling() {
+			return
+		}
+		if d.pushTimer != nil {
+			d.pushTimer.Stop()
+		}
+		d.pushTimer = time.AfterFunc(2*time.Second, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := mgr.Push(ctx); err != nil {
+				d.logger.Printf("sync auto-push failed: %v", err)
+			} else {
+				d.logger.Println("sync auto-push completed")
+			}
+		})
+	})
+
+	// Start auto-pull ticker if enabled
+	if cfg.AutoPull {
+		interval := time.Duration(cfg.PullInterval) * time.Second
+		if interval < 60*time.Second {
+			interval = 5 * time.Minute // default 5 min
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		d.syncCancel = cancel
+		go func() {
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					pullCtx, pullCancel := context.WithTimeout(ctx, 30*time.Second)
+					if err := mgr.Pull(pullCtx); err != nil {
+						d.logger.Printf("sync auto-pull failed: %v", err)
+					}
+					pullCancel()
+				}
+			}
+		}()
+		d.logger.Printf("sync auto-pull enabled (interval: %s)", interval)
+	}
+
+	d.logger.Printf("sync initialized (backend: %s)", cfg.Backend)
 }
 
 // --- Temporary Profiles ---

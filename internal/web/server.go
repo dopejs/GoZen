@@ -12,6 +12,7 @@ import (
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
+	gosync "github.com/dopejs/gozen/internal/sync"
 )
 
 // Server is the web configuration management server.
@@ -23,6 +24,7 @@ type Server struct {
 	port       int
 	auth       *AuthManager
 	keys       *KeyPair
+	syncMgr    *gosync.SyncManager
 }
 
 // NewServer creates a new web server bound to 127.0.0.1 on the configured port.
@@ -69,6 +71,14 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/bindings", s.handleBindings)
 	s.mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
 
+	// Sync routes
+	s.mux.HandleFunc("/api/v1/sync/config", s.handleSyncConfig)
+	s.mux.HandleFunc("/api/v1/sync/pull", s.handleSyncPull)
+	s.mux.HandleFunc("/api/v1/sync/push", s.handleSyncPush)
+	s.mux.HandleFunc("/api/v1/sync/status", s.handleSyncStatus)
+	s.mux.HandleFunc("/api/v1/sync/test", s.handleSyncTest)
+	s.mux.HandleFunc("/api/v1/sync/create-gist", s.handleSyncCreateGist)
+
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))
@@ -86,6 +96,11 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 // Must be called before Start().
 func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
 	s.mux.HandleFunc(pattern, handler)
+}
+
+// SetSyncManager sets the sync manager for the web server.
+func (s *Server) SetSyncManager(mgr *gosync.SyncManager) {
+	s.syncMgr = mgr
 }
 
 // Start begins listening. Returns an error if the port is already in use.

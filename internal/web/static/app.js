@@ -58,6 +58,7 @@
     loadProviders();
     loadProfiles();
     loadSettings();
+    setupSync();
   }
 
   // --- Theme Toggle ---
@@ -1598,6 +1599,200 @@
       }).catch(function(err) {
         toast(err.message, "error");
       });
+    });
+  }
+
+  // --- Config Sync ---
+
+  function setupSync() {
+    var backendSel = document.getElementById("sync-backend");
+    backendSel.addEventListener("change", toggleSyncFields);
+    document.getElementById("btn-save-sync").addEventListener("click", saveSyncConfig);
+    document.getElementById("btn-test-sync").addEventListener("click", testSyncConnection);
+    document.getElementById("btn-sync-pull").addEventListener("click", syncPull);
+    document.getElementById("btn-sync-push").addEventListener("click", syncPush);
+    document.getElementById("btn-create-gist").addEventListener("click", createGist);
+    loadSyncConfig();
+  }
+
+  function toggleSyncFields() {
+    var backend = document.getElementById("sync-backend").value;
+    var allFields = document.querySelectorAll(".sync-backend-fields");
+    for (var i = 0; i < allFields.length; i++) allFields[i].style.display = "none";
+    var common = document.getElementById("sync-common-fields");
+    var actions = document.getElementById("sync-actions");
+    if (backend) {
+      var fields = document.getElementById("sync-fields-" + backend);
+      if (fields) fields.style.display = "";
+      common.style.display = "";
+      actions.style.display = "";
+    } else {
+      common.style.display = "none";
+      actions.style.display = "none";
+    }
+  }
+
+  function loadSyncConfig() {
+    api("GET", "/sync/config").then(function(data) {
+      if (!data.configured) {
+        document.getElementById("sync-backend").value = "";
+        toggleSyncFields();
+        return;
+      }
+      var c = data.config;
+      document.getElementById("sync-backend").value = c.backend || "";
+      toggleSyncFields();
+      // WebDAV
+      document.getElementById("sync-webdav-endpoint").value = c.endpoint || "";
+      document.getElementById("sync-webdav-username").value = c.username || "";
+      document.getElementById("sync-webdav-password").value = c.token || "";
+      // S3
+      document.getElementById("sync-s3-endpoint").value = c.endpoint || "";
+      document.getElementById("sync-s3-region").value = c.region || "";
+      document.getElementById("sync-s3-bucket").value = c.bucket || "";
+      document.getElementById("sync-s3-access-key").value = c.access_key || "";
+      document.getElementById("sync-s3-secret-key").value = c.secret_key || "";
+      // Gist
+      document.getElementById("sync-gist-token").value = c.token || "";
+      document.getElementById("sync-gist-id").value = c.gist_id || "";
+      // Repo
+      document.getElementById("sync-repo-token").value = c.token || "";
+      document.getElementById("sync-repo-owner").value = c.repo_owner || "";
+      document.getElementById("sync-repo-name").value = c.repo_name || "";
+      document.getElementById("sync-repo-path").value = c.repo_path || "";
+      document.getElementById("sync-repo-branch").value = c.repo_branch || "";
+      // Common
+      document.getElementById("sync-passphrase").value = c.passphrase || "";
+      document.getElementById("sync-auto-pull").checked = !!c.auto_pull;
+      if (c.pull_interval) document.getElementById("sync-pull-interval").value = String(c.pull_interval);
+      loadSyncStatus();
+    }).catch(function() {});
+  }
+
+  function buildSyncConfigPayload() {
+    var backend = document.getElementById("sync-backend").value;
+    var cfg = { backend: backend };
+    if (backend === "webdav") {
+      cfg.endpoint = document.getElementById("sync-webdav-endpoint").value;
+      cfg.username = document.getElementById("sync-webdav-username").value;
+      cfg.token = document.getElementById("sync-webdav-password").value;
+    } else if (backend === "s3") {
+      cfg.endpoint = document.getElementById("sync-s3-endpoint").value;
+      cfg.region = document.getElementById("sync-s3-region").value;
+      cfg.bucket = document.getElementById("sync-s3-bucket").value;
+      cfg.access_key = document.getElementById("sync-s3-access-key").value;
+      cfg.secret_key = document.getElementById("sync-s3-secret-key").value;
+    } else if (backend === "gist") {
+      cfg.token = document.getElementById("sync-gist-token").value;
+      cfg.gist_id = document.getElementById("sync-gist-id").value;
+    } else if (backend === "repo") {
+      cfg.token = document.getElementById("sync-repo-token").value;
+      cfg.repo_owner = document.getElementById("sync-repo-owner").value;
+      cfg.repo_name = document.getElementById("sync-repo-name").value;
+      cfg.repo_path = document.getElementById("sync-repo-path").value;
+      cfg.repo_branch = document.getElementById("sync-repo-branch").value;
+    }
+    cfg.passphrase = document.getElementById("sync-passphrase").value;
+    cfg.auto_pull = document.getElementById("sync-auto-pull").checked;
+    cfg.pull_interval = parseInt(document.getElementById("sync-pull-interval").value) || 300;
+    return cfg;
+  }
+
+  function saveSyncConfig() {
+    var cfg = buildSyncConfigPayload();
+    api("PUT", "/sync/config", cfg).then(function() {
+      toast("Sync settings saved");
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast(err.message, "error");
+    });
+  }
+
+  function testSyncConnection() {
+    var cfg = buildSyncConfigPayload();
+    var btn = document.getElementById("btn-test-sync");
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    api("POST", "/sync/test", cfg).then(function() {
+      toast("Connection successful");
+    }).catch(function(err) {
+      toast("Connection failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Test Connection";
+    });
+  }
+
+  function syncPull() {
+    var btn = document.getElementById("btn-sync-pull");
+    btn.disabled = true;
+    btn.textContent = "Pulling...";
+    api("POST", "/sync/pull").then(function() {
+      toast("Pull completed");
+      loadProviders();
+      loadProfiles();
+      loadSettings();
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast("Pull failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Pull Now";
+    });
+  }
+
+  function syncPush() {
+    var btn = document.getElementById("btn-sync-push");
+    btn.disabled = true;
+    btn.textContent = "Pushing...";
+    api("POST", "/sync/push").then(function() {
+      toast("Push completed");
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast("Push failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Push Now";
+    });
+  }
+
+  function loadSyncStatus() {
+    api("GET", "/sync/status").then(function(data) {
+      var bar = document.getElementById("sync-status-bar");
+      if (!data.configured) {
+        bar.style.display = "none";
+        return;
+      }
+      var parts = [];
+      parts.push("Device: " + esc(data.device_id));
+      if (data.last_pull_at && data.last_pull_at !== "0001-01-01T00:00:00Z") {
+        parts.push("Last pull: " + new Date(data.last_pull_at).toLocaleString());
+      }
+      if (data.last_push_at && data.last_push_at !== "0001-01-01T00:00:00Z") {
+        parts.push("Last push: " + new Date(data.last_push_at).toLocaleString());
+      }
+      bar.textContent = parts.join("  |  ");
+      bar.style.display = "";
+    }).catch(function() {});
+  }
+
+  function createGist() {
+    var token = document.getElementById("sync-gist-token").value;
+    if (!token) {
+      toast("Enter a GitHub PAT first", "error");
+      return;
+    }
+    var btn = document.getElementById("btn-create-gist");
+    btn.disabled = true;
+    btn.textContent = "Creating...";
+    api("POST", "/sync/create-gist", { token: token }).then(function(data) {
+      document.getElementById("sync-gist-id").value = data.gist_id;
+      toast("Gist created: " + data.gist_id);
+    }).catch(function(err) {
+      toast("Failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Create Gist";
     });
   }
 })();

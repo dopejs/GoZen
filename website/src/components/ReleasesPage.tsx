@@ -1,3 +1,4 @@
+import {useState} from 'react';
 import Layout from '@theme/Layout';
 import styles from './ReleasesPage.module.scss';
 
@@ -26,36 +27,58 @@ function renderMarkdown(body: string): string {
     .replace(/`(.+?)`/g, '<code>$1</code>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+    .replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\n{2,}/g, '<br/><br/>')
     .replace(/\n/g, '<br/>');
 }
 
 export default function ReleasesPage(props: {releases: Release[]}) {
   const releases: Release[] = props.releases || [];
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const selected = releases[selectedIdx];
 
   return (
     <Layout title="Releases" description="GoZen release notes">
       <div className={styles.page}>
-        <h1 className={styles.heading}>Releases</h1>
         {releases.length === 0 ? (
           <p className={styles.empty}>No releases found.</p>
         ) : (
-          releases.map((r) => (
-            <div key={r.tag} className={styles.release}>
-              <div className={styles.releaseHeader}>
-                <a href={r.url} target="_blank" rel="noopener noreferrer" className={styles.tag}>
-                  {r.name}
-                </a>
-                <span className={styles.date}>{formatDate(r.date)}</span>
-              </div>
-              {r.body && (
-                <div
-                  className={styles.body}
-                  dangerouslySetInnerHTML={{__html: renderMarkdown(r.body)}}
-                />
+          <div className={styles.layout}>
+            <aside className={styles.sidebar}>
+              <h2 className={styles.sidebarTitle}>Versions</h2>
+              <ul className={styles.versionList}>
+                {releases.map((r, i) => (
+                  <li key={r.tag}>
+                    <button
+                      className={`${styles.versionItem} ${i === selectedIdx ? styles.versionActive : ''}`}
+                      onClick={() => setSelectedIdx(i)}
+                    >
+                      <span className={styles.versionTag}>{r.name}</span>
+                      <span className={styles.versionDate}>{formatDate(r.date)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+            <main className={styles.content}>
+              {selected && (
+                <div className={styles.release}>
+                  <div className={styles.releaseHeader}>
+                    <a href={selected.url} target="_blank" rel="noopener noreferrer" className={styles.tag}>
+                      {selected.name}
+                    </a>
+                    <span className={styles.date}>{formatDate(selected.date)}</span>
+                  </div>
+                  {selected.body && (
+                    <div
+                      className={styles.body}
+                      dangerouslySetInnerHTML={{__html: renderMarkdown(selected.body)}}
+                    />
+                  )}
+                </div>
               )}
-            </div>
-          ))
+            </main>
+          </div>
         )}
       </div>
     </Layout>

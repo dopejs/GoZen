@@ -1,14 +1,7 @@
 .page {
-  max-width: 56rem;
+  max-width: 72rem;
   margin: 0 auto;
-  padding: 3rem 1rem;
-}
-
-.heading {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--zen-text-primary);
-  margin-bottom: 2rem;
+  padding: 2rem 1rem;
 }
 
 .empty {
@@ -17,10 +10,97 @@
   padding: 4rem 0;
 }
 
+.layout {
+  display: flex;
+  gap: 2rem;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    flex-direction: column;
+  }
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
+  align-self: flex-start;
+  max-height: calc(100vh - var(--ifm-navbar-height) - 2rem);
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    position: static;
+    max-height: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+}
+
+.sidebarTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--zen-text-muted);
+  margin-bottom: 0.75rem;
+  padding-left: 0.75rem;
+}
+
+.versionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.versionItem {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.versionItem:hover {
+  background: var(--zen-bg-elevated);
+}
+
+.versionActive {
+  background: var(--zen-teal-dim);
+  border-left: 2px solid var(--zen-teal);
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.versionTag {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--zen-text-primary);
+}
+
+.versionDate {
+  font-size: 0.75rem;
+  color: var(--zen-text-muted);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
 .release {
   border-left: 2px solid var(--zen-teal);
   padding-left: 1.5rem;
-  margin-bottom: 2.5rem;
 }
 
 .releaseHeader {
@@ -32,7 +112,7 @@
 }
 
 .tag {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: var(--zen-teal);
   text-decoration: none;
@@ -71,5 +151,6 @@
 
   a {
     color: var(--zen-teal);
+    word-break: break-all;
   }
 }

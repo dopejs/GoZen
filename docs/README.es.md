@@ -20,6 +20,7 @@ Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutac
 - **Variables de entorno** — Configura variables de entorno específicas por CLI a nivel de proveedor
 - **Interfaz TUI** — Interfaz de terminal interactiva con modos Dashboard y legado
 - **Interfaz web de gestión** — Gestión visual desde el navegador para proveedores, perfiles y vinculaciones de proyectos
+- **Sincronización de configuración** — Sincroniza proveedores, perfiles y ajustes entre dispositivos vía WebDAV, S3, GitHub Gist o GitHub Repo con cifrado AES-256-GCM
 - **Verificación de actualizaciones** — Verificación automática no bloqueante de nuevas versiones al iniciar (caché de 24h)
 - **Autoactualización** — Actualización con un solo comando vía `zen upgrade` con coincidencia de versiones semver
 - **Autocompletado de Shell** — Compatible con zsh / bash / fish
@@ -64,6 +65,7 @@ zen --cli codex
 | `zen pick` | Seleccionar interactivamente un proveedor para iniciar |
 | `zen list` | Listar todos los proveedores y perfiles |
 | `zen config` | Abrir la interfaz TUI de configuración |
+| `zen config sync` | Obtener configuración del backend de sincronización remoto |
 | `zen config --legacy` | Usar la interfaz TUI legada |
 | `zen bind <profile>` | Vincular el directorio actual a un perfil |
 | `zen bind --cli <cli>` | Vincular el directorio actual a un CLI específico |
@@ -208,8 +210,37 @@ Funcionalidades de la interfaz web:
 - Gestión de proveedores y perfiles
 - Gestión de vinculaciones de proyectos
 - Configuración global (CLI predeterminado, perfil predeterminado, puerto)
+- Configuración de sincronización
 - Visor de registros de solicitudes
 - Autocompletado del campo de modelo
+
+## Sincronización de configuración
+
+Sincroniza proveedores, perfiles, perfil predeterminado y cliente predeterminado entre dispositivos. Los tokens de autenticación se cifran con AES-256-GCM (derivación de clave PBKDF2-SHA256) antes de subir.
+
+Backends compatibles:
+- **WebDAV** — Cualquier servidor WebDAV (ej. Nextcloud, ownCloud)
+- **S3** — AWS S3 o almacenamiento compatible con S3 (ej. MinIO, Cloudflare R2)
+- **GitHub Gist** — Gist privado (requiere PAT con alcance `gist`)
+- **GitHub Repo** — Archivo en repositorio vía Contents API (requiere PAT con alcance `repo`)
+
+### Configuración vía Web UI
+
+```sh
+zen web open  # Settings → Config Sync
+```
+
+### Pull manual vía CLI
+
+```sh
+zen config sync
+```
+
+### Resolución de conflictos
+
+- Fusión por marca de tiempo por entidad: la modificación más reciente gana
+- Las entidades eliminadas usan lápidas (expiran después de 30 días)
+- Escalares (perfil/cliente predeterminado): la marca de tiempo más reciente gana
 
 ## Variables de entorno
 

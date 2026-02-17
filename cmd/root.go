@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -13,8 +16,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/daemon"
 	"github.com/dopejs/gozen/internal/proxy"
 	"github.com/dopejs/gozen/internal/update"
 	"github.com/dopejs/gozen/tui"
@@ -24,7 +29,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "2.0.0"
+var Version = "2.1.0-alpha.1"
 
 var updateChecker *update.Checker
 
@@ -55,18 +60,16 @@ var rootCmd = &cobra.Command{
 	RunE: runProxy,
 }
 
-var cliFlag string
-var legacyTUI bool
+var clientFlag string
 
 func init() {
 	// -p/--profile is the new flag, -f/--fallback is kept for backward compatibility but hidden
-	rootCmd.Flags().StringP("profile", "p", "", "profile name (use -p without value to pick interactively)")
-	rootCmd.Flags().Lookup("profile").NoOptDefVal = " "
+	rootCmd.Flags().StringP("profile", "p", "", "profile name")
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
-	rootCmd.Flags().Lookup("fallback").NoOptDefVal = " "
 	rootCmd.Flags().Lookup("fallback").Hidden = true
-	rootCmd.Flags().StringVar(&cliFlag, "cli", "", "CLI to use (claude, codex, opencode)")
-	rootCmd.Flags().BoolVar(&legacyTUI, "legacy", false, "use legacy TUI interface")
+	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
+	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
+	rootCmd.Flags().Lookup("cli").Hidden = true
 	rootCmd.AddCommand(useCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(listCmd)
@@ -75,6 +78,7 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(pickCmd)
 	rootCmd.AddCommand(webCmd)
+	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(bindCmd)
 	rootCmd.AddCommand(unbindCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -101,14 +105,17 @@ Quick Start:
   zen                       Start with default profile
   zen -p <profile>          Start with specific profile
   zen --cli codex           Start with specific CLI
-  zen config                Open TUI configuration
 
 Configuration:
-  config                       Open TUI to manage providers and profiles
   config add provider [name]   Add a new provider
   config add profile [name]    Add a new profile
   config edit provider <name>  Edit an existing provider
+  config edit profile <name>   Edit an existing profile
   config delete provider <name> Delete a provider
+  config delete profile <name>  Delete a profile
+  config default-client        Set the default client
+  config default-profile       Set the default profile
+  config reset-password        Reset Web UI access password
 
 Project Binding:
   bind <profile>               Bind current directory to a profile
@@ -117,12 +124,7 @@ Project Binding:
   status                       Show binding status
 
 Web Interface:
-  web                          Start web UI (foreground, opens browser)
-  web -d                       Start web UI (background daemon)
-  web stop                     Stop web daemon
-  web status                   Show web daemon status
-  web enable                   Install as system service (auto-start)
-  web disable                  Uninstall system service
+  web                          Open web UI in browser (starts daemon if needed)
 
 Other Commands:
   list                         List all providers and profiles
@@ -143,24 +145,6 @@ Use "%s [command] --help" for more information about a command.`,
 }
 
 func Execute() error {
-	// Pre-process: when -p/--profile or -f/--fallback uses NoOptDefVal, cobra won't consume
-	// the next arg as its value. Merge "-p <name>" into "-p=<name>" so that
-	// cobra parses it correctly and doesn't treat <name> as a subcommand.
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-p" || args[i] == "--profile" || args[i] == "-f" || args[i] == "--fallback" {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				args[i] = args[i] + "=" + args[i+1]
-				args = append(args[:i+1], args[i+2:]...)
-			}
-			break
-		}
-		// Stop if we hit a non-flag arg (subcommand) before -p/-f
-		if !strings.HasPrefix(args[i], "-") {
-			break
-		}
-	}
-	rootCmd.SetArgs(args)
 	return rootCmd.Execute()
 }
 
@@ -171,7 +155,12 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		profileFlag, _ = cmd.Flags().GetString("fallback")
 	}
 
-	providerNames, profile, cli, err := resolveProviderNamesAndCLI(profileFlag, cliFlag)
+	// Support --cli as alias for --client
+	if clientFlag == "" {
+		clientFlag, _ = cmd.Flags().GetString("cli")
+	}
+
+	providerNames, profile, client, err := resolveProviderNamesAndClient(profileFlag, clientFlag)
 	if err != nil {
 		return err
 	}
@@ -181,13 +170,141 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get the full profile config for routing support
-	pc := config.GetProfileConfig(profile)
-
-	return startProxy(providerNames, pc, cli, args)
+	// Use zend daemon
+	return startViaDaemon(profile, client, providerNames, args)
 }
 
-func startProxy(names []string, pc *config.ProfileConfig, cli string, args []string) error {
+// startViaDaemon starts a client session through the zend daemon.
+// 1. Ensure zend is running (auto-start if needed)
+// 2. Generate session UUID
+// 3. Set base URL to http://127.0.0.1:<proxy_port>/<profile>/<session>/v1
+// 4. Merge provider env vars
+// 5. Exec client binary
+func startViaDaemon(profile, client string, providerNames []string, args []string) error {
+	if err := ensureDaemonRunning(); err != nil {
+		return fmt.Errorf("failed to start zend: %w", err)
+	}
+
+	clientBin := client
+	if clientBin == "" {
+		clientBin = "claude"
+	}
+
+	// Generate session UUID
+	sessionID := generateSessionID()
+
+	// Build proxy URL with profile and session in path
+	proxyPort := config.GetProxyPort()
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d/%s/%s", proxyPort, profile, sessionID)
+
+	// Merge env_vars from all providers for this client
+	providers, err := buildProviders(providerNames)
+	if err != nil {
+		return err
+	}
+	mergedEnvVars := mergeProviderEnvVarsForCLI(providers, clientBin)
+	for k, v := range mergedEnvVars {
+		os.Setenv(k, v)
+	}
+
+	// Set environment variables based on client type
+	logger := log.New(io.Discard, "", 0)
+	setupClientEnvironment(clientBin, baseURL, logger)
+
+	// Set X-Zen-Client header via env var (proxy strips it)
+	os.Setenv("X_ZEN_CLIENT", clientBin)
+
+	// Find client binary
+	cliPath, err := exec.LookPath(clientBin)
+	if err != nil {
+		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
+	}
+
+	// Start client as subprocess
+	cliCmd := exec.Command(cliPath, args...)
+	cliCmd.Stdin = os.Stdin
+	cliCmd.Stdout = os.Stdout
+	cliCmd.Stderr = os.Stderr
+
+	// Forward signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for sig := range sigCh {
+			if cliCmd.Process != nil {
+				cliCmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	if err := cliCmd.Run(); err != nil {
+		signal.Stop(sigCh)
+		close(sigCh)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return err
+	}
+	signal.Stop(sigCh)
+	close(sigCh)
+	return nil
+}
+
+// ensureDaemonRunning checks if zend is running and starts it if not.
+func ensureDaemonRunning() error {
+	if _, running := daemon.IsDaemonRunning(); running {
+		return nil
+	}
+
+	// Auto-start the daemon
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("cannot determine executable path: %w", err)
+	}
+
+	logPath := daemon.DaemonLogPath()
+	logDir := config.ConfigDirPath()
+	os.MkdirAll(logDir, 0755)
+
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("cannot open log file: %w", err)
+	}
+	defer logFile.Close()
+
+	child := exec.Command(exe, "daemon", "start")
+	child.Env = append(os.Environ(), "GOZEN_DAEMON=1")
+	child.Stdout = logFile
+	child.Stderr = logFile
+	child.SysProcAttr = daemon.DaemonSysProcAttr()
+
+	if err := child.Start(); err != nil {
+		return fmt.Errorf("failed to start zend: %w", err)
+	}
+
+	daemon.WriteDaemonPid(child.Process.Pid)
+
+	// Wait for daemon to be ready
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return waitForDaemonReady(ctx)
+}
+
+// generateSessionID generates a short random hex session ID.
+func generateSessionID() string {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback: use time-based
+		t := time.Now().UnixNano()
+		b[0] = byte(t >> 24)
+		b[1] = byte(t >> 16)
+		b[2] = byte(t >> 8)
+		b[3] = byte(t)
+	}
+	return hex.EncodeToString(b)
+}
+
+func startLegacyProxy(names []string, pc *config.ProfileConfig, cli string, args []string) error {
 	providers, err := buildProviders(names)
 	if err != nil {
 		return err
@@ -226,7 +343,7 @@ func startProxy(names []string, pc *config.ProfileConfig, cli string, args []str
 	}
 
 	// Determine client format based on CLI type
-	clientFormat := GetCLIClientFormat(GetCLIType(cliBin))
+	clientFormat := GetClientFormat(GetClientType(cliBin))
 	logger.Printf("CLI: %s, Client format: %s", cliBin, clientFormat)
 
 	// Start proxy — with routing if configured, otherwise plain
@@ -260,7 +377,7 @@ func startProxy(names []string, pc *config.ProfileConfig, cli string, args []str
 
 	// Set environment variables based on CLI type
 	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
-	setupCLIEnvironment(cliBin, proxyURL, logger)
+	setupClientEnvironment(cliBin, proxyURL, logger)
 
 	// Find CLI binary
 	cliPath, err := exec.LookPath(cliBin)
@@ -378,7 +495,7 @@ func mergeProviderEnvVarsForCLI(providers []*proxy.Provider, cli string) map[str
 	}
 
 	for _, p := range providers {
-		envVars := p.GetEnvVarsForCLI(cli)
+		envVars := p.GetEnvVarsForClient(cli)
 		if envVars == nil {
 			continue
 		}
@@ -461,32 +578,13 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	}, nil
 }
 
-// resolveProviderNamesAndCLI determines the provider list and CLI based on flags and bindings.
-// Returns the provider names, the profile used, and the CLI to use.
-func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, string, string, error) {
+// resolveProviderNamesAndClient determines the provider list and client based on flags and bindings.
+// Returns the provider names, the profile used, and the client to use.
+func resolveProviderNamesAndClient(profileFlag string, clientFlag string) ([]string, string, string, error) {
 	// Determine CLI: flag > binding > default
-	cli := cliFlag
+	cli := clientFlag
 
-	// -f (no value, NoOptDefVal=" ") → interactive profile picker
-	if profileFlag == " " {
-		profile, err := tui.RunProfilePicker()
-		if err != nil {
-			return nil, "", "", err
-		}
-		names, err := config.ReadProfileOrder(profile)
-		if err != nil {
-			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profile)
-		}
-		if len(names) == 0 {
-			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profile)
-		}
-		if cli == "" {
-			cli = config.GetDefaultCLI()
-		}
-		return names, profile, cli, nil
-	}
-
-	// -f <name> → use that specific profile
+	// -p <name> → use that specific profile
 	if profileFlag != "" {
 		names, err := config.ReadProfileOrder(profileFlag)
 		if err != nil {
@@ -496,7 +594,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profileFlag)
 		}
 		if cli == "" {
-			cli = config.GetDefaultCLI()
+			cli = config.GetDefaultClient()
 		}
 		return names, profileFlag, cli, nil
 	}
@@ -513,14 +611,14 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 			}
 
 			// Use binding CLI if not overridden by flag
-			if cli == "" && binding.CLI != "" {
-				cli = binding.CLI
+			if cli == "" && binding.Client != "" {
+				cli = binding.Client
 			}
 
 			names, err := config.ReadProfileOrder(profile)
 			if err == nil && len(names) > 0 {
 				if cli == "" {
-					cli = config.GetDefaultCLI()
+					cli = config.GetDefaultClient()
 				}
 				return names, profile, cli, nil
 			}
@@ -536,7 +634,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 	fbNames, err := config.ReadFallbackOrder()
 	if err == nil && len(fbNames) > 0 {
 		if cli == "" {
-			cli = config.GetDefaultCLI()
+			cli = config.GetDefaultClient()
 		}
 		return fbNames, defaultProfile, cli, nil
 	}
@@ -551,7 +649,7 @@ func resolveProviderNamesAndCLI(profileFlag string, cliFlag string) ([]string, s
 		return nil, "", "", fmt.Errorf("cancelled")
 	}
 	if cli == "" {
-		cli = config.GetDefaultCLI()
+		cli = config.GetDefaultClient()
 	}
 	return names, defaultProfile, cli, nil
 }
@@ -638,31 +736,31 @@ func validateProviderNames(names []string, profile string) ([]string, error) {
 	return valid, nil
 }
 
-// CLIType represents the type of CLI being used.
-type CLIType string
+// ClientType represents the type of client being used.
+type ClientType string
 
 const (
-	CLIClaude   CLIType = "claude"
-	CLICodex    CLIType = "codex"
-	CLIOpenCode CLIType = "opencode"
+	ClientClaude   ClientType = "claude"
+	ClientCodex    ClientType = "codex"
+	ClientOpenCode ClientType = "opencode"
 )
 
-// GetCLIType returns the CLI type from the binary name.
-func GetCLIType(cliBin string) CLIType {
-	switch cliBin {
+// GetClientType returns the client type from the binary name.
+func GetClientType(clientBin string) ClientType {
+	switch clientBin {
 	case "codex":
-		return CLICodex
+		return ClientCodex
 	case "opencode":
-		return CLIOpenCode
+		return ClientOpenCode
 	default:
-		return CLIClaude
+		return ClientClaude
 	}
 }
 
-// GetCLIClientFormat returns the API format used by the CLI.
-func GetCLIClientFormat(cliType CLIType) string {
-	switch cliType {
-	case CLICodex:
+// GetClientFormat returns the API format used by the client.
+func GetClientFormat(clientType ClientType) string {
+	switch clientType {
+	case ClientCodex:
 		return config.ProviderTypeOpenAI
 	default:
 		// Claude Code and OpenCode use Anthropic format by default
@@ -670,18 +768,18 @@ func GetCLIClientFormat(cliType CLIType) string {
 	}
 }
 
-// setupCLIEnvironment sets the appropriate environment variables for the CLI.
-func setupCLIEnvironment(cliBin string, proxyURL string, logger *log.Logger) {
-	cliType := GetCLIType(cliBin)
+// setupClientEnvironment sets the appropriate environment variables for the client.
+func setupClientEnvironment(clientBin string, proxyURL string, logger *log.Logger) {
+	clientType := GetClientType(clientBin)
 
-	switch cliType {
-	case CLICodex:
+	switch clientType {
+	case ClientCodex:
 		// Codex uses OpenAI environment variables
 		os.Setenv("OPENAI_BASE_URL", proxyURL)
 		os.Setenv("OPENAI_API_KEY", "zen-proxy")
 		logger.Printf("Setting Codex env: OPENAI_BASE_URL=%s", proxyURL)
 
-	case CLIOpenCode:
+	case ClientOpenCode:
 		// OpenCode supports multiple providers, set both
 		// It will use the appropriate one based on the model prefix
 		os.Setenv("ANTHROPIC_BASE_URL", proxyURL)

@@ -58,10 +58,16 @@
             <h1>Providers</h1>
             <p class="page-desc">Manage your API provider configurations</p>
           </div>
-          <button class="btn btn-primary" id="btn-add-provider">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Provider
-          </button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" id="btn-refresh-providers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-primary" id="btn-add-provider">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Provider
+            </button>
+          </div>
         </div>
         <div id="providers-list"></div>
       </section>
@@ -73,10 +79,16 @@
             <h1>Profiles</h1>
             <p class="page-desc">Manage provider groups and fallback order</p>
           </div>
-          <button class="btn btn-primary" id="btn-add-profile">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add Profile
-          </button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" id="btn-refresh-profiles">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-primary" id="btn-add-profile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Profile
+            </button>
+          </div>
         </div>
         <div id="profiles-list"></div>
       </section>
@@ -234,16 +246,40 @@
             <h1>Logs</h1>
             <p class="page-desc">View proxy request logs and errors</p>
           </div>
-          <button class="btn btn-ghost" id="btn-refresh-logs">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            Refresh
-          </button>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div class="auto-refresh-controls">
+              <label class="toggle-switch">
+                <input type="checkbox" id="logs-auto-refresh">
+                <span class="toggle-slider"></span>
+              </label>
+              <span class="auto-refresh-label">Auto</span>
+              <select id="logs-refresh-interval">
+                <option value="5000">5s</option>
+                <option value="10000" selected>10s</option>
+                <option value="30000">30s</option>
+                <option value="60000">60s</option>
+              </select>
+            </div>
+            <button class="btn btn-ghost" id="btn-refresh-logs">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Refresh
+            </button>
+          </div>
         </div>
         <div class="logs-filters">
           <div class="filter-group">
             <label>Provider</label>
             <select id="logs-provider-filter">
               <option value="">All Providers</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Client</label>
+            <select id="logs-client-filter">
+              <option value="">All Clients</option>
+              <option value="claude">Claude Code</option>
+              <option value="codex">Codex</option>
+              <option value="opencode">OpenCode</option>
             </select>
           </div>
           <div class="filter-group">
@@ -278,12 +314,18 @@
             <h1>Settings</h1>
             <p class="page-desc">Configure global settings and project bindings</p>
           </div>
-          <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" id="btn-refresh-settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+          </div>
         </div>
         <form id="settings-form">
           <div class="form-group">
-            <label for="settings-default-cli">Default CLI</label>
-            <select id="settings-default-cli">
+            <label for="settings-default-client">Default Client</label>
+            <select id="settings-default-client">
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>
               <option value="opencode">OpenCode</option>
@@ -300,8 +342,21 @@
           </div>
         </form>
 
+        <div class="form-divider"><span>Security</span></div>
+        <form id="password-form">
+          <div class="form-group">
+            <label for="settings-old-password">Current Password</label>
+            <input type="password" id="settings-old-password" autocomplete="current-password" placeholder="Enter current password">
+          </div>
+          <div class="form-group">
+            <label for="settings-new-password">New Password</label>
+            <input type="password" id="settings-new-password" autocomplete="new-password" placeholder="Enter new password (min 6 characters)">
+          </div>
+          <button type="submit" class="btn btn-secondary" id="btn-change-password">Change Password</button>
+        </form>
+
         <div class="form-divider"><span>Project Bindings</span></div>
-        <p class="section-desc">Bind directories to specific profiles and CLIs. When running <code>zen</code> in a bound directory, it will automatically use the configured settings.</p>
+        <p class="section-desc">Bind directories to specific profiles and clients. When running <code>zen</code> in a bound directory, it will automatically use the configured settings.</p>
         <div class="bindings-header">
           <button class="btn btn-ghost btn-sm" id="btn-add-binding">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -309,6 +364,136 @@
           </button>
         </div>
         <div id="bindings-list" class="bindings-container"></div>
+
+        <div class="form-divider"><span>Config Sync</span></div>
+        <p class="section-desc">Sync providers, profiles, and settings across devices. Tokens are encrypted with AES-256-GCM before upload.</p>
+        <div id="sync-status-bar" class="sync-status-bar" style="display:none"></div>
+        <form id="sync-form">
+          <div class="form-group">
+            <label for="sync-backend">Backend</label>
+            <select id="sync-backend">
+              <option value="">Disabled</option>
+              <option value="webdav">WebDAV</option>
+              <option value="s3">S3</option>
+              <option value="gist">GitHub Gist</option>
+              <option value="repo">GitHub Repo</option>
+            </select>
+          </div>
+          <div id="sync-fields-webdav" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-webdav-endpoint">WebDAV URL</label>
+              <input type="url" id="sync-webdav-endpoint" placeholder="https://dav.example.com/zen-sync.json" autocomplete="off">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-webdav-username">Username</label>
+                <input type="text" id="sync-webdav-username" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-webdav-password">Password</label>
+                <input type="password" id="sync-webdav-password" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-s3" class="sync-backend-fields" style="display:none">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-s3-endpoint">S3 Endpoint</label>
+                <input type="text" id="sync-s3-endpoint" placeholder="s3.amazonaws.com" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-s3-region">Region</label>
+                <input type="text" id="sync-s3-region" placeholder="us-east-1" autocomplete="off">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="sync-s3-bucket">Bucket</label>
+              <input type="text" id="sync-s3-bucket" placeholder="my-zen-sync" autocomplete="off">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-s3-access-key">Access Key</label>
+                <input type="text" id="sync-s3-access-key" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="sync-s3-secret-key">Secret Key</label>
+                <input type="password" id="sync-s3-secret-key" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-gist" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-gist-token">GitHub PAT <span class="label-hint">(<a href="https://github.com/settings/tokens/new?scopes=gist&description=GoZen+Sync" target="_blank" rel="noopener">create token</a> with <code>gist</code> scope)</span></label>
+              <input type="password" id="sync-gist-token" autocomplete="off" placeholder="ghp_...">
+            </div>
+            <div class="form-group">
+              <label for="sync-gist-id">Gist ID <span class="label-hint">(or create one automatically)</span></label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="sync-gist-id" autocomplete="off" placeholder="abc123..." style="flex:1">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-create-gist">Create Gist</button>
+              </div>
+            </div>
+          </div>
+          <div id="sync-fields-repo" class="sync-backend-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-repo-token">GitHub PAT <span class="label-hint">(<a href="https://github.com/settings/tokens/new?scopes=repo&description=GoZen+Sync" target="_blank" rel="noopener">create token</a> with <code>repo</code> scope)</span></label>
+              <input type="password" id="sync-repo-token" autocomplete="off" placeholder="ghp_...">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-repo-owner">Owner</label>
+                <input type="text" id="sync-repo-owner" autocomplete="off" placeholder="username">
+              </div>
+              <div class="form-group">
+                <label for="sync-repo-name">Repository</label>
+                <input type="text" id="sync-repo-name" autocomplete="off" placeholder="my-zen-config">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sync-repo-path">File Path</label>
+                <input type="text" id="sync-repo-path" autocomplete="off" placeholder="zen-sync.json">
+              </div>
+              <div class="form-group">
+                <label for="sync-repo-branch">Branch</label>
+                <input type="text" id="sync-repo-branch" autocomplete="off" placeholder="main">
+              </div>
+            </div>
+          </div>
+          <div id="sync-common-fields" style="display:none">
+            <div class="form-group">
+              <label for="sync-passphrase">Encryption Passphrase</label>
+              <input type="password" id="sync-passphrase" autocomplete="off" placeholder="Enter passphrase to encrypt tokens">
+              <p class="form-hint">Used to encrypt auth tokens before upload. Must be the same on all devices.</p>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="toggle-label">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="sync-auto-pull">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  Auto Pull
+                </label>
+              </div>
+              <div class="form-group">
+                <label for="sync-pull-interval">Pull Interval</label>
+                <select id="sync-pull-interval">
+                  <option value="60">1 min</option>
+                  <option value="300" selected>5 min</option>
+                  <option value="600">10 min</option>
+                  <option value="1800">30 min</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </form>
+        <div id="sync-actions" class="sync-actions" style="display:none">
+          <button class="btn btn-primary" id="btn-save-sync">Save Sync Settings</button>
+          <button class="btn btn-ghost" id="btn-test-sync">Test Connection</button>
+          <button class="btn btn-ghost" id="btn-sync-pull">Pull Now</button>
+          <button class="btn btn-ghost" id="btn-sync-push">Push Now</button>
+        </div>
       </section>
     </div>
   </div>
@@ -380,8 +565,8 @@
             </select>
           </div>
           <div class="form-group">
-            <label for="binding-cli">CLI</label>
-            <select id="binding-cli">
+            <label for="binding-client">Client</label>
+            <select id="binding-client">
               <option value="">(Use default)</option>
               <option value="claude">Claude Code</option>
               <option value="codex">Codex</option>

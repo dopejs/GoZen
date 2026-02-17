@@ -99,14 +99,14 @@ func SetDefaultProfile(profile string) error {
 	return DefaultStore().SetDefaultProfile(profile)
 }
 
-// GetDefaultCLI returns the configured default CLI.
-func GetDefaultCLI() string {
-	return DefaultStore().GetDefaultCLI()
+// GetDefaultClient returns the configured default client.
+func GetDefaultClient() string {
+	return DefaultStore().GetDefaultClient()
 }
 
-// SetDefaultCLI sets the default CLI.
-func SetDefaultCLI(cli string) error {
-	return DefaultStore().SetDefaultCLI(cli)
+// SetDefaultClient sets the default client.
+func SetDefaultClient(client string) error {
+	return DefaultStore().SetDefaultClient(client)
 }
 
 // GetWebPort returns the configured web UI port.
@@ -117,6 +117,16 @@ func GetWebPort() int {
 // SetWebPort sets the web UI port.
 func SetWebPort(port int) error {
 	return DefaultStore().SetWebPort(port)
+}
+
+// GetProxyPort returns the configured proxy port.
+func GetProxyPort() int {
+	return DefaultStore().GetProxyPort()
+}
+
+// SetProxyPort sets the proxy port.
+func SetProxyPort(port int) error {
+	return DefaultStore().SetProxyPort(port)
 }
 
 // --- Project Bindings convenience functions ---
@@ -139,4 +149,28 @@ func GetProjectBinding(path string) *ProjectBinding {
 // GetAllProjectBindings returns all project bindings.
 func GetAllProjectBindings() map[string]*ProjectBinding {
 	return DefaultStore().GetAllProjectBindings()
+}
+
+// --- Web Password convenience functions ---
+
+// GetWebPasswordHash returns the stored bcrypt password hash.
+func GetWebPasswordHash() string {
+	return DefaultStore().GetWebPasswordHash()
+}
+
+// SetWebPasswordHash sets the bcrypt password hash.
+func SetWebPasswordHash(hash string) error {
+	return DefaultStore().SetWebPasswordHash(hash)
+}
+
+// --- Sync Config convenience functions ---
+
+// GetSyncConfig returns the sync configuration, or nil if not configured.
+func GetSyncConfig() *SyncConfig {
+	return DefaultStore().GetSyncConfig()
+}
+
+// SetSyncConfig sets the sync configuration.
+func SetSyncConfig(cfg *SyncConfig) error {
+	return DefaultStore().SetSyncConfig(cfg)
 }

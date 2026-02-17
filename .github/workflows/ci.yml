@@ -2,7 +2,6 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -54,7 +53,9 @@ jobs:
           check_pkg "internal/proxy" 80 || failed=1
           check_pkg "internal/proxy/transform" 80 || failed=1
           check_pkg "internal/web" 80 || failed=1
+          check_pkg "internal/daemon" 40 || failed=1
           check_pkg "internal/update" 50 || failed=1
+          check_pkg "internal/sync" 50 || failed=1
 
           exit $failed
 

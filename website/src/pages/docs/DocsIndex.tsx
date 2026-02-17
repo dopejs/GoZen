@@ -10,6 +10,7 @@ import {
   Globe,
   Monitor,
   FileJson,
+  RefreshCw,
   ArrowRight,
 } from "lucide-react";
 
@@ -23,6 +24,7 @@ const sections = [
   { path: "/docs/web-ui", key: "webUi", icon: Globe },
   { path: "/docs/tui", key: "tui", icon: Monitor },
   { path: "/docs/config", key: "config", icon: FileJson },
+  { path: "/docs/config-sync", key: "configSync", icon: RefreshCw },
 ];
 
 export default function DocsIndex() {

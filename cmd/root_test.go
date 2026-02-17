@@ -178,7 +178,7 @@ func TestResolveWithProfileFlag(t *testing.T) {
 	setTestHome(t)
 	writeProfileConf(t, "work", []string{"p1", "p2"})
 
-	names, profile, cli, err := resolveProviderNamesAndCLI("work", "")
+	names, profile, cli, err := resolveProviderNamesAndClient("work", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestResolveWithProfileFlag(t *testing.T) {
 func TestResolveWithProfileFlagNotFound(t *testing.T) {
 	setTestHome(t)
 
-	_, _, _, err := resolveProviderNamesAndCLI("nonexistent", "")
+	_, _, _, err := resolveProviderNamesAndClient("nonexistent", "")
 	if err == nil {
 		t.Error("expected error for nonexistent profile")
 	}
@@ -209,7 +209,7 @@ func TestResolveWithProfileFlagEmpty(t *testing.T) {
 	setTestHome(t)
 	writeProfileConf(t, "empty", []string{})
 
-	_, _, _, err := resolveProviderNamesAndCLI("empty", "")
+	_, _, _, err := resolveProviderNamesAndClient("empty", "")
 	if err == nil {
 		t.Error("expected error for empty profile")
 	}
@@ -222,7 +222,7 @@ func TestResolveNoFlag(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, []string{"a", "b"})
 
-	names, profile, cli, err := resolveProviderNamesAndCLI("", "")
+	names, profile, cli, err := resolveProviderNamesAndClient("", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestResolveProviderNamesFromFallbackConf(t *testing.T) {
 	setTestHome(t)
 	writeFallbackConf(t, []string{"p1", "p2"})
 
-	names, profile, cli, err := resolveProviderNamesAndCLI("", "")
+	names, profile, cli, err := resolveProviderNamesAndClient("", "")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestResolveProviderNamesNoFallbackConf(t *testing.T) {
 	setTestHome(t)
 	// No default profile and no providers → should error about no providers configured
 
-	_, _, _, err := resolveProviderNamesAndCLI("", "")
+	_, _, _, err := resolveProviderNamesAndClient("", "")
 	if err == nil {
 		t.Error("expected error when default profile missing and no providers")
 	}
@@ -294,7 +294,7 @@ func TestResolveProviderNamesEmptyFallbackConf(t *testing.T) {
 	writeFallbackConf(t, []string{})
 	// Empty default profile and no providers → should error about no providers configured
 
-	_, _, _, err := resolveProviderNamesAndCLI("", "")
+	_, _, _, err := resolveProviderNamesAndClient("", "")
 	if err == nil {
 		t.Error("expected error when default profile is empty and no providers")
 	}
@@ -305,7 +305,7 @@ func TestResolveWithCLIFlag(t *testing.T) {
 	writeFallbackConf(t, []string{"p1"})
 
 	// CLI flag should override default
-	names, profile, cli, err := resolveProviderNamesAndCLI("", "codex")
+	names, profile, cli, err := resolveProviderNamesAndClient("", "codex")
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -440,20 +440,20 @@ func TestValidateProviderNamesConfirmYes(t *testing.T) {
 func TestGetCLIType(t *testing.T) {
 	tests := []struct {
 		cliBin   string
-		expected CLIType
+		expected ClientType
 	}{
-		{"claude", CLIClaude},
-		{"codex", CLICodex},
-		{"opencode", CLIOpenCode},
-		{"", CLIClaude},       // default
-		{"unknown", CLIClaude}, // fallback to default
+		{"claude", ClientClaude},
+		{"codex", ClientCodex},
+		{"opencode", ClientOpenCode},
+		{"", ClientClaude},       // default
+		{"unknown", ClientClaude}, // fallback to default
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.cliBin, func(t *testing.T) {
-			got := GetCLIType(tt.cliBin)
+			got := GetClientType(tt.cliBin)
 			if got != tt.expected {
-				t.Errorf("GetCLIType(%q) = %q, want %q", tt.cliBin, got, tt.expected)
+				t.Errorf("GetClientType(%q) = %q, want %q", tt.cliBin, got, tt.expected)
 			}
 		})
 	}
@@ -461,19 +461,19 @@ func TestGetCLIType(t *testing.T) {
 
 func TestGetCLIClientFormat(t *testing.T) {
 	tests := []struct {
-		cliType  CLIType
+		cliType  ClientType
 		expected string
 	}{
-		{CLIClaude, config.ProviderTypeAnthropic},
-		{CLICodex, config.ProviderTypeOpenAI},
-		{CLIOpenCode, config.ProviderTypeAnthropic},
+		{ClientClaude, config.ProviderTypeAnthropic},
+		{ClientCodex, config.ProviderTypeOpenAI},
+		{ClientOpenCode, config.ProviderTypeAnthropic},
 	}
 
 	for _, tt := range tests {
 		t.Run(string(tt.cliType), func(t *testing.T) {
-			got := GetCLIClientFormat(tt.cliType)
+			got := GetClientFormat(tt.cliType)
 			if got != tt.expected {
-				t.Errorf("GetCLIClientFormat(%q) = %q, want %q", tt.cliType, got, tt.expected)
+				t.Errorf("GetClientFormat(%q) = %q, want %q", tt.cliType, got, tt.expected)
 			}
 		})
 	}
@@ -489,7 +489,7 @@ func TestSetupCLIEnvironment_Claude(t *testing.T) {
 	logger := discardLogger()
 	proxyURL := "http://127.0.0.1:12345"
 
-	setupCLIEnvironment("claude", proxyURL, logger)
+	setupClientEnvironment("claude", proxyURL, logger)
 
 	// Claude should set Anthropic env vars
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
@@ -515,7 +515,7 @@ func TestSetupCLIEnvironment_Codex(t *testing.T) {
 	logger := discardLogger()
 	proxyURL := "http://127.0.0.1:12345"
 
-	setupCLIEnvironment("codex", proxyURL, logger)
+	setupClientEnvironment("codex", proxyURL, logger)
 
 	// Codex should set OpenAI env vars
 	if got := os.Getenv("OPENAI_BASE_URL"); got != proxyURL {
@@ -541,7 +541,7 @@ func TestSetupCLIEnvironment_OpenCode(t *testing.T) {
 	logger := discardLogger()
 	proxyURL := "http://127.0.0.1:12345"
 
-	setupCLIEnvironment("opencode", proxyURL, logger)
+	setupClientEnvironment("opencode", proxyURL, logger)
 
 	// OpenCode should set both Anthropic and OpenAI env vars
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
@@ -569,7 +569,7 @@ func TestSetupCLIEnvironment_UnknownCLI(t *testing.T) {
 	proxyURL := "http://127.0.0.1:12345"
 
 	// Unknown CLI should default to Claude behavior
-	setupCLIEnvironment("some-unknown-cli", proxyURL, logger)
+	setupClientEnvironment("some-unknown-cli", proxyURL, logger)
 
 	if got := os.Getenv("ANTHROPIC_BASE_URL"); got != proxyURL {
 		t.Errorf("ANTHROPIC_BASE_URL = %q, want %q", got, proxyURL)

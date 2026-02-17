@@ -68,35 +68,19 @@ func (m profileMultiSelectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m profileMultiSelectModel) View() string {
-	width := 80  // default width
-	height := 24 // default height
-
-	sidePadding := 2
 	var b strings.Builder
 
-	// Header
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(primaryColor).
-		Background(headerBgColor).
-		Padding(0, 2).
-		Render("📂 Add to Profiles")
-	b.WriteString(header)
+	b.WriteString(titleStyle.Render("Add to profiles"))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  Space toggle, Enter confirm, Esc skip"))
 	b.WriteString("\n\n")
-
-	// Content box
-	var content strings.Builder
-	content.WriteString(sectionTitleStyle.Render(" Select profiles for this provider"))
-	content.WriteString("\n")
-	content.WriteString(dimStyle.Render(" Space to toggle, Enter to confirm, Esc to skip"))
-	content.WriteString("\n\n")
 
 	for i, name := range m.profiles {
 		cursor := "  "
-		style := tableRowStyle
+		style := dimStyle
 		if i == m.cursor {
 			cursor = "▸ "
-			style = tableSelectedRowStyle
+			style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 		}
 
 		var checkbox string
@@ -108,42 +92,13 @@ func (m profileMultiSelectModel) View() string {
 			checkbox = dimStyle.Render("[ ]")
 		}
 
-		content.WriteString(style.Render(cursor + checkbox + " " + name))
+		b.WriteString(style.Render(cursor+checkbox+" "+name))
 		if i < len(m.profiles)-1 {
-			content.WriteString("\n")
+			b.WriteString("\n")
 		}
 	}
 
-	contentBox := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(40).
-		Render(content.String())
-	b.WriteString(contentBox)
-
-	// Build view with side padding
-	mainContent := b.String()
-	var view strings.Builder
-	lines := strings.Split(mainContent, "\n")
-	for _, line := range lines {
-		view.WriteString(strings.Repeat(" ", sidePadding))
-		view.WriteString(line)
-		view.WriteString("\n")
-	}
-
-	// Fill remaining space to push help bar to bottom
-	currentLines := len(lines)
-	remainingLines := height - currentLines - 1
-	for i := 0; i < remainingLines; i++ {
-		view.WriteString("\n")
-	}
-
-	// Help bar at bottom
-	helpBar := RenderHelpBar("Space toggle • Enter confirm • Esc skip", width)
-	view.WriteString(helpBar)
-
-	return view.String()
+	return b.String()
 }
 
 // Result returns the selected profile names.
@@ -164,7 +119,7 @@ func RunProfileMultiSelect() ([]string, error) {
 	if len(m.profiles) == 0 {
 		return nil, nil
 	}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return nil, err

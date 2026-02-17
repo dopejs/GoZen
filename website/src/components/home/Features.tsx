@@ -8,6 +8,7 @@ import {
   Variable,
   Monitor,
   Globe,
+  RefreshCw,
   Sparkles,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const featureKeys = [
   { key: "envVars", icon: Variable },
   { key: "tui", icon: Monitor },
   { key: "webUi", icon: Globe },
+  { key: "configSync", icon: RefreshCw },
 ];
 
 export function Features() {

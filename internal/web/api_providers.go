@@ -118,6 +118,16 @@ func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Decrypt auth token if encrypted
+	if s.keys != nil && req.Config.AuthToken != "" {
+		decrypted, err := s.keys.MaybeDecryptToken(req.Config.AuthToken)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to decrypt auth token")
+			return
+		}
+		req.Config.AuthToken = decrypted
+	}
+
 	store := config.DefaultStore()
 	if store.GetProvider(req.Name) != nil {
 		writeError(w, http.StatusConflict, "provider already exists")
@@ -153,6 +163,16 @@ func (s *Server) updateProvider(w http.ResponseWriter, r *http.Request, name str
 	if err := readJSON(r, &update); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
+	}
+
+	// Decrypt auth token if encrypted
+	if s.keys != nil && update.AuthToken != "" {
+		decrypted, err := s.keys.MaybeDecryptToken(update.AuthToken)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to decrypt auth token")
+			return
+		}
+		update.AuthToken = decrypted
 	}
 
 	// If token is empty, keep the original.

@@ -28,6 +28,7 @@
   var editingProfile = null;
   var settings = null;
   var currentEnvTab = "claude";
+  var _pubkeyCryptoKey = null; // cached CryptoKey for RSA-OAEP encryption
 
   // --- Init ---
   document.addEventListener("DOMContentLoaded", init);
@@ -40,6 +41,9 @@
     setupProviderEdit();
     setupLogs();
     setupSettings();
+    document.getElementById("btn-refresh-providers").addEventListener("click", loadProviders);
+    document.getElementById("btn-refresh-profiles").addEventListener("click", loadProfiles);
+    document.getElementById("btn-refresh-settings").addEventListener("click", loadSettings);
     document.getElementById("btn-add-provider").addEventListener("click", openAddProvider);
     document.getElementById("btn-add-profile").addEventListener("click", openAddProfile);
     document.getElementById("pe-form").addEventListener("submit", function(e) { e.preventDefault(); submitProfile(e); });
@@ -54,6 +58,7 @@
     loadProviders();
     loadProfiles();
     loadSettings();
+    setupSync();
   }
 
   // --- Theme Toggle ---
@@ -95,12 +100,24 @@
     }
     var section = document.getElementById("tab-" + tab);
     if (section) section.classList.add("active");
-    if (window.location.hash !== "#" + tab) {
-      history.replaceState(null, "", "#" + tab);
+    // Update hash without query params for non-logs tabs
+    if (tab !== "logs") {
+      if (window.location.hash !== "#" + tab) {
+        history.replaceState(null, "", "#" + tab);
+      }
     }
     // Load logs when switching to logs tab
     if (tab === "logs") {
+      restoreLogFiltersFromHash();
       loadLogs();
+      // Restore auto-refresh if enabled
+      var toggle = document.getElementById("logs-auto-refresh");
+      if (toggle && toggle.checked) {
+        var intervalSel = document.getElementById("logs-refresh-interval");
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      }
+    } else {
+      stopAutoRefresh();
     }
     // Load settings when switching to settings tab
     if (tab === "settings") {
@@ -110,8 +127,46 @@
 
   function restoreTabFromHash() {
     var hash = window.location.hash.replace("#", "");
-    if (hash && document.getElementById("tab-" + hash)) {
-      switchTab(hash);
+    var tab = hash.split("?")[0];
+    if (tab && document.getElementById("tab-" + tab)) {
+      switchTab(tab);
+    }
+  }
+
+  function getHashParams() {
+    var hash = window.location.hash;
+    var idx = hash.indexOf("?");
+    if (idx === -1) return new URLSearchParams();
+    return new URLSearchParams(hash.substring(idx + 1));
+  }
+
+  function updateLogHashParams() {
+    var params = new URLSearchParams();
+    var provider = document.getElementById("logs-provider-filter").value;
+    if (provider) params.set("provider", provider);
+    var clientType = document.getElementById("logs-client-filter").value;
+    if (clientType) params.set("client_type", clientType);
+    var logType = document.getElementById("logs-type-filter").value;
+    if (logType) params.set("log_type", logType);
+    var statusFilter = document.getElementById("logs-status-filter").value;
+    if (statusFilter) params.set("status", statusFilter);
+    var qs = params.toString();
+    history.replaceState(null, "", "#logs" + (qs ? "?" + qs : ""));
+  }
+
+  function restoreLogFiltersFromHash() {
+    var params = getHashParams();
+    if (params.has("provider")) {
+      document.getElementById("logs-provider-filter").value = params.get("provider");
+    }
+    if (params.has("client_type")) {
+      document.getElementById("logs-client-filter").value = params.get("client_type");
+    }
+    if (params.has("log_type")) {
+      document.getElementById("logs-type-filter").value = params.get("log_type");
+    }
+    if (params.has("status")) {
+      document.getElementById("logs-status-filter").value = params.get("status");
     }
   }
 
@@ -512,6 +567,42 @@
     }).catch(function() {});
   }
 
+  // --- Token Encryption ---
+  function needsEncryption() {
+    var h = location.hostname;
+    return h !== "localhost" && h !== "127.0.0.1" && h !== "::1";
+  }
+
+  function fetchPubKey() {
+    if (_pubkeyCryptoKey) return Promise.resolve(_pubkeyCryptoKey);
+    return api("GET", "/auth/pubkey").then(function(data) {
+      var pem = data.pubkey;
+      var b64 = pem.replace(/-----BEGIN PUBLIC KEY-----/, "")
+                    .replace(/-----END PUBLIC KEY-----/, "")
+                    .replace(/\s/g, "");
+      var binary = atob(b64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return crypto.subtle.importKey("spki", bytes.buffer, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+    }).then(function(key) {
+      _pubkeyCryptoKey = key;
+      return key;
+    });
+  }
+
+  function encryptToken(plaintext) {
+    if (!plaintext || !needsEncryption()) return Promise.resolve(plaintext);
+    return fetchPubKey().then(function(key) {
+      var encoded = new TextEncoder().encode(plaintext);
+      return crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, encoded);
+    }).then(function(encrypted) {
+      var bytes = new Uint8Array(encrypted);
+      var binary = "";
+      for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      return "ENC:" + btoa(binary);
+    });
+  }
+
   // --- Reload ---
   function reloadConfig() {
     api("POST", "/reload").then(function() {
@@ -655,24 +746,29 @@
     if (codexEnvVars) cfg.codex_env_vars = codexEnvVars;
     if (opencodeEnvVars) cfg.opencode_env_vars = opencodeEnvVars;
 
-    var promise;
-    if (editingProvider) {
-      promise = api("PUT", "/providers/" + encodeURIComponent(editingProvider), cfg);
-    } else {
-      var name = document.getElementById("prov-name").value.trim();
-      if (!name) { toast("Name is required", "error"); return; }
-      promise = api("POST", "/providers", { name: name, config: cfg });
-    }
-    promise.then(function(data) {
-      var isNew = !editingProvider;
-      var providerName = isNew ? document.getElementById("prov-name").value.trim() : editingProvider;
-      toast(isNew ? "Provider created" : "Provider updated");
-      loadProviders();
-      switchTab("providers");
-      if (isNew && profiles.length > 0) {
-        showAddToProfilesDialog(providerName);
+    // Encrypt auth_token for non-local access
+    encryptToken(cfg.auth_token).then(function(encrypted) {
+      cfg.auth_token = encrypted;
+
+      var promise;
+      if (editingProvider) {
+        promise = api("PUT", "/providers/" + encodeURIComponent(editingProvider), cfg);
+      } else {
+        var name = document.getElementById("prov-name").value.trim();
+        if (!name) { toast("Name is required", "error"); return; }
+        promise = api("POST", "/providers", { name: name, config: cfg });
       }
-    }).catch(function(err) { toast(err.message, "error") });
+      promise.then(function(data) {
+        var isNew = !editingProvider;
+        var providerName = isNew ? document.getElementById("prov-name").value.trim() : editingProvider;
+        toast(isNew ? "Provider created" : "Provider updated");
+        loadProviders();
+        switchTab("providers");
+        if (isNew && profiles.length > 0) {
+          showAddToProfilesDialog(providerName);
+        }
+      }).catch(function(err) { toast(err.message, "error") });
+    }).catch(function(err) { toast("Encryption failed: " + err.message, "error") });
   }
 
   // --- Profiles ---
@@ -1105,12 +1201,54 @@
 
   // --- Logs ---
   var logsProviders = [];
+  var autoRefreshTimer = null;
+
+  function startAutoRefresh(interval) {
+    stopAutoRefresh();
+    autoRefreshTimer = setInterval(loadLogs, interval);
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+  }
 
   function setupLogs() {
     document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
-    document.getElementById("logs-provider-filter").addEventListener("change", loadLogs);
-    document.getElementById("logs-type-filter").addEventListener("change", loadLogs);
-    document.getElementById("logs-status-filter").addEventListener("change", loadLogs);
+    ["logs-provider-filter", "logs-client-filter", "logs-type-filter", "logs-status-filter"].forEach(function(id) {
+      document.getElementById(id).addEventListener("change", function() {
+        updateLogHashParams();
+        loadLogs();
+      });
+    });
+
+    // Auto-refresh controls
+    var toggle = document.getElementById("logs-auto-refresh");
+    var intervalSel = document.getElementById("logs-refresh-interval");
+
+    // Restore from localStorage
+    var savedOn = localStorage.getItem("gozen-logs-auto-refresh");
+    var savedInterval = localStorage.getItem("gozen-logs-refresh-interval");
+    if (savedInterval) intervalSel.value = savedInterval;
+    if (savedOn === "true") toggle.checked = true;
+
+    toggle.addEventListener("change", function() {
+      localStorage.setItem("gozen-logs-auto-refresh", toggle.checked);
+      if (toggle.checked) {
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      } else {
+        stopAutoRefresh();
+      }
+    });
+
+    intervalSel.addEventListener("change", function() {
+      localStorage.setItem("gozen-logs-refresh-interval", intervalSel.value);
+      if (toggle.checked) {
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      }
+    });
   }
 
   function loadLogs() {
@@ -1118,6 +1256,9 @@
 
     var provider = document.getElementById("logs-provider-filter").value;
     if (provider) params.set("provider", provider);
+
+    var clientType = document.getElementById("logs-client-filter").value;
+    if (clientType) params.set("client_type", clientType);
 
     var logType = document.getElementById("logs-type-filter").value;
     if (logType === "errors") params.set("errors_only", "true");
@@ -1182,6 +1323,9 @@
       if (entry.provider) {
         html += '<span class="log-provider">' + esc(entry.provider) + '</span>';
       }
+      if (entry.client_type) {
+        html += '<span class="log-client">' + esc(entry.client_type) + '</span>';
+      }
       if (entry.status_code) {
         html += '<span class="log-status ' + statusClass + '">' + entry.status_code + '</span>';
       }
@@ -1223,6 +1367,10 @@
     document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
     document.getElementById("btn-add-binding").addEventListener("click", openAddBinding);
     document.getElementById("binding-save").addEventListener("click", saveBinding);
+    document.getElementById("password-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      changePassword();
+    });
   }
 
   function loadSettings() {
@@ -1239,9 +1387,9 @@
   }
 
   function renderSettings(data) {
-    // Default CLI
-    var cliSelect = document.getElementById("settings-default-cli");
-    cliSelect.value = data.default_cli || "claude";
+    // Default Client
+    var clientSelect = document.getElementById("settings-default-client");
+    clientSelect.value = data.default_client || "claude";
 
     // Default Profile
     var profileSelect = document.getElementById("settings-default-profile");
@@ -1262,7 +1410,7 @@
     e.preventDefault();
 
     var payload = {
-      default_cli: document.getElementById("settings-default-cli").value,
+      default_client: document.getElementById("settings-default-client").value,
       default_profile: document.getElementById("settings-default-profile").value,
       web_port: parseInt(document.getElementById("settings-web-port").value, 10)
     };
@@ -1280,6 +1428,32 @@
         settings = data;
         renderSettings(data);
         toast("Settings saved", "success");
+      })
+      .catch(function(err) {
+        toast(err.message, "error");
+      });
+  }
+
+  function changePassword() {
+    var oldPw = document.getElementById("settings-old-password").value;
+    var newPw = document.getElementById("settings-new-password").value;
+    if (!newPw || newPw.length < 6) {
+      toast("Password must be at least 6 characters", "error");
+      return;
+    }
+    fetch(API + "/settings/password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+    })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(e) { throw new Error(e.error || "Failed"); });
+        return r.json();
+      })
+      .then(function() {
+        toast("Password updated", "success");
+        document.getElementById("settings-old-password").value = "";
+        document.getElementById("settings-new-password").value = "";
       })
       .catch(function(err) {
         toast(err.message, "error");
@@ -1316,7 +1490,7 @@
     html += '<div class="bindings-row bindings-header">';
     html += '<div class="bindings-cell">Directory</div>';
     html += '<div class="bindings-cell">Profile</div>';
-    html += '<div class="bindings-cell">CLI</div>';
+    html += '<div class="bindings-cell">Client</div>';
     html += '<div class="bindings-cell bindings-actions"></div>';
     html += '</div>';
 
@@ -1324,7 +1498,7 @@
       html += '<div class="bindings-row" data-path="' + esc(b.path) + '">';
       html += '<div class="bindings-cell bindings-path">' + esc(b.path) + '</div>';
       html += '<div class="bindings-cell">' + (b.profile ? '<span class="badge badge-lavender">' + esc(b.profile) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
-      html += '<div class="bindings-cell">' + (b.cli ? '<span class="badge badge-teal">' + esc(b.cli) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
+      html += '<div class="bindings-cell">' + (b.client ? '<span class="badge badge-teal">' + esc(b.client) + '</span>' : '<span class="text-muted">(default)</span>') + '</div>';
       html += '<div class="bindings-cell bindings-actions">';
       html += '<button class="btn-icon" data-action="edit-binding" data-path="' + esc(b.path) + '" title="Edit">' + ICONS.edit + '</button>';
       html += '<button class="btn-icon danger" data-action="delete-binding" data-path="' + esc(b.path) + '" title="Delete">' + ICONS.trash + '</button>';
@@ -1355,7 +1529,7 @@
     document.getElementById("binding-path").disabled = false;
     document.getElementById("binding-path-group").style.display = "block";
     document.getElementById("binding-profile").value = "";
-    document.getElementById("binding-cli").value = "";
+    document.getElementById("binding-client").value = "";
     updateBindingProfileOptions();
     openModal("binding-modal");
   }
@@ -1370,7 +1544,7 @@
     document.getElementById("binding-path").disabled = true;
     document.getElementById("binding-path-group").style.display = "none";
     document.getElementById("binding-profile").value = b.profile || "";
-    document.getElementById("binding-cli").value = b.cli || "";
+    document.getElementById("binding-client").value = b.client || "";
     updateBindingProfileOptions();
     openModal("binding-modal");
   }
@@ -1391,14 +1565,14 @@
   function saveBinding() {
     var path = document.getElementById("binding-path").value.trim();
     var profile = document.getElementById("binding-profile").value;
-    var cli = document.getElementById("binding-cli").value;
+    var client = document.getElementById("binding-client").value;
 
     if (!path) {
       toast("Path is required", "error");
       return;
     }
 
-    var payload = { profile: profile, cli: cli };
+    var payload = { profile: profile, client: client };
     var promise;
 
     if (editingBindingPath) {
@@ -1425,6 +1599,200 @@
       }).catch(function(err) {
         toast(err.message, "error");
       });
+    });
+  }
+
+  // --- Config Sync ---
+
+  function setupSync() {
+    var backendSel = document.getElementById("sync-backend");
+    backendSel.addEventListener("change", toggleSyncFields);
+    document.getElementById("btn-save-sync").addEventListener("click", saveSyncConfig);
+    document.getElementById("btn-test-sync").addEventListener("click", testSyncConnection);
+    document.getElementById("btn-sync-pull").addEventListener("click", syncPull);
+    document.getElementById("btn-sync-push").addEventListener("click", syncPush);
+    document.getElementById("btn-create-gist").addEventListener("click", createGist);
+    loadSyncConfig();
+  }
+
+  function toggleSyncFields() {
+    var backend = document.getElementById("sync-backend").value;
+    var allFields = document.querySelectorAll(".sync-backend-fields");
+    for (var i = 0; i < allFields.length; i++) allFields[i].style.display = "none";
+    var common = document.getElementById("sync-common-fields");
+    var actions = document.getElementById("sync-actions");
+    if (backend) {
+      var fields = document.getElementById("sync-fields-" + backend);
+      if (fields) fields.style.display = "";
+      common.style.display = "";
+      actions.style.display = "";
+    } else {
+      common.style.display = "none";
+      actions.style.display = "none";
+    }
+  }
+
+  function loadSyncConfig() {
+    api("GET", "/sync/config").then(function(data) {
+      if (!data.configured) {
+        document.getElementById("sync-backend").value = "";
+        toggleSyncFields();
+        return;
+      }
+      var c = data.config;
+      document.getElementById("sync-backend").value = c.backend || "";
+      toggleSyncFields();
+      // WebDAV
+      document.getElementById("sync-webdav-endpoint").value = c.endpoint || "";
+      document.getElementById("sync-webdav-username").value = c.username || "";
+      document.getElementById("sync-webdav-password").value = c.token || "";
+      // S3
+      document.getElementById("sync-s3-endpoint").value = c.endpoint || "";
+      document.getElementById("sync-s3-region").value = c.region || "";
+      document.getElementById("sync-s3-bucket").value = c.bucket || "";
+      document.getElementById("sync-s3-access-key").value = c.access_key || "";
+      document.getElementById("sync-s3-secret-key").value = c.secret_key || "";
+      // Gist
+      document.getElementById("sync-gist-token").value = c.token || "";
+      document.getElementById("sync-gist-id").value = c.gist_id || "";
+      // Repo
+      document.getElementById("sync-repo-token").value = c.token || "";
+      document.getElementById("sync-repo-owner").value = c.repo_owner || "";
+      document.getElementById("sync-repo-name").value = c.repo_name || "";
+      document.getElementById("sync-repo-path").value = c.repo_path || "";
+      document.getElementById("sync-repo-branch").value = c.repo_branch || "";
+      // Common
+      document.getElementById("sync-passphrase").value = c.passphrase || "";
+      document.getElementById("sync-auto-pull").checked = !!c.auto_pull;
+      if (c.pull_interval) document.getElementById("sync-pull-interval").value = String(c.pull_interval);
+      loadSyncStatus();
+    }).catch(function() {});
+  }
+
+  function buildSyncConfigPayload() {
+    var backend = document.getElementById("sync-backend").value;
+    var cfg = { backend: backend };
+    if (backend === "webdav") {
+      cfg.endpoint = document.getElementById("sync-webdav-endpoint").value;
+      cfg.username = document.getElementById("sync-webdav-username").value;
+      cfg.token = document.getElementById("sync-webdav-password").value;
+    } else if (backend === "s3") {
+      cfg.endpoint = document.getElementById("sync-s3-endpoint").value;
+      cfg.region = document.getElementById("sync-s3-region").value;
+      cfg.bucket = document.getElementById("sync-s3-bucket").value;
+      cfg.access_key = document.getElementById("sync-s3-access-key").value;
+      cfg.secret_key = document.getElementById("sync-s3-secret-key").value;
+    } else if (backend === "gist") {
+      cfg.token = document.getElementById("sync-gist-token").value;
+      cfg.gist_id = document.getElementById("sync-gist-id").value;
+    } else if (backend === "repo") {
+      cfg.token = document.getElementById("sync-repo-token").value;
+      cfg.repo_owner = document.getElementById("sync-repo-owner").value;
+      cfg.repo_name = document.getElementById("sync-repo-name").value;
+      cfg.repo_path = document.getElementById("sync-repo-path").value;
+      cfg.repo_branch = document.getElementById("sync-repo-branch").value;
+    }
+    cfg.passphrase = document.getElementById("sync-passphrase").value;
+    cfg.auto_pull = document.getElementById("sync-auto-pull").checked;
+    cfg.pull_interval = parseInt(document.getElementById("sync-pull-interval").value) || 300;
+    return cfg;
+  }
+
+  function saveSyncConfig() {
+    var cfg = buildSyncConfigPayload();
+    api("PUT", "/sync/config", cfg).then(function() {
+      toast("Sync settings saved");
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast(err.message, "error");
+    });
+  }
+
+  function testSyncConnection() {
+    var cfg = buildSyncConfigPayload();
+    var btn = document.getElementById("btn-test-sync");
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    api("POST", "/sync/test", cfg).then(function() {
+      toast("Connection successful");
+    }).catch(function(err) {
+      toast("Connection failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Test Connection";
+    });
+  }
+
+  function syncPull() {
+    var btn = document.getElementById("btn-sync-pull");
+    btn.disabled = true;
+    btn.textContent = "Pulling...";
+    api("POST", "/sync/pull").then(function() {
+      toast("Pull completed");
+      loadProviders();
+      loadProfiles();
+      loadSettings();
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast("Pull failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Pull Now";
+    });
+  }
+
+  function syncPush() {
+    var btn = document.getElementById("btn-sync-push");
+    btn.disabled = true;
+    btn.textContent = "Pushing...";
+    api("POST", "/sync/push").then(function() {
+      toast("Push completed");
+      loadSyncStatus();
+    }).catch(function(err) {
+      toast("Push failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Push Now";
+    });
+  }
+
+  function loadSyncStatus() {
+    api("GET", "/sync/status").then(function(data) {
+      var bar = document.getElementById("sync-status-bar");
+      if (!data.configured) {
+        bar.style.display = "none";
+        return;
+      }
+      var parts = [];
+      parts.push("Device: " + esc(data.device_id));
+      if (data.last_pull_at && data.last_pull_at !== "0001-01-01T00:00:00Z") {
+        parts.push("Last pull: " + new Date(data.last_pull_at).toLocaleString());
+      }
+      if (data.last_push_at && data.last_push_at !== "0001-01-01T00:00:00Z") {
+        parts.push("Last push: " + new Date(data.last_push_at).toLocaleString());
+      }
+      bar.textContent = parts.join("  |  ");
+      bar.style.display = "";
+    }).catch(function() {});
+  }
+
+  function createGist() {
+    var token = document.getElementById("sync-gist-token").value;
+    if (!token) {
+      toast("Enter a GitHub PAT first", "error");
+      return;
+    }
+    var btn = document.getElementById("btn-create-gist");
+    btn.disabled = true;
+    btn.textContent = "Creating...";
+    api("POST", "/sync/create-gist", { token: token }).then(function(data) {
+      document.getElementById("sync-gist-id").value = data.gist_id;
+      toast("Gist created: " + data.gist_id);
+    }).catch(function(err) {
+      toast("Failed: " + err.message, "error");
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = "Create Gist";
     });
   }
 })();

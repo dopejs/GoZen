@@ -31,6 +31,7 @@ type editorModel struct {
 	focus           editorField
 	editing         string // config name being edited, empty = new
 	initMode        bool   // true = auto-add to default profile on save (first provider)
+	standalone      bool   // true = standalone mode (skip env vars field)
 	err             string
 	saved           bool   // true = save succeeded, waiting to exit
 	status          string // "Saved" success message
@@ -145,6 +146,19 @@ func (m editorModel) init() tea.Cmd {
 	return textinput.Blink
 }
 
+// maxField returns the total navigable positions (including save button).
+func (m editorModel) maxField() editorField {
+	if m.standalone {
+		return fieldSonnetModel + 2 // fields up to SonnetModel + save button
+	}
+	return fieldCount + 1 // all fields + save button
+}
+
+// saveField returns the index of the save button position.
+func (m editorModel) saveField() editorField {
+	return m.maxField() - 1
+}
+
 func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 	// After save, ignore everything except saveExitMsg
 	if m.saved {
@@ -176,6 +190,8 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 		}
 	}
 
+	maxF := m.maxField()
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -183,7 +199,7 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 			return m, func() tea.Msg { return switchToListMsg{} }
 		case "tab", "down":
 			m.blurCurrentField()
-			m.focus = (m.focus + 1) % fieldCount
+			m.focus = (m.focus + 1) % maxF
 			if m.editing != "" && m.focus == fieldName {
 				m.focus = fieldType
 			}
@@ -191,9 +207,9 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 			return m, textinput.Blink
 		case "shift+tab", "up":
 			m.blurCurrentField()
-			m.focus = (m.focus - 1 + fieldCount) % fieldCount
+			m.focus = (m.focus - 1 + maxF) % maxF
 			if m.editing != "" && m.focus == fieldName {
-				m.focus = fieldEnvVars
+				m.focus = maxF - 1
 			}
 			m.focusCurrentField()
 			return m, textinput.Blink
@@ -205,7 +221,7 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 				m.providerType = (m.providerType + 1) % 2
 				return m, nil
 			}
-			if m.focus == fieldEnvVars {
+			if !m.standalone && m.focus == fieldEnvVars {
 				// Open env vars editor for current CLI
 				var envVars map[string]string
 				switch m.currentEnvCLI {
@@ -220,13 +236,13 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 				m.envVarsModel = newEnvVarsEditorModel(envVars)
 				return m, nil
 			}
-			// Enter on last text field = save
-			if m.focus == fieldSonnetModel {
+			// Enter on last navigable field = save
+			if m.focus == maxF-1 {
 				return m.save()
 			}
 			// Enter on non-last field = move to next
 			m.blurCurrentField()
-			m.focus = (m.focus + 1) % fieldCount
+			m.focus = (m.focus + 1) % maxF
 			if m.editing != "" && m.focus == fieldName {
 				m.focus = fieldType
 			}
@@ -239,7 +255,7 @@ func (m editorModel) update(msg tea.Msg) (editorModel, tea.Cmd) {
 				return m, nil
 			}
 			// Switch CLI with left/right when focused on env vars field
-			if m.focus == fieldEnvVars {
+			if !m.standalone && m.focus == fieldEnvVars {
 				if msg.String() == "left" {
 					m.currentEnvCLI = (m.currentEnvCLI - 1 + 3) % 3
 				} else {
@@ -403,63 +419,7 @@ func (m editorModel) view(width, height int) string {
 	content.WriteString(sectionTitleStyle.Render(" Provider Settings"))
 	content.WriteString("\n\n")
 
-	for i := range m.fields {
-		if editorField(i) == fieldType {
-			// Special handling for type field
-			cursor := "  "
-			style := dimStyle
-			if m.focus == fieldType {
-				cursor = "▸ "
-				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
-			}
-			typeLabel := "Anthropic Messages API"
-			if m.providerType == 1 {
-				typeLabel = "OpenAI Chat Completions API"
-			}
-			content.WriteString(style.Render(fmt.Sprintf("%sAPI Type:         [%s] (←/→ to change)", cursor, typeLabel)))
-			content.WriteString("\n")
-			continue
-		}
-		if editorField(i) == fieldEnvVars {
-			// Special handling for env vars field with CLI tabs
-			cursor := "  "
-			style := dimStyle
-			if m.focus == fieldEnvVars {
-				cursor = "▸ "
-				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
-			}
-
-			// Get current CLI name and env var count
-			cliNames := []string{"Claude", "Codex", "OpenCode"}
-			cliName := cliNames[m.currentEnvCLI]
-			var envCount int
-			switch m.currentEnvCLI {
-			case 0:
-				envCount = len(m.claudeEnvVars)
-			case 1:
-				envCount = len(m.codexEnvVars)
-			case 2:
-				envCount = len(m.opencodeEnvVars)
-			}
-
-			envLabel := fmt.Sprintf("%d configured", envCount)
-			if envCount == 0 {
-				envLabel = "none"
-			}
-
-			// Show CLI selector and env var count
-			content.WriteString(style.Render(fmt.Sprintf("%sEnv Vars (%s): [%s] (←/→ CLI, enter edit)", cursor, cliName, envLabel)))
-			content.WriteString("\n")
-			continue
-		}
-		if m.editing != "" && editorField(i) == fieldName {
-			content.WriteString(dimStyle.Render(fmt.Sprintf("  Name:             %s", m.editing)))
-			content.WriteString("\n")
-			continue
-		}
-		content.WriteString(m.fields[i].View())
-		content.WriteString("\n")
-	}
+	m.renderFields(&content)
 
 	// Form box with proper width
 	formWidth := contentWidth * 75 / 100
@@ -512,6 +472,98 @@ func (m editorModel) view(width, height int) string {
 	return view.String()
 }
 
+// viewClean renders a borderless form for standalone alt-screen use.
+func (m editorModel) viewClean() string {
+	if m.envVarsEdit {
+		return m.envVarsModel.viewClean()
+	}
+
+	var b strings.Builder
+
+	title := "Add Provider"
+	if m.editing != "" {
+		title = fmt.Sprintf("Edit Provider: %s", m.editing)
+	}
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n\n")
+
+	m.renderFields(&b)
+
+	if m.err != "" {
+		b.WriteString("\n")
+		b.WriteString(errorStyle.Render("  ✗ " + m.err))
+	}
+
+	return b.String()
+}
+
+// renderFields writes form fields to the given builder.
+func (m editorModel) renderFields(b *strings.Builder) {
+	for i := range m.fields {
+		if editorField(i) == fieldType {
+			cursor := "  "
+			style := dimStyle
+			if m.focus == fieldType {
+				cursor = "▸ "
+				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+			}
+			typeLabel := "Anthropic Messages API"
+			if m.providerType == 1 {
+				typeLabel = "OpenAI Chat Completions API"
+			}
+			b.WriteString(style.Render(fmt.Sprintf("%sAPI Type:         [%s] (←/→ to change)", cursor, typeLabel)))
+			b.WriteString("\n")
+			continue
+		}
+		if editorField(i) == fieldEnvVars {
+			if m.standalone {
+				continue // skip env vars in standalone mode
+			}
+			cursor := "  "
+			style := dimStyle
+			if m.focus == fieldEnvVars {
+				cursor = "▸ "
+				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+			}
+			cliNames := []string{"Claude", "Codex", "OpenCode"}
+			cliName := cliNames[m.currentEnvCLI]
+			var envCount int
+			switch m.currentEnvCLI {
+			case 0:
+				envCount = len(m.claudeEnvVars)
+			case 1:
+				envCount = len(m.codexEnvVars)
+			case 2:
+				envCount = len(m.opencodeEnvVars)
+			}
+			envLabel := fmt.Sprintf("%d configured", envCount)
+			if envCount == 0 {
+				envLabel = "none"
+			}
+			b.WriteString(style.Render(fmt.Sprintf("%sEnv Vars (%s): [%s] (←/→ CLI, enter edit)", cursor, cliName, envLabel)))
+			b.WriteString("\n")
+			continue
+		}
+		if m.editing != "" && editorField(i) == fieldName {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  Name:             %s", m.editing)))
+			b.WriteString("\n")
+			continue
+		}
+		b.WriteString(m.fields[i].View())
+		b.WriteString("\n")
+	}
+
+	// Save button
+	b.WriteString("\n")
+	savePos := m.saveField()
+	if m.focus == savePos {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("▸ [ Save ]"))
+	} else {
+		b.WriteString(dimStyle.Render("  [ Save ]"))
+	}
+	b.WriteString("\n")
+}
+
 // standaloneEditorModel wraps editorModel for standalone use.
 type standaloneEditorModel struct {
 	editor      editorModel
@@ -520,8 +572,10 @@ type standaloneEditorModel struct {
 }
 
 func newStandaloneEditorModel(configName string) standaloneEditorModel {
+	editor := newEditorModel(configName)
+	editor.standalone = true
 	return standaloneEditorModel{
-		editor: newEditorModel(configName),
+		editor: editor,
 	}
 }
 
@@ -541,18 +595,24 @@ func (m standaloneEditorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case switchToListMsg:
-		// Editor finished saving — extract the name and quit
 		m.createdName = strings.TrimSpace(m.editor.fields[fieldName].Value())
 		return m, tea.Quit
 	}
 
 	var cmd tea.Cmd
 	m.editor, cmd = m.editor.update(msg)
+
+	// Quit immediately on save (no delay in standalone mode)
+	if m.editor.saved && m.createdName == "" {
+		m.createdName = strings.TrimSpace(m.editor.fields[fieldName].Value())
+		return m, tea.Quit
+	}
+
 	return m, cmd
 }
 
 func (m standaloneEditorModel) View() string {
-	return m.editor.view(0, 0)
+	return m.editor.viewClean()
 }
 
 // RunAddProvider runs a standalone provider editor TUI for creating a new provider.
@@ -564,10 +624,12 @@ func RunAddProvider(presetName string) (string, error) {
 	if presetName != "" && config.GetProvider(presetName) != nil {
 		return "", fmt.Errorf("provider %q already exists", presetName)
 	}
+	editor := newEditorModelWithPreset("", presetName)
+	editor.standalone = true
 	m := standaloneEditorModel{
-		editor: newEditorModelWithPreset("", presetName),
+		editor: editor,
 	}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return "", err
@@ -577,6 +639,7 @@ func RunAddProvider(presetName string) (string, error) {
 		return "", fmt.Errorf("cancelled")
 	}
 	providerName := sm.createdName
+	fmt.Printf("Provider %q created.\n", providerName)
 
 	// If profiles exist, let the user pick which ones to add this provider to
 	profiles := config.ListProfiles()
@@ -591,6 +654,9 @@ func RunAddProvider(presetName string) (string, error) {
 			order = append(order, providerName)
 			config.WriteProfileOrder(profile, order)
 		}
+		if len(selected) > 0 {
+			fmt.Printf("Added to profiles: %s\n", strings.Join(selected, ", "))
+		}
 	}
 
 	return providerName, nil
@@ -599,7 +665,7 @@ func RunAddProvider(presetName string) (string, error) {
 // RunEditProvider runs a standalone provider editor TUI for editing an existing provider.
 func RunEditProvider(name string) error {
 	m := newStandaloneEditorModel(name)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return err
@@ -608,6 +674,7 @@ func RunEditProvider(name string) error {
 	if sm.cancelled {
 		return fmt.Errorf("cancelled")
 	}
+	fmt.Printf("Provider %q updated.\n", name)
 	return nil
 }
 
@@ -783,47 +850,7 @@ func (m envVarsEditorModel) view(width, height int) string {
 	b.WriteString("\n\n")
 
 	var content strings.Builder
-
-	if m.phase == 1 {
-		// Key editing
-		content.WriteString(sectionTitleStyle.Render(" Enter Variable Name"))
-		content.WriteString("\n")
-		content.WriteString(dimStyle.Render(" e.g. CLAUDE_CODE_MAX_OUTPUT_TOKENS"))
-		content.WriteString("\n\n")
-		content.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.keyInput + "█"))
-	} else if m.phase == 2 {
-		// Value editing
-		content.WriteString(sectionTitleStyle.Render(fmt.Sprintf(" Enter Value for %s", m.keyInput)))
-		content.WriteString("\n\n")
-		content.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.valueInput + "█"))
-	} else {
-		// List view
-		content.WriteString(sectionTitleStyle.Render(" Custom Environment Variables"))
-		content.WriteString("\n")
-		content.WriteString(dimStyle.Render(" These are passed as x-env-* headers to the proxy"))
-		content.WriteString("\n\n")
-
-		for i, e := range m.entries {
-			cursor := "  "
-			style := tableRowStyle
-			if i == m.cursor {
-				cursor = "▸ "
-				style = tableSelectedRowStyle
-			}
-			line := fmt.Sprintf("%s%s = %s", cursor, e.key, e.value)
-			content.WriteString(style.Render(line))
-			content.WriteString("\n")
-		}
-
-		// Add new entry option
-		cursor := "  "
-		style := dimStyle
-		if m.cursor == len(m.entries) {
-			cursor = "▸ "
-			style = tableSelectedRowStyle
-		}
-		content.WriteString(style.Render(cursor + "[+ Add new variable]"))
-	}
+	m.renderContent(&content)
 
 	// Content box with proper width
 	boxWidth := contentWidth * 60 / 100
@@ -872,4 +899,49 @@ func (m envVarsEditorModel) view(width, height int) string {
 	view.WriteString(helpBar)
 
 	return view.String()
+}
+
+// viewClean renders a borderless env vars editor for standalone alt-screen use.
+func (m envVarsEditorModel) viewClean() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Environment Variables"))
+	b.WriteString("\n\n")
+
+	m.renderContent(&b)
+
+	return b.String()
+}
+
+// renderContent writes the env vars editor content to the given builder.
+func (m envVarsEditorModel) renderContent(b *strings.Builder) {
+	if m.phase == 1 {
+		b.WriteString(dimStyle.Render("  Enter variable name (e.g. CLAUDE_CODE_MAX_OUTPUT_TOKENS)"))
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.keyInput + "█"))
+	} else if m.phase == 2 {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("  Enter value for %s", m.keyInput)))
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Render("  " + m.valueInput + "█"))
+	} else {
+		for i, e := range m.entries {
+			cursor := "  "
+			style := tableRowStyle
+			if i == m.cursor {
+				cursor = "▸ "
+				style = tableSelectedRowStyle
+			}
+			line := fmt.Sprintf("%s%s = %s", cursor, e.key, e.value)
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+
+		cursor := "  "
+		style := dimStyle
+		if m.cursor == len(m.entries) {
+			cursor = "▸ "
+			style = tableSelectedRowStyle
+		}
+		b.WriteString(style.Render(cursor + "[+ Add new variable]"))
+	}
 }

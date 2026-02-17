@@ -61,22 +61,16 @@ func main() {
 	fmt.Println()
 	fmt.Println("╭──────────────────────────────────────────────────────────╮")
 	fmt.Println("│  Migration complete!                                     │")
-	fmt.Println("│                                                          │")
-	if len(os.Args) > 1 {
-		inner := fmt.Sprintf("  Please use: zen %s", strings.Join(os.Args[1:], " "))
-		// Truncate if too long for the box (58 chars inner width)
-		if len(inner) > 58 {
-			inner = inner[:55] + "..."
-		}
-		// Pad to 58 chars
-		for len(inner) < 58 {
-			inner += " "
-		}
-		fmt.Printf("│%s│\n", inner)
-	} else {
-		fmt.Println("│  Please use: zen                                         │")
-	}
 	fmt.Println("╰──────────────────────────────────────────────────────────╯")
+	fmt.Println()
+	fmt.Println("Quick Start:")
+	fmt.Println("  zen                          Start with default profile")
+	fmt.Println("  zen use <provider>           Use a specific provider")
+	fmt.Println("  zen web                      Open web UI")
+	fmt.Println("  zen config add provider      Add a new provider")
+	fmt.Println("  zen config add profile       Add a new profile")
+	fmt.Println("  zen daemon enable            Auto-start daemon on login")
+	fmt.Println("  zen daemon disable           Remove auto-start")
 }
 
 func fatalf(format string, args ...interface{}) {
@@ -238,35 +232,45 @@ func downloadZen() {
 // --- Step 3: Remove service (platform-specific, before stopping daemon) ---
 
 func removeService() bool {
-	step(3, 5, "Removing opencc web system service ... ")
+	step(3, 5, "Removing legacy system services ... ")
 
 	removed := false
 
 	switch runtime.GOOS {
 	case "darwin":
 		home, _ := os.UserHomeDir()
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.dopejs.opencc-web.plist")
-		if _, err := os.Stat(plist); err == nil {
-			exec.Command("launchctl", "unload", plist).Run()
-			os.Remove(plist)
-			removed = true
+		// Remove all legacy plist variants: opencc-web, zen-web
+		for _, label := range []string{"com.dopejs.opencc-web", "com.dopejs.zen-web"} {
+			plist := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+			if _, err := os.Stat(plist); err == nil {
+				exec.Command("launchctl", "unload", plist).Run()
+				os.Remove(plist)
+				removed = true
+			}
 		}
 
 	case "linux":
 		home, _ := os.UserHomeDir()
-		unit := filepath.Join(home, ".config", "systemd", "user", "opencc-web.service")
-		if _, err := os.Stat(unit); err == nil {
-			exec.Command("systemctl", "--user", "stop", "opencc-web.service").Run()
-			exec.Command("systemctl", "--user", "disable", "opencc-web.service").Run()
-			os.Remove(unit)
+		// Remove all legacy unit variants: opencc-web, zen-web
+		for _, name := range []string{"opencc-web.service", "zen-web.service"} {
+			unit := filepath.Join(home, ".config", "systemd", "user", name)
+			if _, err := os.Stat(unit); err == nil {
+				exec.Command("systemctl", "--user", "stop", name).Run()
+				exec.Command("systemctl", "--user", "disable", name).Run()
+				os.Remove(unit)
+				removed = true
+			}
+		}
+		if removed {
 			exec.Command("systemctl", "--user", "daemon-reload").Run()
-			removed = true
 		}
 
 	case "windows":
-		if err := exec.Command("schtasks", "/query", "/tn", "opencc-web").Run(); err == nil {
-			exec.Command("schtasks", "/delete", "/tn", "opencc-web", "/f").Run()
-			removed = true
+		for _, tn := range []string{"opencc-web", "zen-web"} {
+			if err := exec.Command("schtasks", "/query", "/tn", tn).Run(); err == nil {
+				exec.Command("schtasks", "/delete", "/tn", tn, "/f").Run()
+				removed = true
+			}
 		}
 	}
 
@@ -281,16 +285,20 @@ func removeService() bool {
 // --- Step 4: Stop daemon ---
 
 func stopDaemon(oldDir, newDir string) {
-	step(4, 5, "Stopping opencc web daemon ... ")
+	step(4, 5, "Stopping legacy daemons ... ")
 
 	stopped := false
 	for _, dir := range []string{oldDir, newDir} {
 		entries, _ := os.ReadDir(dir)
 		for _, e := range entries {
-			if !strings.HasPrefix(e.Name(), "web") || !strings.HasSuffix(e.Name(), ".pid") {
+			name := e.Name()
+			// Match legacy web*.pid files AND zend.pid
+			isLegacyWeb := strings.HasPrefix(name, "web") && strings.HasSuffix(name, ".pid")
+			isZend := name == "zend.pid"
+			if !isLegacyWeb && !isZend {
 				continue
 			}
-			pidFile := filepath.Join(dir, e.Name())
+			pidFile := filepath.Join(dir, name)
 			data, err := os.ReadFile(pidFile)
 			if err != nil {
 				continue
@@ -323,7 +331,7 @@ func reEnableService() {
 		zenPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "zen", "zen.exe")
 	}
 	if _, err := os.Stat(zenPath); err == nil {
-		exec.Command(zenPath, "web", "enable").Run()
+		exec.Command(zenPath, "daemon", "enable").Run()
 	}
 }
 

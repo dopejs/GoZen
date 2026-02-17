@@ -164,26 +164,26 @@ func TestLogFilterMatch(t *testing.T) {
 	}
 }
 
-func TestProviderGetEnvVarsForCLI(t *testing.T) {
+func TestProviderGetEnvVarsForClient(t *testing.T) {
 	p := &Provider{
 		EnvVars:       map[string]string{"SHARED": "1"},
 		ClaudeEnvVars: map[string]string{"C": "c"},
 		CodexEnvVars:  map[string]string{"X": "x"},
 	}
 
-	vars := p.GetEnvVarsForCLI("claude")
+	vars := p.GetEnvVarsForClient("claude")
 	if vars["C"] != "c" {
 		t.Errorf("claude vars = %v", vars)
 	}
 
-	vars = p.GetEnvVarsForCLI("codex")
+	vars = p.GetEnvVarsForClient("codex")
 	if vars["X"] != "x" {
 		t.Errorf("codex vars = %v", vars)
 	}
 
 	// Fallback to shared
 	p2 := &Provider{EnvVars: map[string]string{"S": "s"}}
-	vars = p2.GetEnvVarsForCLI("claude")
+	vars = p2.GetEnvVarsForClient("claude")
 	if vars["S"] != "s" {
 		t.Errorf("fallback vars = %v", vars)
 	}

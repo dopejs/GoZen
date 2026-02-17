@@ -10,6 +10,7 @@ import {
   Globe,
   Monitor,
   FileJson,
+  RefreshCw,
 } from "lucide-react";
 
 const navItems = [
@@ -22,6 +23,7 @@ const navItems = [
   { path: "/docs/web-ui", key: "webUi", icon: Globe },
   { path: "/docs/tui", key: "tui", icon: Monitor },
   { path: "/docs/config", key: "config", icon: FileJson },
+  { path: "/docs/config-sync", key: "configSync", icon: RefreshCw },
 ];
 
 export function DocsSidebar() {

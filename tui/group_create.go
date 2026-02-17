@@ -70,13 +70,9 @@ func (m groupCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m groupCreateModel) View() string {
-	width := 80  // default width
-	height := 24 // default height
-
-	sidePadding := 2
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("  Create New Group"))
+	b.WriteString(titleStyle.Render("Create New Profile"))
 	b.WriteString("\n\n")
 	b.WriteString(m.nameInput.View())
 	b.WriteString("\n\n")
@@ -85,28 +81,7 @@ func (m groupCreateModel) View() string {
 		b.WriteString(errorStyle.Render("  " + m.err))
 	}
 
-	// Build view with side padding
-	mainContent := b.String()
-	var view strings.Builder
-	lines := strings.Split(mainContent, "\n")
-	for _, line := range lines {
-		view.WriteString(strings.Repeat(" ", sidePadding))
-		view.WriteString(line)
-		view.WriteString("\n")
-	}
-
-	// Fill remaining space to push help bar to bottom
-	currentLines := len(lines)
-	remainingLines := height - currentLines - 1
-	for i := 0; i < remainingLines; i++ {
-		view.WriteString("\n")
-	}
-
-	// Help bar at bottom
-	helpBar := RenderHelpBar("Enter create • Esc cancel", width)
-	view.WriteString(helpBar)
-
-	return view.String()
+	return b.String()
 }
 
 // RunGroupCreate runs a standalone group creation TUI.
@@ -122,7 +97,7 @@ func RunGroupCreate(presetName string) (string, error) {
 		}
 	}
 	m := newGroupCreateModel(presetName)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return "", err
@@ -131,5 +106,6 @@ func RunGroupCreate(presetName string) (string, error) {
 	if gm.cancelled {
 		return "", fmt.Errorf("cancelled")
 	}
+	fmt.Printf("Profile %q created.\n", gm.created)
 	return gm.created, nil
 }

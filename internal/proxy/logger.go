@@ -29,6 +29,8 @@ type LogEntry struct {
 	Path         string    `json:"path,omitempty"`
 	Error        string    `json:"error,omitempty"`
 	ResponseBody string    `json:"response_body,omitempty"`
+	SessionID    string    `json:"session_id,omitempty"`
+	ClientType   string    `json:"client_type,omitempty"`
 }
 
 // StructuredLogger provides structured logging with separate error log file.
@@ -299,12 +301,14 @@ func (l *StructuredLogger) GetProviders() []string {
 // LogFilter defines criteria for filtering log entries.
 type LogFilter struct {
 	Provider   string   `json:"provider,omitempty"`
-	Level      LogLevel `json:"level,omitempty"`      // empty means all levels
+	Level      LogLevel `json:"level,omitempty"`       // empty means all levels
 	ErrorsOnly bool     `json:"errors_only,omitempty"` // only error and warn levels
 	StatusCode int      `json:"status_code,omitempty"` // filter by specific status code
 	StatusMin  int      `json:"status_min,omitempty"`  // filter by status code range (min)
 	StatusMax  int      `json:"status_max,omitempty"`  // filter by status code range (max)
-	Limit      int      `json:"limit,omitempty"`       // max entries to return
+	SessionID  string   `json:"session_id,omitempty"`
+	ClientType string   `json:"client_type,omitempty"`
+	Limit      int      `json:"limit,omitempty"` // max entries to return
 }
 
 // Match checks if a log entry matches the filter criteria.
@@ -334,6 +338,16 @@ func (f LogFilter) Match(entry LogEntry) bool {
 		return false
 	}
 	if f.StatusMax > 0 && entry.StatusCode > f.StatusMax {
+		return false
+	}
+
+	// Session ID filter
+	if f.SessionID != "" && entry.SessionID != f.SessionID {
+		return false
+	}
+
+	// Client type filter
+	if f.ClientType != "" && entry.ClientType != f.ClientType {
 		return false
 	}
 

@@ -5,24 +5,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"text/template"
 )
 
 func systemdUnitPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "systemd", "user", "zen-web.service")
+	return filepath.Join(home, ".config", "systemd", "user", "zend.service")
 }
 
 const unitTemplate = `[Unit]
-Description=GoZen Web Config Server
+Description=GoZen Daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart={{.Executable}} web
-Environment=GOZEN_WEB_DAEMON=1
+ExecStart={{.Executable}} daemon start --foreground
 Restart=on-failure
 RestartSec=5
 
@@ -32,12 +29,16 @@ WantedBy=default.target
 
 // EnableService installs and enables the systemd user unit on Linux.
 func EnableService() error {
-	// Clean up legacy opencc-web service if it exists
+	// Clean up legacy opencc-web service
 	exec.Command("systemctl", "--user", "stop", "opencc-web.service").Run()
 	exec.Command("systemctl", "--user", "disable", "opencc-web.service").Run()
 	home, _ := os.UserHomeDir()
-	legacyUnitPath := filepath.Join(home, ".config", "systemd", "user", "opencc-web.service")
-	os.Remove(legacyUnitPath)
+	os.Remove(filepath.Join(home, ".config", "systemd", "user", "opencc-web.service"))
+
+	// Clean up legacy zen-web service
+	exec.Command("systemctl", "--user", "stop", "zen-web.service").Run()
+	exec.Command("systemctl", "--user", "disable", "zen-web.service").Run()
+	os.Remove(filepath.Join(home, ".config", "systemd", "user", "zen-web.service"))
 
 	exe, err := os.Executable()
 	if err != nil {
@@ -64,12 +65,12 @@ func EnableService() error {
 		f.Close()
 		return err
 	}
-	f.Close() // Close before systemctl commands
+	f.Close()
 
 	if out, err := exec.Command("systemctl", "--user", "daemon-reload").CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl daemon-reload failed: %s: %w", string(out), err)
 	}
-	if out, err := exec.Command("systemctl", "--user", "enable", "--now", "zen-web.service").CombinedOutput(); err != nil {
+	if out, err := exec.Command("systemctl", "--user", "enable", "--now", "zend.service").CombinedOutput(); err != nil {
 		return fmt.Errorf("systemctl enable failed: %s: %w", string(out), err)
 	}
 
@@ -80,8 +81,8 @@ func EnableService() error {
 func DisableService() error {
 	unitPath := systemdUnitPath()
 
-	exec.Command("systemctl", "--user", "stop", "zen-web.service").Run()
-	exec.Command("systemctl", "--user", "disable", "zen-web.service").Run()
+	exec.Command("systemctl", "--user", "stop", "zend.service").Run()
+	exec.Command("systemctl", "--user", "disable", "zend.service").Run()
 
 	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove unit file: %w", err)
@@ -90,17 +91,4 @@ func DisableService() error {
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
 
 	return nil
-}
-
-// findServicePid checks systemd for the daemon's PID.
-func findServicePid() (int, bool) {
-	out, err := exec.Command("systemctl", "--user", "show", "zen-web.service", "-p", "MainPID", "--value").Output()
-	if err != nil {
-		return 0, false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err == nil && pid > 0 {
-		return pid, true
-	}
-	return 0, false
 }

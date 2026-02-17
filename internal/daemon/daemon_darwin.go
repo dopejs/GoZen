@@ -5,13 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"text/template"
 )
 
-const launchdLabel = "com.dopejs.zen-web"
+const launchdLabel = "com.dopejs.zend"
 const legacyLaunchdLabel = "com.dopejs.opencc-web"
+const legacyZenWebLabel = "com.dopejs.zen-web"
 
 func launchdPlistPath() string {
 	home, _ := os.UserHomeDir()
@@ -28,32 +27,40 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <key>ProgramArguments</key>
   <array>
     <string>{{.Executable}}</string>
-    <string>web</string>
+    <string>daemon</string>
+    <string>start</string>
+    <string>--foreground</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
   <key>StandardOutPath</key>
   <string>{{.LogPath}}</string>
   <key>StandardErrorPath</key>
   <string>{{.LogPath}}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>GOZEN_WEB_DAEMON</key>
-    <string>1</string>
-  </dict>
 </dict>
 </plist>
 `
 
 // EnableService installs and loads the launchd plist on macOS.
 func EnableService() error {
-	// Clean up legacy opencc-web plist if it exists
-	legacyPlistPath := filepath.Join(filepath.Dir(launchdPlistPath()), legacyLaunchdLabel+".plist")
+	agentsDir := filepath.Dir(launchdPlistPath())
+
+	// Clean up legacy opencc-web plist
+	legacyPlistPath := filepath.Join(agentsDir, legacyLaunchdLabel+".plist")
 	if _, err := os.Stat(legacyPlistPath); err == nil {
 		exec.Command("launchctl", "unload", legacyPlistPath).Run()
 		os.Remove(legacyPlistPath)
+	}
+
+	// Clean up legacy zen-web plist
+	zenWebPlistPath := filepath.Join(agentsDir, legacyZenWebLabel+".plist")
+	if _, err := os.Stat(zenWebPlistPath); err == nil {
+		exec.Command("launchctl", "unload", zenWebPlistPath).Run()
+		os.Remove(zenWebPlistPath)
 	}
 
 	exe, err := os.Executable()
@@ -80,12 +87,12 @@ func EnableService() error {
 	}{
 		Label:      launchdLabel,
 		Executable: exe,
-		LogPath:    LogPath(),
+		LogPath:    DaemonLogPath(),
 	}); err != nil {
 		f.Close()
 		return err
 	}
-	f.Close() // Close before launchctl load
+	f.Close()
 
 	out, err := exec.Command("launchctl", "load", plistPath).CombinedOutput()
 	if err != nil {
@@ -101,7 +108,6 @@ func DisableService() error {
 
 	out, err := exec.Command("launchctl", "unload", plistPath).CombinedOutput()
 	if err != nil {
-		// Ignore error if not loaded
 		_ = out
 	}
 
@@ -110,27 +116,4 @@ func DisableService() error {
 	}
 
 	return nil
-}
-
-// findServicePid checks launchd for the daemon's PID.
-func findServicePid() (int, bool) {
-	out, err := exec.Command("launchctl", "list", launchdLabel).Output()
-	if err != nil {
-		return 0, false
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "\"PID\"") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			pidStr := strings.TrimSuffix(strings.TrimSpace(parts[1]), ";")
-			pid, err := strconv.Atoi(strings.TrimSpace(pidStr))
-			if err == nil && pid > 0 {
-				return pid, true
-			}
-		}
-	}
-	return 0, false
 }

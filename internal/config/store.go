@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,6 +51,7 @@ type Store struct {
 	path     string
 	config   *OpenCCConfig
 	modTime  time.Time // last known modification time of config file
+	onSave   func()    // called after saveLocked() succeeds
 }
 
 var (
@@ -322,25 +324,25 @@ func (s *Store) SetDefaultProfile(profile string) error {
 	return s.saveLocked()
 }
 
-// GetDefaultCLI returns the configured default CLI.
+// GetDefaultClient returns the configured default client.
 // Returns "claude" if not set.
-func (s *Store) GetDefaultCLI() string {
+func (s *Store) GetDefaultClient() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
-	if s.config == nil || s.config.DefaultCLI == "" {
-		return DefaultCLIName
+	if s.config == nil || s.config.DefaultClient == "" {
+		return DefaultClientName
 	}
-	return s.config.DefaultCLI
+	return s.config.DefaultClient
 }
 
-// SetDefaultCLI sets the default CLI.
-func (s *Store) SetDefaultCLI(cli string) error {
+// SetDefaultClient sets the default client.
+func (s *Store) SetDefaultClient(client string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadIfModified()
 	s.ensureConfig()
-	s.config.DefaultCLI = cli
+	s.config.DefaultClient = client
 	return s.saveLocked()
 }
 
@@ -363,6 +365,49 @@ func (s *Store) SetWebPort(port int) error {
 	s.reloadIfModified()
 	s.ensureConfig()
 	s.config.WebPort = port
+	return s.saveLocked()
+}
+
+// GetProxyPort returns the configured proxy port.
+// Returns DefaultProxyPort if not set.
+func (s *Store) GetProxyPort() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.ProxyPort == 0 {
+		return DefaultProxyPort
+	}
+	return s.config.ProxyPort
+}
+
+// SetProxyPort sets the proxy port.
+func (s *Store) SetProxyPort(port int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.ProxyPort = port
+	return s.saveLocked()
+}
+
+// GetWebPasswordHash returns the stored bcrypt password hash.
+func (s *Store) GetWebPasswordHash() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return ""
+	}
+	return s.config.WebPasswordHash
+}
+
+// SetWebPasswordHash sets the bcrypt password hash and saves.
+func (s *Store) SetWebPasswordHash(hash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.WebPasswordHash = hash
 	return s.saveLocked()
 }
 
@@ -389,14 +434,22 @@ func (s *Store) loadLocked() error {
 		}
 
 		// Check config version
+		needsMigration := false
 		if cfg.Version > CurrentConfigVersion {
-			// Config is newer than this version of zen can handle
-			return fmt.Errorf("config version %d is newer than supported version %d, please upgrade zen to the latest version",
+			// Config was saved by a newer version of zen.
+			// Since json.Unmarshal succeeded, the data structure is compatible —
+			// Go's JSON decoder silently ignores unknown fields. Only truly
+			// incompatible changes (e.g. type changes from [] to {}) would have
+			// caused Unmarshal to fail above.
+			// We keep the original version number and avoid saving, so we don't
+			// lose any fields the newer version added.
+			log.Printf("Warning: config version %d is newer than this version of zen (supports up to %d). Data loaded successfully — consider upgrading zen.",
 				cfg.Version, CurrentConfigVersion)
-		}
-		if cfg.Version < CurrentConfigVersion {
-			// Older config (including version 0 = no version field), upgrade to current
-			cfg.Version = CurrentConfigVersion
+		} else {
+			needsMigration = cfg.Version < CurrentConfigVersion
+			if needsMigration {
+				cfg.Version = CurrentConfigVersion
+			}
 		}
 
 		if cfg.Providers == nil {
@@ -409,6 +462,10 @@ func (s *Store) loadLocked() error {
 		// Update modification time
 		if info, statErr := os.Stat(s.path); statErr == nil {
 			s.modTime = info.ModTime()
+		}
+		// Auto-save if migration was needed (writes new JSON keys)
+		if needsMigration {
+			return s.saveLocked()
 		}
 		return nil
 	}
@@ -511,6 +568,10 @@ func (s *Store) saveLocked() error {
 	if info, statErr := os.Stat(s.path); statErr == nil {
 		s.modTime = info.ModTime()
 	}
+	// Notify save callback (e.g. sync auto-push)
+	if s.onSave != nil {
+		go s.onSave()
+	}
 	return nil
 }
 
@@ -541,6 +602,38 @@ func (s *Store) ensureConfig() {
 	if s.config.Version == 0 {
 		s.config.Version = CurrentConfigVersion
 	}
+}
+
+// --- Save callback ---
+
+// SetOnSave registers a callback that is invoked (in a goroutine) after every successful save.
+func (s *Store) SetOnSave(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onSave = fn
+}
+
+// --- Sync Config ---
+
+// GetSyncConfig returns the sync configuration, or nil if not configured.
+func (s *Store) GetSyncConfig() *SyncConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Sync
+}
+
+// SetSyncConfig sets the sync configuration and saves.
+func (s *Store) SetSyncConfig(cfg *SyncConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Sync = cfg
+	return s.saveLocked()
 }
 
 // --- helpers ---
@@ -592,14 +685,14 @@ func (s *Store) BindProject(path string, profile string, cli string) error {
 		}
 	}
 
-	// Verify CLI is valid if specified
-	if cli != "" && !IsValidCLI(cli) {
-		return fmt.Errorf("invalid CLI '%s' (must be %v)", cli, AvailableCLIs)
+	// Verify client is valid if specified
+	if cli != "" && !IsValidClient(cli) {
+		return fmt.Errorf("invalid client '%s' (must be %v)", cli, AvailableClients)
 	}
 
 	s.config.ProjectBindings[path] = &ProjectBinding{
 		Profile: profile,
-		CLI:     cli,
+		Client:  cli,
 	}
 	return s.saveLocked()
 }

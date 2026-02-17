@@ -141,12 +141,21 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	// Parse request body to extract session ID
-	var bodyMap map[string]interface{}
-	sessionID := ""
-	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
-		sessionID = extractSessionID(bodyMap)
+	// Determine session ID:
+	// 1. X-Zen-Session header (set by ProfileProxy with <profile>:<session> key)
+	// 2. Fallback: extract from request body metadata (legacy per-invocation proxy)
+	sessionID := r.Header.Get("X-Zen-Session")
+	r.Header.Del("X-Zen-Session")
+	if sessionID == "" {
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			sessionID = extractSessionID(bodyMap)
+		}
 	}
+
+	// Extract client type for logging (set by ProfileProxy)
+	clientType := r.Header.Get("X-Zen-Client")
+	r.Header.Del("X-Zen-Client")
 
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers
@@ -175,7 +184,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var failures []providerFailure
 
 	// Try scenario providers first, then fallback to default if all fail
-	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, &failures)
+	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, &failures)
 	if success {
 		return
 	}
@@ -184,7 +193,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if usingScenarioRoute && len(s.Providers) > 0 {
 		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", detectedScenario)
 		// Clear model overrides for default providers
-		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, &failures)
+		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, &failures)
 		if success {
 			return
 		}
@@ -211,14 +220,14 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // tryProviders attempts to forward the request to each provider in order.
 // Returns true if a provider successfully handled the request.
-func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID string, failures *[]providerFailure) bool {
+func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType string, failures *[]providerFailure) bool {
 	for i, p := range providers {
 		isLast := i == len(providers)-1
 
 		if !p.IsHealthy() && !isLast {
 			msg := fmt.Sprintf("skipping (unhealthy, backoff %v)", p.Backoff)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
-			s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg, sessionID, clientType)
 			continue
 		}
 
@@ -239,13 +248,13 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				msg := fmt.Sprintf("request canceled by client: %v", err)
 				s.Logger.Printf("[%s] %s", p.Name, msg)
-				s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg)
+				s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg, sessionID, clientType)
 				// Return true to stop processing - client is gone
 				return true
 			}
 			msg := fmt.Sprintf("request error: %v", err)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
-			s.logStructuredError(p.Name, r.Method, r.URL.Path, err)
+			s.logStructuredError(p.Name, r.Method, r.URL.Path, err, sessionID, clientType)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error()})
 			p.MarkFailed()
 			continue
@@ -257,7 +266,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			resp.Body.Close()
 			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
-			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
+			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkAuthFailed()
 			continue
@@ -269,7 +278,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			resp.Body.Close()
 			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
-			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
+			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkFailed()
 			continue
@@ -285,7 +294,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				// Request-related error (e.g., context too long) - failover without marking unhealthy
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
 				s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
-				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
+				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
 				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 				continue
 			}
@@ -293,7 +302,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			// Server-side issue - mark as failed with backoff
 			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
-			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody)
+			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
 			p.MarkFailed()
 			continue
@@ -302,7 +311,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		p.MarkHealthy()
 		msg := fmt.Sprintf("success %d", resp.StatusCode)
 		s.Logger.Printf("[%s] %s", p.Name, msg)
-		s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelInfo, msg)
+		s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelInfo, msg, sessionID, clientType)
 
 		// Update session cache with token usage from response
 		s.updateSessionCache(sessionID, resp)
@@ -315,7 +324,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 }
 
 // logStructured logs to the structured logger if available.
-func (s *ProxyServer) logStructured(provider, method, path string, statusCode int, level LogLevel, message string) {
+func (s *ProxyServer) logStructured(provider, method, path string, statusCode int, level LogLevel, message, sessionID, clientType string) {
 	if s.StructuredLogger == nil {
 		return
 	}
@@ -326,23 +335,48 @@ func (s *ProxyServer) logStructured(provider, method, path string, statusCode in
 		Path:       path,
 		StatusCode: statusCode,
 		Message:    message,
+		SessionID:  sessionID,
+		ClientType: clientType,
 	})
 }
 
 // logStructuredError logs an error to the structured logger.
-func (s *ProxyServer) logStructuredError(provider, method, path string, err error) {
+func (s *ProxyServer) logStructuredError(provider, method, path string, err error, sessionID, clientType string) {
 	if s.StructuredLogger == nil {
 		return
 	}
-	s.StructuredLogger.RequestError(provider, method, path, err)
+	s.StructuredLogger.Log(LogEntry{
+		Level:      LogLevelError,
+		Provider:   provider,
+		Method:     method,
+		Path:       path,
+		Message:    "request failed",
+		Error:      err.Error(),
+		SessionID:  sessionID,
+		ClientType: clientType,
+	})
 }
 
 // logStructuredWithResponse logs an error with response body to the structured logger.
-func (s *ProxyServer) logStructuredWithResponse(provider, method, path string, statusCode int, message string, responseBody []byte) {
+func (s *ProxyServer) logStructuredWithResponse(provider, method, path string, statusCode int, message string, responseBody []byte, sessionID, clientType string) {
 	if s.StructuredLogger == nil {
 		return
 	}
-	s.StructuredLogger.RequestErrorWithResponse(provider, method, path, statusCode, message, responseBody)
+	bodyStr := string(responseBody)
+	if len(bodyStr) > 500 {
+		bodyStr = bodyStr[:500] + "..."
+	}
+	s.StructuredLogger.Log(LogEntry{
+		Level:        LogLevelError,
+		Provider:     provider,
+		Method:       method,
+		Path:         path,
+		StatusCode:   statusCode,
+		Message:      message,
+		ResponseBody: bodyStr,
+		SessionID:    sessionID,
+		ClientType:   clientType,
+	})
 }
 
 func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, modelOverride string) (*http.Response, error) {

@@ -307,8 +307,15 @@ do_install() {
   if [ ! -f "$ZEN_DIR/zen.json" ] && [ ! -f "$HOME/.opencc/opencc.json" ]; then
     setup_first_provider
   else
-    printf "  Run 'zen list' to list configurations\n"
-    printf "  Run 'zen use <name>' to start claude with a configuration\n"
+    printf "\n"
+    printf "  Quick Start:\n"
+    printf "    zen                          Start with default profile\n"
+    printf "    zen use <provider>           Use a specific provider\n"
+    printf "    zen web                      Open web UI\n"
+    printf "    zen config add provider      Add a new provider\n"
+    printf "    zen config add profile       Add a new profile\n"
+    printf "    zen daemon enable            Auto-start daemon on login\n"
+    printf "    zen daemon disable           Remove auto-start\n"
   fi
 }
 

@@ -13,21 +13,21 @@ import (
 type bindingResponse struct {
 	Path    string `json:"path"`
 	Profile string `json:"profile"`
-	CLI     string `json:"cli"`
+	Client  string `json:"client"`
 }
 
 // bindingsResponse is the JSON shape for listing all bindings.
 type bindingsResponse struct {
 	Bindings []bindingResponse `json:"bindings"`
-	Profiles []string          `json:"profiles"` // available profiles for selection
-	CLIs     []string          `json:"clis"`     // available CLIs
+	Profiles []string          `json:"profiles"`
+	Clients  []string          `json:"clients"`
 }
 
 // bindingRequest is the JSON shape for creating/updating a binding.
 type bindingRequest struct {
 	Path    string `json:"path"`
 	Profile string `json:"profile"`
-	CLI     string `json:"cli"`
+	Client  string `json:"client"`
 }
 
 func (s *Server) handleBindings(w http.ResponseWriter, r *http.Request) {
@@ -78,14 +78,14 @@ func (s *Server) listBindings(w http.ResponseWriter, r *http.Request) {
 		bindings = append(bindings, bindingResponse{
 			Path:    path,
 			Profile: b.Profile,
-			CLI:     b.CLI,
+			Client:  b.Client,
 		})
 	}
 
 	writeJSON(w, http.StatusOK, bindingsResponse{
 		Bindings: bindings,
 		Profiles: profiles,
-		CLIs:     config.AvailableCLIs,
+		Clients:  config.AvailableClients,
 	})
 }
 
@@ -100,7 +100,7 @@ func (s *Server) getBinding(w http.ResponseWriter, r *http.Request, path string)
 	writeJSON(w, http.StatusOK, bindingResponse{
 		Path:    path,
 		Profile: binding.Profile,
-		CLI:     binding.CLI,
+		Client:  binding.Client,
 	})
 }
 
@@ -127,14 +127,14 @@ func (s *Server) createBinding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify CLI is valid if specified
-	if req.CLI != "" {
-		if !config.IsValidCLI(req.CLI) {
+	if req.Client != "" {
+		if !config.IsValidClient(req.Client) {
 			writeError(w, http.StatusBadRequest, "invalid CLI")
 			return
 		}
 	}
 
-	if err := store.BindProject(req.Path, req.Profile, req.CLI); err != nil {
+	if err := store.BindProject(req.Path, req.Profile, req.Client); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -142,7 +142,7 @@ func (s *Server) createBinding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, bindingResponse{
 		Path:    req.Path,
 		Profile: req.Profile,
-		CLI:     req.CLI,
+		Client:  req.Client,
 	})
 }
 
@@ -164,14 +164,14 @@ func (s *Server) updateBinding(w http.ResponseWriter, r *http.Request, path stri
 	}
 
 	// Verify CLI is valid if specified
-	if req.CLI != "" {
-		if !config.IsValidCLI(req.CLI) {
+	if req.Client != "" {
+		if !config.IsValidClient(req.Client) {
 			writeError(w, http.StatusBadRequest, "invalid CLI")
 			return
 		}
 	}
 
-	if err := store.BindProject(path, req.Profile, req.CLI); err != nil {
+	if err := store.BindProject(path, req.Profile, req.Client); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -179,7 +179,7 @@ func (s *Server) updateBinding(w http.ResponseWriter, r *http.Request, path stri
 	writeJSON(w, http.StatusOK, bindingResponse{
 		Path:    path,
 		Profile: req.Profile,
-		CLI:     req.CLI,
+		Client:  req.Client,
 	})
 }
 

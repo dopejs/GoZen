@@ -11,6 +11,7 @@ import (
 // selectorItem represents an item in the selector list.
 type selectorItem struct {
 	name     string
+	hint     string // shown grayed out after name, e.g. "(current)"
 	disabled bool
 	reason   string // reason for being disabled
 }
@@ -114,6 +115,9 @@ func (m selectorModel) View() string {
 		}
 
 		line := fmt.Sprintf("%s%s", cursor, item.name)
+		if item.hint != "" {
+			line += dimStyle.Render(" " + item.hint)
+		}
 		if item.disabled && item.reason != "" {
 			line += dimStyle.Render(fmt.Sprintf(" (%s)", item.reason))
 		}
@@ -163,6 +167,89 @@ func RunSelector(title string, items []selectorItem) (string, error) {
 		return "", err
 	}
 	sm := result.(selectorModel)
+	if sm.cancelled {
+		return "", fmt.Errorf("cancelled")
+	}
+	return sm.selected, nil
+}
+
+// minimalSelectorModel is a borderless radio-button selector.
+// It uses alt screen so the list vanishes on exit.
+type minimalSelectorModel struct {
+	items     []string
+	current   string // item marked with ● (the active value)
+	cursor    int
+	selected  string
+	cancelled bool
+}
+
+func (m minimalSelectorModel) Init() tea.Cmd { return nil }
+
+func (m minimalSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			m.cancelled = true
+			return m, tea.Quit
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+			}
+		case "enter":
+			m.selected = m.items[m.cursor]
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m minimalSelectorModel) View() string {
+	var b strings.Builder
+	for i, item := range m.items {
+		dot := "○"
+		if item == m.current {
+			dot = "●"
+		}
+		line := fmt.Sprintf("%s %s", dot, item)
+		if i == m.cursor {
+			b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render(line))
+		} else {
+			b.WriteString(dimStyle.Render(line))
+		}
+		if i < len(m.items)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// RunMinimalSelector runs a borderless radio-button selector in alt screen.
+// current marks the active item with ●. Returns the selected item name,
+// or "cancelled" error on esc/ctrl-c.
+func RunMinimalSelector(items []string, current string) (string, error) {
+	cursor := 0
+	for i, item := range items {
+		if item == current {
+			cursor = i
+			break
+		}
+	}
+	m := minimalSelectorModel{
+		items:   items,
+		current: current,
+		cursor:  cursor,
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return "", err
+	}
+	sm := result.(minimalSelectorModel)
 	if sm.cancelled {
 		return "", fmt.Errorf("cancelled")
 	}

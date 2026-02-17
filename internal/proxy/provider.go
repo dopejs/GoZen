@@ -44,9 +44,9 @@ func (p *Provider) GetType() string {
 	return p.Type
 }
 
-// GetEnvVarsForCLI returns the environment variables for a specific CLI.
-func (p *Provider) GetEnvVarsForCLI(cli string) map[string]string {
-	switch cli {
+// GetEnvVarsForClient returns the environment variables for a specific client.
+func (p *Provider) GetEnvVarsForClient(client string) map[string]string {
+	switch client {
 	case "codex":
 		if len(p.CodexEnvVars) > 0 {
 			return p.CodexEnvVars

@@ -51,7 +51,7 @@ func NewMenuModel() MenuModel {
 			{label: "Quit", action: MenuQuit},
 		},
 		profile: config.GetDefaultProfile(),
-		cli:     config.GetDefaultCLI(),
+		cli:     config.GetDefaultClient(),
 		titleStyle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("14")),
@@ -203,5 +203,5 @@ func (m MenuModel) View() string {
 // Refresh reloads config values.
 func (m *MenuModel) Refresh() {
 	m.profile = config.GetDefaultProfile()
-	m.cli = config.GetDefaultCLI()
+	m.cli = config.GetDefaultClient()
 }

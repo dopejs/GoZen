@@ -9,18 +9,22 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
+	gosync "github.com/dopejs/gozen/internal/sync"
 )
 
 // Server is the web configuration management server.
 type Server struct {
 	httpServer *http.Server
+	mux        *http.ServeMux
 	logger     *log.Logger
 	version    string
 	port       int
+	auth       *AuthManager
+	keys       *KeyPair
+	syncMgr    *gosync.SyncManager
 }
 
 // NewServer creates a new web server bound to 127.0.0.1 on the configured port.
@@ -34,38 +38,77 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 		logger:  logger,
 		version: version,
 		port:    port,
+		auth:    NewAuthManager(),
 	}
 
-	mux := http.NewServeMux()
+	// Generate RSA key pair for encrypted token transport
+	keys, err := GenerateKeyPair()
+	if err != nil {
+		if logger != nil {
+			logger.Printf("Warning: failed to generate RSA key pair: %v", err)
+		}
+	}
+	s.keys = keys
+
+	s.mux = http.NewServeMux()
+
+	// Auth routes (accessible without authentication)
+	s.mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("/api/v1/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("/api/v1/auth/check", s.handleAuthCheck)
+	s.mux.HandleFunc("/api/v1/auth/pubkey", s.handlePubKey)
 
 	// API routes
-	mux.HandleFunc("/api/v1/health", s.handleHealth)
-	mux.HandleFunc("/api/v1/reload", s.handleReload)
-	mux.HandleFunc("/api/v1/providers", s.handleProviders)
-	mux.HandleFunc("/api/v1/providers/", s.handleProvider)
-	mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
-	mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
-	mux.HandleFunc("/api/v1/logs", s.handleLogs)
-	mux.HandleFunc("/api/v1/settings", s.handleSettings)
-	mux.HandleFunc("/api/v1/bindings", s.handleBindings)
-	mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
+	s.mux.HandleFunc("/api/v1/health", s.handleHealth)
+	s.mux.HandleFunc("/api/v1/reload", s.handleReload)
+	s.mux.HandleFunc("/api/v1/providers", s.handleProviders)
+	s.mux.HandleFunc("/api/v1/providers/", s.handleProvider)
+	s.mux.HandleFunc("/api/v1/profiles", s.handleProfiles)
+	s.mux.HandleFunc("/api/v1/profiles/", s.handleProfile)
+	s.mux.HandleFunc("/api/v1/logs", s.handleLogs)
+	s.mux.HandleFunc("/api/v1/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/v1/settings/password", s.handlePasswordChange)
+	s.mux.HandleFunc("/api/v1/bindings", s.handleBindings)
+	s.mux.HandleFunc("/api/v1/bindings/", s.handleBinding)
+
+	// Sync routes
+	s.mux.HandleFunc("/api/v1/sync/config", s.handleSyncConfig)
+	s.mux.HandleFunc("/api/v1/sync/pull", s.handleSyncPull)
+	s.mux.HandleFunc("/api/v1/sync/push", s.handleSyncPush)
+	s.mux.HandleFunc("/api/v1/sync/status", s.handleSyncStatus)
+	s.mux.HandleFunc("/api/v1/sync/test", s.handleSyncTest)
+	s.mux.HandleFunc("/api/v1/sync/create-gist", s.handleSyncCreateGist)
 
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))
-	mux.Handle("/", fileServer)
+	s.mux.Handle("/", fileServer)
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: s.securityHeaders(mux),
+		Handler: s.securityHeaders(s.authMiddleware(s.mux)),
 	}
 
 	return s
 }
 
+// HandleFunc registers an additional handler on the server's mux.
+// Must be called before Start().
+func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, handler)
+}
+
+// SetSyncManager sets the sync manager for the web server.
+func (s *Server) SetSyncManager(mgr *gosync.SyncManager) {
+	s.syncMgr = mgr
+}
+
 // Start begins listening. Returns an error if the port is already in use.
 // Returns nil on graceful shutdown (http.ErrServerClosed).
 func (s *Server) Start() error {
+	// Start periodic session cleanup
+	go s.auth.sessionCleanupLoop()
+
 	ln, err := net.Listen("tcp", s.httpServer.Addr)
 	if err != nil {
 		return fmt.Errorf("port %d is already in use: %w", s.port, err)
@@ -145,32 +188,6 @@ func maskToken(token string) string {
 	return token[:5] + "..." + token[len(token)-4:]
 }
 
-// WaitForReady polls the health endpoint until the server is ready or ctx is cancelled.
-// If portOverride > 0, it is used instead of the configured port.
-func WaitForReady(ctx context.Context, portOverride int) error {
-	port := config.GetWebPort()
-	if portOverride > 0 {
-		port = portOverride
-	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/health", port)
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		resp, err := client.Get(url)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
 // --- logs ---
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +199,9 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 	filter := proxy.LogFilter{
-		Provider: query.Get("provider"),
+		Provider:   query.Get("provider"),
+		SessionID:  query.Get("session_id"),
+		ClientType: query.Get("client_type"),
 	}
 
 	if query.Get("errors_only") == "true" {

@@ -114,12 +114,12 @@ func (m *DashboardModel) refreshList() {
 		}
 		// Build sublabel from binding
 		var sublabel string
-		if binding.Profile != "" && binding.CLI != "" {
-			sublabel = "→ " + binding.Profile + " (" + binding.CLI + ")"
+		if binding.Profile != "" && binding.Client != "" {
+			sublabel = "→ " + binding.Profile + " (" + binding.Client + ")"
 		} else if binding.Profile != "" {
 			sublabel = "→ " + binding.Profile
-		} else if binding.CLI != "" {
-			sublabel = "→ (" + binding.CLI + ")"
+		} else if binding.Client != "" {
+			sublabel = "→ (" + binding.Client + ")"
 		} else {
 			sublabel = "→ (default)"
 		}
@@ -473,7 +473,7 @@ func (m DashboardModel) renderDetail() string {
 			if profileVal == "" {
 				profileVal = "(default)"
 			}
-			cliVal := binding.CLI
+			cliVal := binding.Client
 			if cliVal == "" {
 				cliVal = "(default)"
 			}

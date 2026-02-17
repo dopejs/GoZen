@@ -23,6 +23,10 @@
       "title": "Config Management",
       "desc": "Manage all API provider configs in a unified JSON file"
     },
+    "daemon": {
+      "title": "Unified Daemon",
+      "desc": "Single zend process hosts both the proxy server and the Web UI"
+    },
     "failover": {
       "title": "Proxy Failover",
       "desc": "Built-in HTTP proxy with automatic failover when primary provider is unavailable"
@@ -40,12 +44,16 @@
       "desc": "Configure per-CLI environment variables at the provider level"
     },
     "tui": {
-      "title": "TUI Interface",
-      "desc": "Interactive terminal configuration with Dashboard and legacy modes"
+      "title": "CLI Config",
+      "desc": "Manage providers, profiles, and settings directly via CLI subcommands"
     },
     "webUi": {
       "title": "Web Interface",
-      "desc": "Browser-based visual management for providers, profiles, and bindings"
+      "desc": "Browser-based visual management with password-protected access"
+    },
+    "webSecurity": {
+      "title": "Web Security",
+      "desc": "Auto-generated password, session-based auth, RSA encryption for token transport"
     },
     "configSync": {
       "title": "Config Sync",
@@ -61,7 +69,7 @@
     },
     "step2": {
       "title": "Configure Provider",
-      "desc": "Open the TUI configuration interface"
+      "desc": "Add your first API provider"
     },
     "step3": {
       "title": "Launch",
@@ -80,20 +88,22 @@
       "use": "Use specified provider directly (no proxy)",
       "pick": "Interactively select provider to start",
       "list": "List all providers and profiles",
-      "config": "Open TUI configuration interface",
+      "configAddProvider": "Add a new provider",
+      "configAddProfile": "Add a new profile",
+      "configDefaultClient": "Set the default CLI client",
+      "configDefaultProfile": "Set the default profile",
+      "configResetPassword": "Reset the Web UI access password",
       "configSync": "Pull config from remote sync backend",
-      "configLegacy": "Use legacy TUI interface",
+      "daemonStart": "Start the zend daemon",
+      "daemonStop": "Stop the daemon",
+      "daemonStatus": "Show daemon status",
+      "daemonEnable": "Install daemon as system service",
+      "daemonDisable": "Uninstall daemon system service",
       "bind": "Bind current directory to profile",
       "bindCli": "Bind current directory to specified CLI",
       "unbind": "Unbind current directory",
       "status": "Show current directory binding status",
-      "web": "Start Web UI (foreground, opens browser)",
-      "webDaemon": "Start Web UI as background daemon",
-      "webStop": "Stop Web daemon",
-      "webStatus": "Show Web daemon status",
-      "webRestart": "Restart Web daemon",
-      "webEnable": "Install Web UI as system service",
-      "webDisable": "Uninstall Web UI system service",
+      "web": "Open Web UI in browser (auto-starts daemon)",
       "upgrade": "Upgrade to latest version",
       "version": "Show version",
       "completion": "Generate shell completion (zsh/bash/fish)"
@@ -112,7 +122,6 @@
       "bindings": "Project Bindings",
       "multiCli": "Multi-CLI Support",
       "webUi": "Web Interface",
-      "tui": "TUI Interface",
       "configSync": "Config Sync",
       "config": "Config Reference"
     },
@@ -126,7 +135,7 @@
       "installDesc": "Install with the one-line script:",
       "uninstallDesc": "Uninstall:",
       "firstRunTitle": "First Run",
-      "firstRunStep1": "Open the TUI to create your first provider:",
+      "firstRunStep1": "Add your first provider:",
       "firstRunStep2": "Start with default profile:",
       "firstRunStep3": "Start with a specific profile:",
       "firstRunStep4": "Start with a specific CLI:"
@@ -191,36 +200,25 @@
     },
     "webUi": {
       "title": "Web Interface",
-      "intro": "Visually manage all configurations through your browser.",
+      "intro": "Visually manage all configurations through your browser. The daemon starts automatically when needed.",
       "usageTitle": "Usage",
       "featuresTitle": "Features",
       "features": {
         "providerManage": "Provider and Profile management",
         "bindingManage": "Project binding management",
-        "settings": "Global settings (default CLI, default Profile, port)",
+        "settings": "Global settings (default client, default Profile, ports)",
         "syncSettings": "Config sync settings",
-      "logs": "Request log viewer",
+        "logs": "Request log viewer with auto-refresh",
         "autocomplete": "Model field autocomplete"
+      },
+      "securityTitle": "Security",
+      "securityDesc": "When the daemon starts for the first time, it auto-generates an access password. Non-local requests (outside 127.0.0.1/::1) require login.",
+      "security": {
+        "sessionAuth": "Session-based auth with configurable expiry",
+        "bruteForce": "Brute-force protection with exponential backoff",
+        "rsaEncryption": "RSA encryption for sensitive token transport (API keys encrypted in-browser)",
+        "localBypass": "Local access (127.0.0.1) bypasses authentication"
       }
-    },
-    "tui": {
-      "title": "TUI Interface",
-      "intro": "Interactive terminal configuration interface.",
-      "dashboardTitle": "Dashboard Mode",
-      "dashboardDesc": "v1.5 introduces a new Dashboard interface:",
-      "dashboardFeatures": {
-        "left": "Left panel: Providers, Profiles, Project Bindings",
-        "right": "Right panel: Details of selected item"
-      },
-      "shortcutsTitle": "Keyboard Shortcuts",
-      "shortcuts": {
-        "a": "Add new item",
-        "e": "Edit selected item",
-        "d": "Delete selected item",
-        "tab": "Toggle focus",
-        "q": "Back / Quit"
-      },
-      "legacyTitle": "Legacy Mode"
     },
     "configRef": {
       "title": "Configuration Reference",
@@ -229,17 +227,18 @@
         "file": "File",
         "description": "Description",
         "mainConfig": "Main configuration file",
-        "syncMeta": "Sync metadata (timestamps, device ID)",
-        "proxyLog": "Proxy log",
-        "webLog": "Web server log"
+        "daemonLog": "Daemon log",
+        "daemonPid": "Daemon PID file",
+        "logsDb": "Request log database (SQLite)"
       },
       "fullExampleTitle": "Full Configuration Example",
       "fieldsTitle": "Field Reference",
       "fields": {
         "version": "Config file version number",
         "defaultProfile": "Default profile name",
-        "defaultCli": "Default CLI (claude/codex/opencode)",
-        "webPort": "Web management interface port",
+        "defaultClient": "Default CLI client (claude/codex/opencode)",
+        "proxyPort": "Proxy server port (default: 19841)",
+        "webPort": "Web management interface port (default: 19840)",
         "providers": "Provider configuration collection",
         "profiles": "Profile configuration collection",
         "projectBindings": "Project binding configuration",
@@ -280,7 +279,7 @@
       },
       "notSyncedTitle": "Not Synced",
       "notSynced": {
-        "ports": "Web port settings",
+        "ports": "Port settings",
         "password": "Web password",
         "bindings": "Project bindings",
         "syncConfig": "Sync configuration itself"

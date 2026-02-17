@@ -6,21 +6,23 @@ import {
   GitBranch,
   FolderSymlink,
   Variable,
-  Monitor,
   Globe,
   RefreshCw,
   Sparkles,
+  Server,
+  Lock,
 } from "lucide-react";
 
 const featureKeys = [
   { key: "multiCli", icon: Terminal },
   { key: "multiConfig", icon: Settings },
+  { key: "daemon", icon: Server },
   { key: "failover", icon: Shield },
   { key: "routing", icon: GitBranch },
   { key: "binding", icon: FolderSymlink },
   { key: "envVars", icon: Variable },
-  { key: "tui", icon: Monitor },
   { key: "webUi", icon: Globe },
+  { key: "webSecurity", icon: Lock },
   { key: "configSync", icon: RefreshCw },
 ];
 

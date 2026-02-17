@@ -3,15 +3,16 @@ import { CodeBlock } from "@/components/docs/CodeBlock";
 
 const files = [
   { path: "~/.zen/zen.json", key: "mainConfig" },
-  { path: "~/.zen/sync_meta.json", key: "syncMeta" },
-  { path: "~/.zen/proxy.log", key: "proxyLog" },
-  { path: "~/.zen/web.log", key: "webLog" },
+  { path: "~/.zen/zend.log", key: "daemonLog" },
+  { path: "~/.zen/zend.pid", key: "daemonPid" },
+  { path: "~/.zen/logs.db", key: "logsDb" },
 ];
 
 const fullConfig = `{
-  "version": 6,
+  "version": 7,
   "default_profile": "default",
-  "default_cli": "claude",
+  "default_client": "claude",
+  "proxy_port": 19841,
   "web_port": 19840,
   "providers": {
     "anthropic": {
@@ -31,7 +32,7 @@ const fullConfig = `{
   "project_bindings": {
     "/path/to/project": {
       "profile": "work",
-      "cli": "codex"
+      "client": "codex"
     }
   }
 }`;
@@ -39,7 +40,8 @@ const fullConfig = `{
 const fields = [
   { field: "version", key: "version" },
   { field: "default_profile", key: "defaultProfile" },
-  { field: "default_cli", key: "defaultCli" },
+  { field: "default_client", key: "defaultClient" },
+  { field: "proxy_port", key: "proxyPort" },
   { field: "web_port", key: "webPort" },
   { field: "providers", key: "providers" },
   { field: "profiles", key: "profiles" },

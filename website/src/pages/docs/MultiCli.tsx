@@ -44,8 +44,7 @@ export default function MultiCli() {
           {t("docs.multiCli.defaultTitle")}
         </h2>
         <CodeBlock
-          code={`# Via TUI
-zen config  # Settings → Default CLI
+          code={`zen config default-client
 
 # Via Web UI
 zen web  # Settings page`}

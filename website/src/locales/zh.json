@@ -23,6 +23,10 @@
       "title": "多配置管理",
       "desc": "在统一的 JSON 文件中管理所有 API provider 配置"
     },
+    "daemon": {
+      "title": "统一守护进程",
+      "desc": "单个 zend 进程同时托管代理服务和 Web 管理界面"
+    },
     "failover": {
       "title": "代理故障转移",
       "desc": "内置 HTTP 代理，主 provider 不可用时自动切换备用"
@@ -40,12 +44,16 @@
       "desc": "在 provider 级别为每个 CLI 单独配置环境变量"
     },
     "tui": {
-      "title": "TUI 界面",
-      "desc": "交互式终端配置界面，支持 Dashboard 和传统两种模式"
+      "title": "CLI 配置",
+      "desc": "通过 CLI 子命令直接管理 provider、profile 和设置"
     },
     "webUi": {
       "title": "Web 界面",
-      "desc": "浏览器可视化管理 provider、profile 和项目绑定"
+      "desc": "浏览器可视化管理，支持密码保护访问"
+    },
+    "webSecurity": {
+      "title": "Web 安全",
+      "desc": "自动生成访问密码、会话认证、RSA 加密令牌传输"
     },
     "configSync": {
       "title": "配置同步",
@@ -61,7 +69,7 @@
     },
     "step2": {
       "title": "配置 Provider",
-      "desc": "打开 TUI 配置界面"
+      "desc": "添加第一个 API provider"
     },
     "step3": {
       "title": "启动",
@@ -80,20 +88,22 @@
       "use": "直接使用指定 provider（无代理）",
       "pick": "交互选择 provider 启动",
       "list": "列出所有 provider 和 profile",
-      "config": "打开 TUI 配置界面",
+      "configAddProvider": "添加新 provider",
+      "configAddProfile": "添加新 profile",
+      "configDefaultClient": "设置默认 CLI 客户端",
+      "configDefaultProfile": "设置默认 profile",
+      "configResetPassword": "重置 Web UI 访问密码",
       "configSync": "从远程同步后端拉取配置",
-      "configLegacy": "使用传统 TUI 界面",
+      "daemonStart": "启动 zend 守护进程",
+      "daemonStop": "停止守护进程",
+      "daemonStatus": "查看守护进程状态",
+      "daemonEnable": "安装为系统服务",
+      "daemonDisable": "卸载系统服务",
       "bind": "绑定当前目录到 profile",
       "bindCli": "绑定当前目录使用指定 CLI",
       "unbind": "解除当前目录绑定",
       "status": "显示当前目录绑定状态",
-      "web": "启动 Web 管理界面（前台运行，自动打开浏览器）",
-      "webDaemon": "以后台守护进程启动 Web 管理界面",
-      "webStop": "停止 Web 守护进程",
-      "webStatus": "查看 Web 守护进程状态",
-      "webRestart": "重启 Web 守护进程",
-      "webEnable": "将 Web 管理界面安装为系统服务",
-      "webDisable": "卸载 Web 管理界面系统服务",
+      "web": "在浏览器中打开 Web 管理界面（自动启动守护进程）",
       "upgrade": "升级到最新版本",
       "version": "显示版本",
       "completion": "生成 Shell 补全脚本（zsh/bash/fish）"
@@ -112,7 +122,6 @@
       "bindings": "项目绑定",
       "multiCli": "多 CLI 支持",
       "webUi": "Web 管理界面",
-      "tui": "TUI 界面",
       "configSync": "配置同步",
       "config": "配置参考"
     },
@@ -126,7 +135,7 @@
       "installDesc": "使用安装脚本一键安装：",
       "uninstallDesc": "卸载：",
       "firstRunTitle": "首次使用",
-      "firstRunStep1": "打开 TUI 配置界面，创建第一个 provider：",
+      "firstRunStep1": "添加第一个 provider：",
       "firstRunStep2": "使用默认 profile 启动：",
       "firstRunStep3": "使用指定 profile 启动：",
       "firstRunStep4": "使用指定 CLI 启动："
@@ -191,36 +200,25 @@
     },
     "webUi": {
       "title": "Web 管理界面",
-      "intro": "通过浏览器可视化管理所有配置。",
+      "intro": "通过浏览器可视化管理所有配置。守护进程会在需要时自动启动。",
       "usageTitle": "使用方法",
       "featuresTitle": "功能",
       "features": {
         "providerManage": "Provider 和 Profile 管理",
         "bindingManage": "项目绑定管理",
-        "settings": "全局设置（默认 CLI、默认 Profile、端口）",
+        "settings": "全局设置（默认客户端、默认 Profile、端口）",
         "syncSettings": "配置同步设置",
-      "logs": "请求日志查看",
+        "logs": "请求日志查看（支持自动刷新）",
         "autocomplete": "模型字段自动补全"
+      },
+      "securityTitle": "安全",
+      "securityDesc": "守护进程首次启动时自动生成访问密码。非本地请求（127.0.0.1/::1 以外）需要登录。",
+      "security": {
+        "sessionAuth": "会话认证，支持可配置的过期时间",
+        "bruteForce": "暴力破解保护，指数级退避",
+        "rsaEncryption": "RSA 加密敏感令牌传输（API 密钥在浏览器端加密）",
+        "localBypass": "本地访问（127.0.0.1）免认证"
       }
-    },
-    "tui": {
-      "title": "TUI 界面",
-      "intro": "交互式终端配置界面。",
-      "dashboardTitle": "Dashboard 模式",
-      "dashboardDesc": "v1.5 提供全新 Dashboard 界面：",
-      "dashboardFeatures": {
-        "left": "左侧列表：Providers、Profiles、Project Bindings",
-        "right": "右侧详情：选中项的详细信息"
-      },
-      "shortcutsTitle": "快捷键",
-      "shortcuts": {
-        "a": "添加新项",
-        "e": "编辑选中项",
-        "d": "删除选中项",
-        "tab": "切换焦点",
-        "q": "返回/退出"
-      },
-      "legacyTitle": "传统模式"
     },
     "configRef": {
       "title": "配置参考",
@@ -229,17 +227,18 @@
         "file": "文件",
         "description": "说明",
         "mainConfig": "主配置文件",
-        "syncMeta": "同步元数据（时间戳、设备 ID）",
-        "proxyLog": "代理日志",
-        "webLog": "Web 服务日志"
+        "daemonLog": "守护进程日志",
+        "daemonPid": "守护进程 PID 文件",
+        "logsDb": "请求日志数据库（SQLite）"
       },
       "fullExampleTitle": "完整配置示例",
       "fieldsTitle": "字段说明",
       "fields": {
         "version": "配置文件版本号",
         "defaultProfile": "默认使用的 profile 名称",
-        "defaultCli": "默认使用的 CLI（claude/codex/opencode）",
-        "webPort": "Web 管理界面端口",
+        "defaultClient": "默认使用的 CLI 客户端（claude/codex/opencode）",
+        "proxyPort": "代理服务端口（默认：19841）",
+        "webPort": "Web 管理界面端口（默认：19840）",
         "providers": "Provider 配置集合",
         "profiles": "Profile 配置集合",
         "projectBindings": "项目绑定配置",
@@ -280,7 +279,7 @@
       },
       "notSyncedTitle": "不同步",
       "notSynced": {
-        "ports": "Web 端口设置",
+        "ports": "端口设置",
         "password": "Web 密码",
         "bindings": "项目绑定",
         "syncConfig": "同步配置本身"

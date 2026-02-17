@@ -16,20 +16,8 @@ export default function WebUI() {
           {t("docs.webUi.usageTitle")}
         </h2>
         <CodeBlock
-          code={`# Start foreground (opens browser automatically)
-zen web
-
-# Start as background daemon
-zen web -d
-
-# Daemon management
-zen web stop       # Stop daemon
-zen web status     # Show daemon status
-zen web restart    # Restart daemon
-
-# System service
-zen web enable     # Install as system service
-zen web disable    # Uninstall system service`}
+          code={`# Open in browser (auto-starts daemon if needed)
+zen web`}
           language="bash"
         />
       </section>
@@ -58,6 +46,41 @@ zen web disable    # Uninstall system service`}
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-4 text-xl font-semibold text-text-primary">
+          {t("docs.webUi.securityTitle")}
+        </h2>
+        <p className="mb-4 text-sm text-text-secondary">
+          {t("docs.webUi.securityDesc")}
+        </p>
+        <ul className="mb-6 space-y-2">
+          {(
+            [
+              "sessionAuth",
+              "bruteForce",
+              "rsaEncryption",
+              "localBypass",
+            ] as const
+          ).map((key) => (
+            <li
+              key={key}
+              className="flex items-start gap-2 text-sm text-text-secondary"
+            >
+              <span className="mt-1.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-teal" />
+              {t(`docs.webUi.security.${key}`)}
+            </li>
+          ))}
+        </ul>
+        <CodeBlock
+          code={`# Reset the Web UI password
+zen config reset-password
+
+# Change password via Web UI
+zen web  # Settings → Change Password`}
+          language="bash"
+        />
       </section>
     </div>
   );

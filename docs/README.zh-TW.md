@@ -14,15 +14,16 @@
 
 - **多 CLI 支援** — 支援 Claude Code、Codex、OpenCode 三種 CLI，可依專案設定
 - **多組態管理** — 在 `~/.zen/zen.json` 中統一管理所有 API 組態
+- **統一守護程序** — 單一 `zend` 程序同時託管代理伺服器與 Web 管理介面
 - **代理故障轉移** — 內建 HTTP 代理，當主要 provider 無法使用時自動切換至備用
 - **場景路由** — 根據請求特徵（thinking、image、longContext 等）智慧路由
 - **專案綁定** — 將目錄綁定至特定 profile 與 CLI，實現專案層級自動組態
 - **環境變數設定** — 在 provider 層級為每個 CLI 分別設定環境變數
-- **TUI 設定介面** — 互動式終端介面，支援 Dashboard 與傳統兩種模式
-- **Web 管理介面** — 瀏覽器視覺化管理 provider、profile 與專案綁定
+- **Web 管理介面** — 瀏覽器視覺化管理，支援密碼保護存取
+- **Web 安全** — 自動產生存取密碼、工作階段認證、RSA 加密令牌傳輸
 - **組態同步** — 透過 WebDAV、S3、GitHub Gist 或 GitHub Repo 跨裝置同步 provider、profile 與設定，使用 AES-256-GCM 加密
 - **版本更新檢查** — 啟動時自動非阻塞檢查新版本（24 小時快取）
-- **自動更新** — `zen upgrade` 一鍵升級，支援 semver 版本比對
+- **自動更新** — `zen upgrade` 一鍵升級，支援 semver 版本比對（支援預發行版本）
 - **Shell 補全** — 支援 zsh / bash / fish
 
 ## 安裝
@@ -40,8 +41,8 @@ curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/uninstall.sh | sh
 ## 快速開始
 
 ```sh
-# 開啟 TUI 設定介面，建立第一個 provider
-zen config
+# 新增第一個 provider
+zen config add provider
 
 # 啟動（使用預設 profile）
 zen
@@ -64,19 +65,48 @@ zen --cli codex
 | `zen use <provider>` | 直接使用指定 provider（不經代理） |
 | `zen pick` | 互動選擇 provider 啟動 |
 | `zen list` | 列出所有 provider 與 profile |
-| `zen config` | 開啟 TUI 設定介面 |
+| `zen config` | 顯示設定子命令 |
+| `zen config add provider` | 新增 provider |
+| `zen config add profile` | 新增 profile |
+| `zen config default-client` | 設定預設 CLI 用戶端 |
+| `zen config default-profile` | 設定預設 profile |
+| `zen config reset-password` | 重設 Web UI 存取密碼 |
 | `zen config sync` | 從遠端同步後端拉取組態 |
-| `zen config --legacy` | 使用傳統 TUI 介面 |
+| `zen daemon start` | 啟動 zend 守護程序 |
+| `zen daemon stop` | 停止守護程序 |
+| `zen daemon restart` | 重新啟動守護程序 |
+| `zen daemon status` | 檢視守護程序狀態 |
+| `zen daemon enable` | 安裝為系統服務 |
+| `zen daemon disable` | 解除安裝系統服務 |
 | `zen bind <profile>` | 將目前目錄綁定至 profile |
 | `zen bind --cli <cli>` | 將目前目錄綁定使用指定 CLI |
 | `zen unbind` | 解除目前目錄綁定 |
 | `zen status` | 顯示目前目錄綁定狀態 |
-| `zen web start` | 啟動 Web 管理介面 |
-| `zen web open` | 在瀏覽器中開啟 Web 介面 |
-| `zen web stop` | 停止 Web 服務 |
-| `zen web restart` | 重新啟動 Web 服務 |
+| `zen web` | 在瀏覽器中開啟 Web 管理介面 |
 | `zen upgrade` | 升級至最新版本 |
 | `zen version` | 顯示版本 |
+
+## 守護程序架構
+
+v2.1 中，GoZen 使用統一的守護程序（`zend`）同時託管 HTTP 代理與 Web 管理介面：
+
+- **代理伺服器** 執行於連接埠 `19841`（可透過 `proxy_port` 設定）
+- **Web UI** 執行於連接埠 `19840`（可透過 `web_port` 設定）
+- 執行 `zen` 或 `zen web` 時守護程序自動啟動
+- 組態變更透過檔案監控實現熱重載
+- 同步自動推送（防抖 2 秒）與自動拉取由守護程序管理
+
+```sh
+# 手動管理守護程序
+zen daemon start          # 啟動守護程序
+zen daemon stop           # 停止守護程序
+zen daemon restart        # 重新啟動守護程序
+zen daemon status         # 檢視守護程序狀態
+
+# 系統服務（開機自動啟動）
+zen daemon enable         # 安裝為系統服務
+zen daemon disable        # 解除安裝系統服務
+```
 
 ## 多 CLI 支援
 
@@ -91,11 +121,10 @@ zen 支援三種 AI 程式設計助手 CLI：
 ### 設定預設 CLI
 
 ```sh
-# 透過 TUI
-zen config  # Settings → Default CLI
+zen config default-client
 
 # 透過 Web UI
-zen web open  # Settings 頁面
+zen web  # Settings 頁面
 ```
 
 ### 依專案設定 CLI
@@ -171,48 +200,37 @@ zen unbind
 
 **優先順序**：命令列參數 > 專案綁定 > 全域預設
 
-## TUI 設定介面
-
-```sh
-zen config
-```
-
-v1.5 提供全新 Dashboard 介面：
-
-- **左側清單**：Providers、Profiles、Project Bindings
-- **右側詳情**：選取項目的詳細資訊
-- **快捷鍵**：
-  - `a` - 新增項目
-  - `e` - 編輯選取項目
-  - `d` - 刪除選取項目
-  - `Tab` - 切換焦點
-  - `q` - 返回／離開
-
-使用 `--legacy` 切換至傳統介面。
-
 ## Web 管理介面
 
 ```sh
-# 啟動（背景執行，連接埠 19840）
-zen web start
-
-# 開啟瀏覽器
-zen web open
-
-# 停止
-zen web stop
-
-# 重新啟動
-zen web restart
+# 開啟瀏覽器（如需要會自動啟動守護程序）
+zen web
 ```
 
 Web UI 功能：
 - Provider 與 Profile 管理
 - 專案綁定管理
-- 全域設定（預設 CLI、預設 Profile、連接埠）
+- 全域設定（預設用戶端、預設 Profile、連接埠）
 - 組態同步設定
-- 請求日誌檢視
+- 請求日誌檢視（支援自動重新整理）
 - 模型欄位自動補全
+
+### Web UI 安全
+
+守護程序首次啟動時自動產生存取密碼。非本地請求（127.0.0.1/::1 以外）需要登入。
+
+- **工作階段認證** 支援可設定的到期時間
+- **暴力破解保護** 指數級退避
+- **RSA 加密** 敏感令牌傳輸（API 金鑰在瀏覽器端加密後傳送）
+- 本地存取（127.0.0.1）免認證
+
+```sh
+# 重設 Web UI 密碼
+zen config reset-password
+
+# 透過 Web UI 變更密碼
+zen web  # Settings → Change Password
+```
 
 ## 組態同步
 
@@ -227,7 +245,7 @@ Web UI 功能：
 ### 透過 Web UI 設定
 
 ```sh
-zen web open  # Settings → Config Sync
+zen web  # Settings → Config Sync
 ```
 
 ### 透過 CLI 手動拉取
@@ -316,16 +334,18 @@ zen config sync
 | 檔案 | 說明 |
 |------|------|
 | `~/.zen/zen.json` | 主組態檔案 |
-| `~/.zen/proxy.log` | 代理日誌 |
-| `~/.zen/web.log` | Web 服務日誌 |
+| `~/.zen/zend.log` | 守護程序日誌 |
+| `~/.zen/zend.pid` | 守護程序 PID 檔案 |
+| `~/.zen/logs.db` | 請求日誌資料庫（SQLite） |
 
 ### 完整組態範例
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "default_profile": "default",
-  "default_cli": "claude",
+  "default_client": "claude",
+  "proxy_port": 19841,
   "web_port": 19840,
   "providers": {
     "anthropic": {
@@ -345,7 +365,7 @@ zen config sync
   "project_bindings": {
     "/path/to/project": {
       "profile": "work",
-      "cli": "codex"
+      "client": "codex"
     }
   }
 }
@@ -360,6 +380,9 @@ zen upgrade
 # 指定版本
 zen upgrade 2.1
 zen upgrade 2.1.0
+
+# 預發行版本
+zen upgrade 2.1.0-alpha.1
 ```
 
 ## 從舊版遷移
@@ -381,8 +404,8 @@ go test ./...
 發佈：推送 tag 後 GitHub Actions 自動建置。
 
 ```sh
-git tag v2.0.0
-git push origin v2.0.0
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ## License

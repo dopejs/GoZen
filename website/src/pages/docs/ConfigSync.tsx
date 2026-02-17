@@ -64,7 +64,7 @@ export default function ConfigSync() {
         </p>
         <CodeBlock
           code={`# Open Web UI settings
-zen web open  # Settings → Config Sync`}
+zen web  # Settings → Config Sync`}
           language="bash"
         />
         <p className="mt-4 mb-4 text-sm text-text-secondary">

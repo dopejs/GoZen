@@ -61,19 +61,15 @@ var rootCmd = &cobra.Command{
 }
 
 var clientFlag string
-var legacyTUI bool
 
 func init() {
 	// -p/--profile is the new flag, -f/--fallback is kept for backward compatibility but hidden
-	rootCmd.Flags().StringP("profile", "p", "", "profile name (use -p without value to pick interactively)")
-	rootCmd.Flags().Lookup("profile").NoOptDefVal = " "
+	rootCmd.Flags().StringP("profile", "p", "", "profile name")
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
-	rootCmd.Flags().Lookup("fallback").NoOptDefVal = " "
 	rootCmd.Flags().Lookup("fallback").Hidden = true
 	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
 	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
 	rootCmd.Flags().Lookup("cli").Hidden = true
-	rootCmd.Flags().BoolVar(&legacyTUI, "legacy", false, "use legacy TUI interface")
 	rootCmd.AddCommand(useCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(listCmd)
@@ -109,14 +105,17 @@ Quick Start:
   zen                       Start with default profile
   zen -p <profile>          Start with specific profile
   zen --cli codex           Start with specific CLI
-  zen config                Open TUI configuration
 
 Configuration:
-  config                       Open TUI to manage providers and profiles
   config add provider [name]   Add a new provider
   config add profile [name]    Add a new profile
   config edit provider <name>  Edit an existing provider
+  config edit profile <name>   Edit an existing profile
   config delete provider <name> Delete a provider
+  config delete profile <name>  Delete a profile
+  config default-client        Set the default client
+  config default-profile       Set the default profile
+  config reset-password        Reset Web UI access password
 
 Project Binding:
   bind <profile>               Bind current directory to a profile
@@ -125,12 +124,7 @@ Project Binding:
   status                       Show binding status
 
 Web Interface:
-  web                          Start web UI (foreground, opens browser)
-  web -d                       Start web UI (background daemon)
-  web stop                     Stop web daemon
-  web status                   Show web daemon status
-  web enable                   Install as system service (auto-start)
-  web disable                  Uninstall system service
+  web                          Open web UI in browser (starts daemon if needed)
 
 Other Commands:
   list                         List all providers and profiles
@@ -151,24 +145,6 @@ Use "%s [command] --help" for more information about a command.`,
 }
 
 func Execute() error {
-	// Pre-process: when -p/--profile or -f/--fallback uses NoOptDefVal, cobra won't consume
-	// the next arg as its value. Merge "-p <name>" into "-p=<name>" so that
-	// cobra parses it correctly and doesn't treat <name> as a subcommand.
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-p" || args[i] == "--profile" || args[i] == "-f" || args[i] == "--fallback" {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				args[i] = args[i] + "=" + args[i+1]
-				args = append(args[:i+1], args[i+2:]...)
-			}
-			break
-		}
-		// Stop if we hit a non-flag arg (subcommand) before -p/-f
-		if !strings.HasPrefix(args[i], "-") {
-			break
-		}
-	}
-	rootCmd.SetArgs(args)
 	return rootCmd.Execute()
 }
 
@@ -194,13 +170,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Legacy mode: start per-invocation proxy (old behavior)
-	if legacyTUI {
-		pc := config.GetProfileConfig(profile)
-		return startLegacyProxy(providerNames, pc, client, args)
-	}
-
-	// New flow: use zend daemon
+	// Use zend daemon
 	return startViaDaemon(profile, client, providerNames, args)
 }
 
@@ -225,7 +195,7 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 
 	// Build proxy URL with profile and session in path
 	proxyPort := config.GetProxyPort()
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d/%s/%s/v1", proxyPort, profile, sessionID)
+	baseURL := fmt.Sprintf("http://127.0.0.1:%d/%s/%s", proxyPort, profile, sessionID)
 
 	// Merge env_vars from all providers for this client
 	providers, err := buildProviders(providerNames)
@@ -614,26 +584,7 @@ func resolveProviderNamesAndClient(profileFlag string, clientFlag string) ([]str
 	// Determine CLI: flag > binding > default
 	cli := clientFlag
 
-	// -f (no value, NoOptDefVal=" ") → interactive profile picker
-	if profileFlag == " " {
-		profile, err := tui.RunProfilePicker()
-		if err != nil {
-			return nil, "", "", err
-		}
-		names, err := config.ReadProfileOrder(profile)
-		if err != nil {
-			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profile)
-		}
-		if len(names) == 0 {
-			return nil, "", "", fmt.Errorf("profile '%s' has no providers configured", profile)
-		}
-		if cli == "" {
-			cli = config.GetDefaultClient()
-		}
-		return names, profile, cli, nil
-	}
-
-	// -f <name> → use that specific profile
+	// -p <name> → use that specific profile
 	if profileFlag != "" {
 		names, err := config.ReadProfileOrder(profileFlag)
 		if err != nil {

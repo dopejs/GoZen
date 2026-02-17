@@ -95,7 +95,7 @@ func Run() error {
 // RunPick starts a standalone checkbox picker TUI and returns selected provider names.
 func RunPick() ([]string, error) {
 	m := newPickModel()
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func RunPick() ([]string, error) {
 // Returns the created provider name.
 func RunCreateFirst() (string, error) {
 	m := newCreateFirstModel()
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
 		return "", err
@@ -120,6 +120,7 @@ func RunCreateFirst() (string, error) {
 	if cm.cancelled {
 		return "", fmt.Errorf("cancelled")
 	}
+	fmt.Printf("Provider %q created.\n", cm.createdName)
 	return cm.createdName, nil
 }
 
@@ -135,6 +136,7 @@ type createFirstModel struct {
 func newCreateFirstModel() createFirstModel {
 	editor := newEditorModel("")
 	editor.initMode = true
+	editor.standalone = true
 	return createFirstModel{
 		editor: editor,
 	}
@@ -159,13 +161,19 @@ func (m createFirstModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case switchToListMsg:
-		// Editor finished saving — extract the name and quit
 		m.createdName = m.editor.fields[fieldName].Value()
 		return m, tea.Quit
 	}
 
 	var cmd tea.Cmd
 	m.editor, cmd = m.editor.update(msg)
+
+	// Quit immediately on save
+	if m.editor.saved && m.createdName == "" {
+		m.createdName = strings.TrimSpace(m.editor.fields[fieldName].Value())
+		return m, tea.Quit
+	}
+
 	return m, cmd
 }
 
@@ -173,7 +181,7 @@ func (m createFirstModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("  No providers configured. Create one to get started:"))
 	b.WriteString("\n\n")
-	b.WriteString(m.editor.view(m.width, m.height))
+	b.WriteString(m.editor.viewClean())
 	return b.String()
 }
 
@@ -312,11 +320,11 @@ func max(a, b int) int {
 	return b
 }
 
-// RunSelectType runs a selector TUI to choose between "provider" and "group".
+// RunSelectType runs a selector TUI to choose between "provider" and "profile".
 func RunSelectType() (string, error) {
 	items := []selectorItem{
 		{name: "provider"},
-		{name: "group"},
+		{name: "profile"},
 	}
 	return RunSelector("Select type", items)
 }
@@ -359,14 +367,10 @@ func RunSelectGroup(excludeDefault bool) (string, error) {
 	return RunSelector("Select group", items)
 }
 
-// RunAddGroup runs the group creation flow: name input then group editor.
+// RunAddGroup runs the profile creation flow (name + providers on one page).
 // If presetName is non-empty, it pre-fills the name field.
 func RunAddGroup(presetName string) error {
-	name, err := RunGroupCreate(presetName)
-	if err != nil {
-		return err
-	}
-	return RunEditGroup(name)
+	return RunAddProfile(presetName)
 }
 
 // RunEditGroup runs a standalone group editor TUI.

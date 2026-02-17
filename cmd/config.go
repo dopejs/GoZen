@@ -12,56 +12,37 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configLegacyUI bool
-
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage providers and profiles",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if configLegacyUI {
-			err := tui.RunConfigMain()
-			if err != nil && err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-		_, err := tui.RunNewApp()
-		if err != nil && err.Error() == "cancelled" {
-			return nil
-		}
-		return err
+	Short: "Manage providers, profiles, and settings",
+	Long: `Manage providers, profiles, and settings.
+
+Usage:
+  zen config [command]
+
+Available Commands:
+  add provider [name]    Add a new provider
+  add profile [name]     Add a new profile
+  edit provider <name>   Edit an existing provider
+  edit profile <name>    Edit an existing profile
+  delete provider <name> Delete a provider
+  delete profile <name>  Delete a profile
+  default-client         Set the default client
+  default-profile        Set the default profile
+  reset-password         Reset Web UI access password
+
+Use "zen config [command] --help" for more information about a command.`,
+	DisableFlagParsing: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(cmd.Long)
 	},
 }
 
 // --- add subcommands ---
 
 var configAddCmd = &cobra.Command{
-	Use:   "add [provider|profile]",
+	Use:   "add",
 	Short: "Add a provider or profile",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		typ, err := tui.RunSelectType()
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-		switch typ {
-		case "provider":
-			_, err := tui.RunAddProvider("")
-			if err != nil && err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		case "group":
-			err := tui.RunAddGroup("")
-			if err != nil && err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-		return nil
-	},
 }
 
 var configAddProviderCmd = &cobra.Command{
@@ -99,47 +80,30 @@ var configAddGroupCmd = &cobra.Command{
 // --- delete subcommands ---
 
 var configDeleteCmd = &cobra.Command{
-	Use:   "delete [provider|profile] [name]",
+	Use:   "delete",
 	Short: "Delete a provider or profile",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		typ, err := tui.RunSelectType()
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-		switch typ {
-		case "provider":
-			return deleteProvider("")
-		case "group":
-			return deleteGroup("")
-		}
-		return nil
-	},
+	Long:  "Delete a provider or profile.\n\nUsage:\n  zen config delete provider <name>\n  zen config delete profile <name>",
 }
 
 var configDeleteProviderCmd = &cobra.Command{
-	Use:   "provider [name]",
+	Use:   "provider <name>",
 	Short: "Delete a provider",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var name string
-		if len(args) > 0 {
-			name = args[0]
+		if len(args) == 0 {
+			return cmd.Usage()
 		}
-		return deleteProvider(name)
+		return deleteProvider(args[0])
 	},
 }
 
 var configDeleteGroupCmd = &cobra.Command{
-	Use:   "profile [name]",
+	Use:   "profile <name>",
 	Short: "Delete a profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var name string
-		if len(args) > 0 {
-			name = args[0]
+		if len(args) == 0 {
+			return cmd.Usage()
 		}
-		return deleteGroup(name)
+		return deleteGroup(args[0])
 	},
 }
 
@@ -152,17 +116,6 @@ func deleteProvider(name string) error {
 	if len(names) == 1 {
 		fmt.Println("Cannot delete the last provider. At least one provider must remain.")
 		return nil
-	}
-
-	if name == "" {
-		var err error
-		name, err = tui.RunSelectProvider(1)
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
 	}
 
 	if config.GetProvider(name) == nil {
@@ -183,17 +136,6 @@ func deleteProvider(name string) error {
 }
 
 func deleteGroup(name string) error {
-	if name == "" {
-		var err error
-		name, err = tui.RunSelectGroup(true) // excludeDefault=true
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-	}
-
 	defaultProfile := config.GetDefaultProfile()
 	if name == defaultProfile {
 		fmt.Printf("Cannot delete the default profile '%s'.\n", defaultProfile)
@@ -236,62 +178,33 @@ func confirmDelete(name string) bool {
 // --- edit subcommands ---
 
 var configEditCmd = &cobra.Command{
-	Use:   "edit [provider|profile] [name]",
+	Use:   "edit",
 	Short: "Edit a provider or profile",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		typ, err := tui.RunSelectType()
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-		switch typ {
-		case "provider":
-			return editProvider("")
-		case "group":
-			return editGroup("")
-		}
-		return nil
-	},
 }
 
 var configEditProviderCmd = &cobra.Command{
-	Use:   "provider [name]",
+	Use:   "provider <name>",
 	Short: "Edit a provider",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var name string
-		if len(args) > 0 {
-			name = args[0]
+		if len(args) == 0 {
+			return cmd.Usage()
 		}
-		return editProvider(name)
+		return editProvider(args[0])
 	},
 }
 
 var configEditGroupCmd = &cobra.Command{
-	Use:   "profile [name]",
+	Use:   "profile <name>",
 	Short: "Edit a profile",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var name string
-		if len(args) > 0 {
-			name = args[0]
+		if len(args) == 0 {
+			return cmd.Usage()
 		}
-		return editGroup(name)
+		return editGroup(args[0])
 	},
 }
 
 func editProvider(name string) error {
-	if name == "" {
-		var err error
-		name, err = tui.RunSelectProvider(0)
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-	}
-
 	if config.GetProvider(name) == nil {
 		fmt.Printf("Provider %q not found.\n", name)
 		return nil
@@ -305,17 +218,6 @@ func editProvider(name string) error {
 }
 
 func editGroup(name string) error {
-	if name == "" {
-		var err error
-		name, err = tui.RunSelectGroup(false)
-		if err != nil {
-			if err.Error() == "cancelled" {
-				return nil
-			}
-			return err
-		}
-	}
-
 	profiles := config.ListProfiles()
 	found := false
 	for _, p := range profiles {
@@ -336,6 +238,59 @@ func editGroup(name string) error {
 	return err
 }
 
+// --- default-client / default-profile subcommands ---
+
+var configDefaultClientCmd = &cobra.Command{
+	Use:   "default-client",
+	Short: "Set the default client",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		current := config.GetDefaultClient()
+		selected, err := tui.RunMinimalSelector(config.AvailableClients, current)
+		if err != nil {
+			if err.Error() == "cancelled" {
+				return nil
+			}
+			return err
+		}
+		if selected == current {
+			return nil
+		}
+		if err := config.SetDefaultClient(selected); err != nil {
+			return err
+		}
+		fmt.Printf("Default client set to %q.\n", selected)
+		return nil
+	},
+}
+
+var configDefaultProfileCmd = &cobra.Command{
+	Use:   "default-profile",
+	Short: "Set the default profile",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		profiles := config.ListProfiles()
+		if len(profiles) == 0 {
+			fmt.Println("No profiles configured.")
+			return nil
+		}
+		current := config.GetDefaultProfile()
+		selected, err := tui.RunMinimalSelector(profiles, current)
+		if err != nil {
+			if err.Error() == "cancelled" {
+				return nil
+			}
+			return err
+		}
+		if selected == current {
+			return nil
+		}
+		if err := config.SetDefaultProfile(selected); err != nil {
+			return err
+		}
+		fmt.Printf("Default profile set to %q.\n", selected)
+		return nil
+	},
+}
+
 var configResetPasswordCmd = &cobra.Command{
 	Use:   "reset-password",
 	Short: "Reset Web UI access password",
@@ -350,8 +305,6 @@ var configResetPasswordCmd = &cobra.Command{
 }
 
 func init() {
-	configCmd.Flags().BoolVar(&configLegacyUI, "legacy", false, "use legacy TUI interface")
-
 	configAddCmd.AddCommand(configAddProviderCmd)
 	configAddCmd.AddCommand(configAddGroupCmd)
 
@@ -364,5 +317,7 @@ func init() {
 	configCmd.AddCommand(configAddCmd)
 	configCmd.AddCommand(configDeleteCmd)
 	configCmd.AddCommand(configEditCmd)
+	configCmd.AddCommand(configDefaultClientCmd)
+	configCmd.AddCommand(configDefaultProfileCmd)
 	configCmd.AddCommand(configResetPasswordCmd)
 }

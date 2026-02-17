@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dopejs/gozen/internal/config"
 )
@@ -15,6 +16,7 @@ type fallbackModel struct {
 	order      []string // current fallback order (selected providers)
 	cursor     int      // cursor position in allConfigs
 	grabbed    bool     // true = item is grabbed and arrow keys reorder
+	standalone bool     // true = standalone CLI mode (no routing section)
 
 	// Routing section
 	section         int                                 // 0=default providers, 1=routing scenarios
@@ -114,13 +116,15 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 		// Cancel — return without saving
 		return m, func() tea.Msg { return switchToListMsg{} }
 	case "tab":
-		// Switch between sections
-		if m.section == 0 {
-			m.section = 1
-			m.routingCursor = 0
-		} else {
-			m.section = 0
-			m.cursor = 0
+		// Switch between sections (skip in standalone mode)
+		if !m.standalone {
+			if m.section == 0 {
+				m.section = 1
+				m.routingCursor = 0
+			} else {
+				m.section = 0
+				m.cursor = 0
+			}
 		}
 	case "up", "k":
 		if m.section == 0 {
@@ -134,7 +138,11 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 		}
 	case "down", "j":
 		if m.section == 0 {
-			if m.cursor < len(m.allConfigs)-1 {
+			maxPos := len(m.allConfigs) - 1
+			if m.standalone {
+				maxPos = len(m.allConfigs) // +1 for save button
+			}
+			if m.cursor < maxPos {
 				m.cursor++
 			}
 		} else {
@@ -158,6 +166,10 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 		}
 	case "enter":
 		if m.section == 0 {
+			// Save button (standalone mode)
+			if m.standalone && m.cursor == len(m.allConfigs) {
+				return m.saveAndExit()
+			}
 			// Enter grab mode only if current item is in order
 			if m.cursor < len(m.allConfigs) {
 				name := m.allConfigs[m.cursor]
@@ -178,7 +190,7 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 				}
 			}
 		}
-	case "s", "ctrl+s", "cmd+s":
+	case "ctrl+s", "cmd+s":
 		return m.saveAndExit()
 	}
 	return m, nil
@@ -261,10 +273,320 @@ func removeFromOrder(order []string, name string) []string {
 // RunEditProfile is the standalone entry point for editing a profile.
 func RunEditProfile(profile string) error {
 	fm := newFallbackModel(profile)
-	wrapper := &fallbackWrapper{fallback: fm}
+	fm.standalone = true
+	wrapper := &standaloneFallbackModel{fallback: fm}
 	p := tea.NewProgram(wrapper, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	sm := result.(*standaloneFallbackModel)
+	if sm.cancelled {
+		return fmt.Errorf("cancelled")
+	}
+	if sm.fallback.saved {
+		fmt.Printf("Profile %q updated.\n", profile)
+	}
+	return nil
+}
+
+// RunAddProfile is the standalone entry point for creating a new profile.
+// Name input and provider selection are on a single page.
+func RunAddProfile(presetName string) error {
+	fm := newFallbackModel("__new__")
+	fm.standalone = true
+
+	ti := textinput.New()
+	ti.Placeholder = "profile name"
+	ti.Prompt = ""
+	ti.CharLimit = 64
+	if presetName != "" {
+		ti.SetValue(presetName)
+	}
+	ti.Focus()
+
+	wrapper := &standaloneFallbackModel{
+		fallback:    fm,
+		isNew:       true,
+		nameInput:   ti,
+		nameFocused: true,
+	}
+	p := tea.NewProgram(wrapper, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+	sm := result.(*standaloneFallbackModel)
+	if sm.cancelled {
+		return fmt.Errorf("cancelled")
+	}
+	if sm.fallback.saved {
+		fmt.Printf("Profile %q created.\n", sm.fallback.profile)
+	}
+	return nil
+}
+
+// standaloneFallbackModel wraps fallbackModel for standalone CLI use.
+// It uses viewClean (no border, no routing) and quits immediately on save.
+// When isNew=true, it also shows a name input field for creating a new profile.
+type standaloneFallbackModel struct {
+	fallback    fallbackModel
+	cancelled   bool
+	isNew       bool            // true = creating new profile
+	nameInput   textinput.Model // name input (only when isNew)
+	nameFocused bool            // true = name input has focus
+	nameErr     string          // validation error for name
+}
+
+func (w *standaloneFallbackModel) Init() tea.Cmd {
+	cmds := []tea.Cmd{w.fallback.init()}
+	if w.isNew {
+		cmds = append(cmds, textinput.Blink)
+	}
+	return tea.Batch(cmds...)
+}
+
+func (w *standaloneFallbackModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			w.cancelled = true
+			return w, tea.Quit
+		}
+		// When creating: route keys based on focus
+		if w.isNew && w.nameFocused {
+			return w.updateNameInput(msg)
+		}
+		// In provider list: shift+tab goes back to name input
+		// Also: up at first provider goes back to name input
+		if w.isNew && (msg.String() == "shift+tab" ||
+			((msg.String() == "up" || msg.String() == "k") && w.fallback.cursor == 0 && !w.fallback.grabbed)) {
+			w.nameFocused = true
+			w.nameInput.Focus()
+			return w, textinput.Blink
+		}
+		// Intercept save button (enter on save position) to validate name first
+		if w.isNew && msg.String() == "enter" && w.fallback.cursor == len(w.fallback.allConfigs) {
+			name := strings.TrimSpace(w.nameInput.Value())
+			if name == "" {
+				w.nameErr = "name is required"
+				w.nameFocused = true
+				w.nameInput.Focus()
+				return w, textinput.Blink
+			}
+			for _, p := range config.ListProfiles() {
+				if p == name {
+					w.nameErr = fmt.Sprintf("profile %q already exists", name)
+					w.nameFocused = true
+					w.nameInput.Focus()
+					return w, textinput.Blink
+				}
+			}
+			w.nameErr = ""
+			w.fallback.profile = name
+			// Fall through to normal save handling
+		}
+	case switchToListMsg:
+		// esc in provider list = cancel
+		if !w.isNew {
+			// Edit mode: clean exit
+			return w, tea.Quit
+		}
+		w.cancelled = true
+		return w, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	w.fallback, cmd = w.fallback.update(msg)
+
+	// Quit immediately on save
+	if w.fallback.saved {
+		return w, tea.Quit
+	}
+
+	return w, cmd
+}
+
+func (w *standaloneFallbackModel) updateNameInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		w.cancelled = true
+		return w, tea.Quit
+	case "tab", "down":
+		w.nameErr = ""
+		w.nameFocused = false
+		w.nameInput.Blur()
+		return w, nil
+	case "enter":
+		name := strings.TrimSpace(w.nameInput.Value())
+		if name == "" {
+			w.nameErr = "name is required"
+			return w, nil
+		}
+		w.nameErr = ""
+		w.nameFocused = false
+		w.nameInput.Blur()
+		return w, nil
+	}
+	var cmd tea.Cmd
+	w.nameInput, cmd = w.nameInput.Update(msg)
+	return w, cmd
+}
+
+func (w *standaloneFallbackModel) View() string {
+	if w.isNew {
+		return w.viewCreate()
+	}
+	return w.fallback.viewClean()
+}
+
+func (w *standaloneFallbackModel) viewCreate() string {
+	var b strings.Builder
+
+	b.WriteString(titleStyle.Render("Create New Profile"))
+	b.WriteString("\n\n")
+
+	// Name input
+	if w.nameFocused {
+		b.WriteString("  Name: ")
+		b.WriteString(w.nameInput.View())
+	} else {
+		name := w.nameInput.Value()
+		if name == "" {
+			name = "(empty)"
+		}
+		b.WriteString(dimStyle.Render("  Name: " + name))
+	}
+	b.WriteString("\n")
+	if w.nameErr != "" {
+		b.WriteString(errorStyle.Render("  " + w.nameErr))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+
+	// Hint
+	if w.nameFocused {
+		b.WriteString(dimStyle.Render("  Enter/Tab to select providers"))
+	} else {
+		b.WriteString(dimStyle.Render("  Space toggle, Enter reorder, Esc cancel"))
+	}
+	b.WriteString("\n\n")
+
+	// Provider list
+	fm := w.fallback
+	if len(fm.allConfigs) == 0 {
+		b.WriteString(dimStyle.Render("  No providers configured.\n"))
+		b.WriteString(dimStyle.Render("  Run 'zen config add provider' to create one."))
+		return b.String()
+	}
+
+	for i, name := range fm.allConfigs {
+		cursor := "  "
+		style := dimStyle
+		if !w.nameFocused && i == fm.cursor {
+			cursor = "▸ "
+			style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+		}
+
+		orderIdx := fm.orderIndex(name)
+		var checkbox string
+		if orderIdx > 0 {
+			checkbox = lipgloss.NewStyle().
+				Foreground(successColor).
+				Render(fmt.Sprintf("[%d]", orderIdx))
+		} else {
+			checkbox = dimStyle.Render("[ ]")
+		}
+
+		grabIndicator := ""
+		if fm.grabbed && !w.nameFocused && i == fm.cursor {
+			grabIndicator = " " + lipgloss.NewStyle().
+				Foreground(accentColor).
+				Render("(reordering)")
+		}
+
+		line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, grabIndicator)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
+	}
+
+	// Save button
+	b.WriteString("\n")
+	if !w.nameFocused && fm.cursor == len(fm.allConfigs) {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("▸ [ Save ]"))
+	} else {
+		b.WriteString(dimStyle.Render("  [ Save ]"))
+	}
+
+	if fm.status != "" && !fm.saved {
+		b.WriteString("\n\n")
+		b.WriteString(errorStyle.Render("  ✗ " + fm.status))
+	}
+
+	return b.String()
+}
+
+// viewClean renders a borderless provider-toggle list for standalone use.
+// No routing section, no border, no help bar.
+func (m fallbackModel) viewClean() string {
+	var b strings.Builder
+
+	title := fmt.Sprintf("Profile: %s", m.profile)
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("  Space toggle, Enter reorder, Esc cancel"))
+	b.WriteString("\n\n")
+
+	if len(m.allConfigs) == 0 {
+		b.WriteString(dimStyle.Render("  No providers configured.\n"))
+		b.WriteString(dimStyle.Render("  Run 'zen config add provider' to create one."))
+		return b.String()
+	}
+
+	for i, name := range m.allConfigs {
+		cursor := "  "
+		style := dimStyle
+		if i == m.cursor {
+			cursor = "▸ "
+			style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+		}
+
+		orderIdx := m.orderIndex(name)
+		var checkbox string
+		if orderIdx > 0 {
+			checkbox = lipgloss.NewStyle().
+				Foreground(successColor).
+				Render(fmt.Sprintf("[%d]", orderIdx))
+		} else {
+			checkbox = dimStyle.Render("[ ]")
+		}
+
+		grabIndicator := ""
+		if m.grabbed && i == m.cursor {
+			grabIndicator = " " + lipgloss.NewStyle().
+				Foreground(accentColor).
+				Render("(reordering)")
+		}
+
+		line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, grabIndicator)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
+	}
+
+	// Save button
+	b.WriteString("\n")
+	if m.cursor == len(m.allConfigs) {
+		b.WriteString(lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("▸ [ Save ]"))
+	} else {
+		b.WriteString(dimStyle.Render("  [ Save ]"))
+	}
+
+	if m.status != "" && !m.saved {
+		b.WriteString("\n\n")
+		b.WriteString(errorStyle.Render("  ✗ " + m.status))
+	}
+
+	return b.String()
 }
 
 func (m fallbackModel) view(width, height int) string {

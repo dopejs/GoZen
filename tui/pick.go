@@ -55,7 +55,8 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
+			// choices + 1 for the submit button
+			if m.cursor < len(m.choices) {
 				m.cursor++
 			}
 		case " ":
@@ -68,6 +69,11 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "enter":
+			// On submit button or no selected item grabbed
+			if m.cursor == len(m.choices) {
+				m.done = true
+				return m, tea.Quit
+			}
 			if m.cursor < len(m.choices) {
 				name := m.choices[m.cursor]
 				if m.orderIndex(name) > 0 {
@@ -77,16 +83,6 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.done = true
 			return m, tea.Quit
-		case "ctrl+s":
-			if !isMac {
-				m.done = true
-				return m, tea.Quit
-			}
-		case "cmd+s":
-			if isMac {
-				m.done = true
-				return m, tea.Quit
-			}
 		}
 	}
 	return m, nil
@@ -123,41 +119,29 @@ func (m pickModel) updateGrabbed(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m pickModel) View() string {
-	width := 80  // default width
-	height := 24 // default height
-
-	sidePadding := 2
 	var b strings.Builder
 
-	// Header
-	header := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(primaryColor).
-		Background(headerBgColor).
-		Padding(0, 2).
-		Render("🎯 Select Providers")
-	b.WriteString(header)
+	b.WriteString(titleStyle.Render("Select Providers"))
+	b.WriteString("\n")
+	if m.grabbed {
+		b.WriteString(dimStyle.Render("  ↑↓ reorder, Enter/Esc drop"))
+	} else {
+		b.WriteString(dimStyle.Render("  Space toggle, Enter reorder/confirm, Esc cancel"))
+	}
 	b.WriteString("\n\n")
-
-	// Content box
-	var content strings.Builder
-	content.WriteString(sectionTitleStyle.Render(" Choose providers for this session"))
-	content.WriteString("\n")
-	content.WriteString(dimStyle.Render(" Space to toggle, Enter to reorder"))
-	content.WriteString("\n\n")
 
 	for i, name := range m.choices {
 		cursor := "  "
-		style := tableRowStyle
+		style := dimStyle
 		orderIdx := m.orderIndex(name)
 
 		if i == m.cursor {
 			if m.grabbed {
 				cursor = "⇕ "
-				style = grabbedStyle
+				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 			} else {
 				cursor = "▸ "
-				style = tableSelectedRowStyle
+				style = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
 			}
 		}
 
@@ -170,48 +154,32 @@ func (m pickModel) View() string {
 			checkbox = dimStyle.Render("[ ]")
 		}
 
-		content.WriteString(style.Render(cursor + checkbox + " " + name))
-		if i < len(m.choices)-1 {
-			content.WriteString("\n")
+		grabIndicator := ""
+		if m.grabbed && i == m.cursor {
+			grabIndicator = " " + lipgloss.NewStyle().
+				Foreground(accentColor).
+				Render("(reordering)")
 		}
+
+		line := fmt.Sprintf("%s%s %s%s", cursor, checkbox, name, grabIndicator)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
 	}
 
-	contentBox := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(borderColor).
-		Padding(0, 1).
-		Width(40).
-		Render(content.String())
-	b.WriteString(contentBox)
-
-	// Build view with side padding
-	mainContent := b.String()
-	var view strings.Builder
-	lines := strings.Split(mainContent, "\n")
-	for _, line := range lines {
-		view.WriteString(strings.Repeat(" ", sidePadding))
-		view.WriteString(line)
-		view.WriteString("\n")
-	}
-
-	// Fill remaining space to push help bar to bottom
-	currentLines := len(lines)
-	remainingLines := height - currentLines - 1
-	for i := 0; i < remainingLines; i++ {
-		view.WriteString("\n")
-	}
-
-	// Help bar at bottom
-	var helpText string
-	if m.grabbed {
-		helpText = "↑↓ reorder • Enter/Esc drop"
+	// Submit button
+	b.WriteString("\n")
+	if m.cursor == len(m.choices) {
+		btn := lipgloss.NewStyle().Foreground(accentColor).Bold(true).Render("▸ [ Start Session ]")
+		b.WriteString(btn)
+	} else if len(m.order) > 0 {
+		btn := dimStyle.Render("  [ Start Session ]")
+		b.WriteString(btn)
 	} else {
-		helpText = "Space toggle • Enter reorder/confirm • " + saveKeyHint() + " confirm • q cancel"
+		btn := dimStyle.Render("  [ Select providers to start ]")
+		b.WriteString(btn)
 	}
-	helpBar := RenderHelpBar(helpText, width)
-	view.WriteString(helpBar)
 
-	return view.String()
+	return b.String()
 }
 
 // Result returns the selected provider names in order.

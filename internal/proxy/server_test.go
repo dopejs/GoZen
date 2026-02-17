@@ -45,6 +45,10 @@ func TestSingleJoiningSlash(t *testing.T) {
 		{"http://host", "path", "http://host/path"},
 		{"http://host/api", "/v1/messages", "http://host/api/v1/messages"},
 		{"http://host/api/", "/v1/messages", "http://host/api/v1/messages"},
+		// Regression: base URL should not produce double /v1
+		{"http://host", "/v1/messages", "http://host/v1/messages"},
+		{"http://host/", "/v1/messages", "http://host/v1/messages"},
+		{"http://host/claude", "/v1/messages", "http://host/claude/v1/messages"},
 	}
 	for _, tt := range tests {
 		got := singleJoiningSlash(tt.a, tt.b)

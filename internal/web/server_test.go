@@ -1187,3 +1187,286 @@ func TestUpdateBindingInvalidJSON(t *testing.T) {
 	}
 }
 
+// --- Sync API ---
+
+func TestSyncConfigGetNotConfigured(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/config", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	decodeJSON(t, w, &resp)
+	if resp["configured"] != false {
+		t.Errorf("expected configured=false, got %v", resp["configured"])
+	}
+}
+
+func TestSyncConfigPutAndGet(t *testing.T) {
+	s := setupTestServer(t)
+
+	body := config.SyncConfig{
+		Backend:    "webdav",
+		Endpoint:   "https://dav.example.com/zen-sync.json",
+		Username:   "user",
+		Token:      "pass123456789",
+		Passphrase: "my-secret",
+		AutoPull:   true,
+		PullInterval: 300,
+	}
+	w := doRequest(s, "PUT", "/api/v1/sync/config", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET should return masked tokens
+	w2 := doRequest(s, "GET", "/api/v1/sync/config", nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w2.Code)
+	}
+	var resp map[string]interface{}
+	decodeJSON(t, w2, &resp)
+	if resp["configured"] != true {
+		t.Error("expected configured=true")
+	}
+	cfg := resp["config"].(map[string]interface{})
+	if cfg["backend"] != "webdav" {
+		t.Errorf("backend = %v", cfg["backend"])
+	}
+	// Token should be masked
+	if cfg["token"] == "pass123456789" {
+		t.Error("token should be masked")
+	}
+	if cfg["passphrase"] != "********" {
+		t.Errorf("passphrase should be masked, got %v", cfg["passphrase"])
+	}
+}
+
+func TestSyncConfigMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "DELETE", "/api/v1/sync/config", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncStatusNotConfigured(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/status", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	decodeJSON(t, w, &resp)
+	if resp["configured"] != false {
+		t.Errorf("expected configured=false, got %v", resp["configured"])
+	}
+}
+
+func TestSyncStatusMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/status", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncPullNotConfigured(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/pull", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSyncPullMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/pull", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncPushNotConfigured(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/push", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSyncPushMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/push", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncTestNotConfigured(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/test", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSyncTestMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/test", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncCreateGistNoToken(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/create-gist", map[string]string{})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSyncCreateGistMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/create-gist", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestSyncConfigPutPreservesSecrets(t *testing.T) {
+	s := setupTestServer(t)
+
+	// First save with real token
+	body1 := config.SyncConfig{
+		Backend:    "gist",
+		Token:      "ghp_realtoken12345",
+		GistID:     "abc123",
+		Passphrase: "secret-pass",
+	}
+	doRequest(s, "PUT", "/api/v1/sync/config", body1)
+
+	// Now save with masked token (simulating UI sending back masked values)
+	body2 := config.SyncConfig{
+		Backend:    "gist",
+		Token:      maskToken("ghp_realtoken12345"),
+		GistID:     "abc123",
+		Passphrase: "********",
+	}
+	w := doRequest(s, "PUT", "/api/v1/sync/config", body2)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Verify the real token was preserved
+	stored := config.GetSyncConfig()
+	if stored.Token != "ghp_realtoken12345" {
+		t.Errorf("token should be preserved, got %q", stored.Token)
+	}
+	if stored.Passphrase != "secret-pass" {
+		t.Errorf("passphrase should be preserved, got %q", stored.Passphrase)
+	}
+}
+
+func TestSyncConfigPutInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("PUT", "/api/v1/sync/config", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func setupSyncTestServer(t *testing.T) *Server {
+	t.Helper()
+	s := setupTestServer(t)
+	// Configure sync with webdav backend
+	cfg := config.SyncConfig{
+		Backend:  "webdav",
+		Endpoint: "http://127.0.0.1:1/nonexistent",
+		Username: "user",
+		Token:    "pass",
+	}
+	config.SetSyncConfig(&cfg)
+	return s
+}
+
+func TestSyncStatusConfigured(t *testing.T) {
+	s := setupSyncTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/sync/status", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	decodeJSON(t, w, &resp)
+	if resp["configured"] != true {
+		t.Errorf("expected configured=true, got %v", resp["configured"])
+	}
+	if resp["backend"] != "webdav" {
+		t.Errorf("expected webdav, got %v", resp["backend"])
+	}
+}
+
+func TestSyncPullConfiguredFails(t *testing.T) {
+	s := setupSyncTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/pull", nil)
+	// Will fail because webdav endpoint is unreachable, but exercises the code path
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestSyncPushConfiguredFails(t *testing.T) {
+	s := setupSyncTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/push", nil)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+}
+
+func TestSyncTestWithBody(t *testing.T) {
+	s := setupTestServer(t)
+	body := config.SyncConfig{
+		Backend:  "webdav",
+		Endpoint: "http://127.0.0.1:1/nonexistent",
+	}
+	w := doRequest(s, "POST", "/api/v1/sync/test", body)
+	// Connection will fail but exercises the with-body code path
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
+func TestSyncTestConfiguredFails(t *testing.T) {
+	s := setupSyncTestServer(t)
+	w := doRequest(s, "POST", "/api/v1/sync/test", nil)
+	// Falls through to getSyncManager path, connection fails
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
+func TestSyncCreateGistInvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("POST", "/api/v1/sync/create-gist", bytes.NewReader([]byte("not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSyncCreateGistWithToken(t *testing.T) {
+	s := setupTestServer(t)
+	// Token is provided but GitHub API will reject it — exercises the code path
+	w := doRequest(s, "POST", "/api/v1/sync/create-gist", map[string]string{"token": "ghp_fake_token"})
+	// Will get 502 because GitHub rejects the token
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+}
+

@@ -1112,4 +1112,61 @@ select{
   font-size:13px;
 }
 
+/* ---- Auto-Refresh Controls ---- */
+.auto-refresh-controls{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.auto-refresh-label{
+  font-size:13px;
+  color:var(--text-secondary);
+  font-weight:500;
+}
+.auto-refresh-controls .cs-wrap{min-width:70px}
+.auto-refresh-controls .cs-trigger{font-size:13px;padding:6px 28px 6px 10px}
+
+/* Toggle Switch */
+.toggle-switch{
+  position:relative;
+  display:inline-block;
+  width:36px;
+  height:20px;
+  flex-shrink:0;
+}
+.toggle-switch input{
+  opacity:0;
+  width:0;
+  height:0;
+  position:absolute;
+}
+.toggle-slider{
+  position:absolute;
+  inset:0;
+  background:var(--bg-overlay);
+  border:1px solid var(--border-strong);
+  border-radius:20px;
+  cursor:pointer;
+  transition:all var(--dur) var(--ease);
+}
+.toggle-slider::before{
+  content:"";
+  position:absolute;
+  left:2px;
+  top:2px;
+  width:14px;
+  height:14px;
+  background:var(--text-muted);
+  border-radius:50%;
+  transition:all var(--dur) var(--ease);
+}
+.toggle-switch input:checked + .toggle-slider{
+  background:var(--teal-dim);
+  border-color:var(--teal);
+}
+.toggle-switch input:checked + .toggle-slider::before{
+  transform:translateX(16px);
+  background:var(--teal);
+}
+
 

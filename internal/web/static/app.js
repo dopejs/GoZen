@@ -41,6 +41,9 @@
     setupProviderEdit();
     setupLogs();
     setupSettings();
+    document.getElementById("btn-refresh-providers").addEventListener("click", loadProviders);
+    document.getElementById("btn-refresh-profiles").addEventListener("click", loadProfiles);
+    document.getElementById("btn-refresh-settings").addEventListener("click", loadSettings);
     document.getElementById("btn-add-provider").addEventListener("click", openAddProvider);
     document.getElementById("btn-add-profile").addEventListener("click", openAddProfile);
     document.getElementById("pe-form").addEventListener("submit", function(e) { e.preventDefault(); submitProfile(e); });
@@ -106,6 +109,14 @@
     if (tab === "logs") {
       restoreLogFiltersFromHash();
       loadLogs();
+      // Restore auto-refresh if enabled
+      var toggle = document.getElementById("logs-auto-refresh");
+      if (toggle && toggle.checked) {
+        var intervalSel = document.getElementById("logs-refresh-interval");
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      }
+    } else {
+      stopAutoRefresh();
     }
     // Load settings when switching to settings tab
     if (tab === "settings") {
@@ -1189,6 +1200,19 @@
 
   // --- Logs ---
   var logsProviders = [];
+  var autoRefreshTimer = null;
+
+  function startAutoRefresh(interval) {
+    stopAutoRefresh();
+    autoRefreshTimer = setInterval(loadLogs, interval);
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+  }
 
   function setupLogs() {
     document.getElementById("btn-refresh-logs").addEventListener("click", loadLogs);
@@ -1197,6 +1221,32 @@
         updateLogHashParams();
         loadLogs();
       });
+    });
+
+    // Auto-refresh controls
+    var toggle = document.getElementById("logs-auto-refresh");
+    var intervalSel = document.getElementById("logs-refresh-interval");
+
+    // Restore from localStorage
+    var savedOn = localStorage.getItem("gozen-logs-auto-refresh");
+    var savedInterval = localStorage.getItem("gozen-logs-refresh-interval");
+    if (savedInterval) intervalSel.value = savedInterval;
+    if (savedOn === "true") toggle.checked = true;
+
+    toggle.addEventListener("change", function() {
+      localStorage.setItem("gozen-logs-auto-refresh", toggle.checked);
+      if (toggle.checked) {
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      } else {
+        stopAutoRefresh();
+      }
+    });
+
+    intervalSel.addEventListener("change", function() {
+      localStorage.setItem("gozen-logs-refresh-interval", intervalSel.value);
+      if (toggle.checked) {
+        startAutoRefresh(parseInt(intervalSel.value, 10));
+      }
     });
   }
 

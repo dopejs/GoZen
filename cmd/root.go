@@ -29,7 +29,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "2.1.0"
+var Version = "2.1.1"
 
 var updateChecker *update.Checker
 
@@ -61,6 +61,7 @@ var rootCmd = &cobra.Command{
 }
 
 var clientFlag string
+var yesFlag bool
 
 func init() {
 	// -p/--profile is the new flag, -f/--fallback is kept for backward compatibility but hidden
@@ -68,6 +69,7 @@ func init() {
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
 	rootCmd.Flags().Lookup("fallback").Hidden = true
 	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
+	rootCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "auto-approve CLI permissions (claude --yes, codex -a never)")
 	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
 	rootCmd.Flags().Lookup("cli").Hidden = true
 	rootCmd.AddCommand(useCmd)
@@ -105,6 +107,7 @@ Quick Start:
   zen                       Start with default profile
   zen -p <profile>          Start with specific profile
   zen --cli codex           Start with specific CLI
+  zen -y                    Start with auto-approve permissions
 
 Configuration:
   config add provider [name]   Add a new provider
@@ -171,7 +174,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	}
 
 	// Use zend daemon
-	return startViaDaemon(profile, client, providerNames, args)
+	return startViaDaemon(profile, client, providerNames, args, yesFlag)
 }
 
 // startViaDaemon starts a client session through the zend daemon.
@@ -180,7 +183,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 // 3. Set base URL to http://127.0.0.1:<proxy_port>/<profile>/<session>/v1
 // 4. Merge provider env vars
 // 5. Exec client binary
-func startViaDaemon(profile, client string, providerNames []string, args []string) error {
+func startViaDaemon(profile, client string, providerNames []string, args []string, autoApprove bool) error {
 	if err := ensureDaemonRunning(); err != nil {
 		return fmt.Errorf("failed to start zend: %w", err)
 	}
@@ -218,6 +221,11 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 	cliPath, err := exec.LookPath(clientBin)
 	if err != nil {
 		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
+	}
+
+	// Inject auto-approve flags based on client type
+	if autoApprove {
+		args = prependAutoApproveArgs(clientBin, args)
 	}
 
 	// Start client as subprocess
@@ -765,6 +773,20 @@ func GetClientFormat(clientType ClientType) string {
 	default:
 		// Claude Code and OpenCode use Anthropic format by default
 		return config.ProviderTypeAnthropic
+	}
+}
+
+// prependAutoApproveArgs prepends the appropriate auto-approve flags for each CLI.
+// Claude Code: --yes, Codex: -a never, OpenCode: auto-approves by default (no flag needed).
+func prependAutoApproveArgs(clientBin string, args []string) []string {
+	switch GetClientType(clientBin) {
+	case ClientClaude:
+		return append([]string{"--yes"}, args...)
+	case ClientCodex:
+		return append([]string{"-a", "never"}, args...)
+	default:
+		// OpenCode auto-approves by default
+		return args
 	}
 }
 

@@ -69,7 +69,7 @@ func runPick(cmd *cobra.Command, args []string) error {
 	}
 
 	// Use the temp profile through the daemon
-	return startViaDaemon(tempID, client, selected, args)
+	return startViaDaemon(tempID, client, selected, args, yesFlag)
 }
 
 // registerTempProfile registers a temporary profile with the daemon and returns its ID.

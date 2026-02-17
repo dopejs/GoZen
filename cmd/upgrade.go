@@ -145,6 +145,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Successfully upgraded to %s\n", target)
+	fmt.Println()
+	fmt.Println("Quick Start:")
+	fmt.Println("  zen                          Start with default profile")
+	fmt.Println("  zen use <provider>           Use a specific provider")
+	fmt.Println("  zen web                      Open web UI")
+	fmt.Println("  zen config add provider      Add a new provider")
+	fmt.Println("  zen config add profile       Add a new profile")
+	fmt.Println("  zen daemon enable            Auto-start daemon on login")
+	fmt.Println("  zen daemon disable           Remove auto-start")
 
 	// Restart zend daemon if it was running
 	if _, running := daemon.IsDaemonRunning(); running {

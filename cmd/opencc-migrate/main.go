@@ -61,22 +61,16 @@ func main() {
 	fmt.Println()
 	fmt.Println("╭──────────────────────────────────────────────────────────╮")
 	fmt.Println("│  Migration complete!                                     │")
-	fmt.Println("│                                                          │")
-	if len(os.Args) > 1 {
-		inner := fmt.Sprintf("  Please use: zen %s", strings.Join(os.Args[1:], " "))
-		// Truncate if too long for the box (58 chars inner width)
-		if len(inner) > 58 {
-			inner = inner[:55] + "..."
-		}
-		// Pad to 58 chars
-		for len(inner) < 58 {
-			inner += " "
-		}
-		fmt.Printf("│%s│\n", inner)
-	} else {
-		fmt.Println("│  Please use: zen                                         │")
-	}
 	fmt.Println("╰──────────────────────────────────────────────────────────╯")
+	fmt.Println()
+	fmt.Println("Quick Start:")
+	fmt.Println("  zen                          Start with default profile")
+	fmt.Println("  zen use <provider>           Use a specific provider")
+	fmt.Println("  zen web                      Open web UI")
+	fmt.Println("  zen config add provider      Add a new provider")
+	fmt.Println("  zen config add profile       Add a new profile")
+	fmt.Println("  zen daemon enable            Auto-start daemon on login")
+	fmt.Println("  zen daemon disable           Remove auto-start")
 }
 
 func fatalf(format string, args ...interface{}) {

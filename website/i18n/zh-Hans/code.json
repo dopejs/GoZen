@@ -40,6 +40,7 @@
   "commands.items.profile": {"message": "使用指定 profile 启动"},
   "commands.items.profilePick": {"message": "交互选择 profile"},
   "commands.items.cli": {"message": "使用指定 CLI（claude/codex/opencode）"},
+  "commands.items.yes": {"message": "自动批准 CLI 权限（claude --yes, codex -a never）"},
   "commands.items.use": {"message": "直接使用指定 provider（无代理）"},
   "commands.items.pick": {"message": "交互选择 provider 启动"},
   "commands.items.list": {"message": "列出所有 provider 和 profile"},

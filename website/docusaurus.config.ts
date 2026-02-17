@@ -46,9 +46,9 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           lastVersion: '2.1',
           versions: {
-            current: {label: 'Next', path: 'next'},
             '2.1': {label: 'v2.1', path: '/'},
           },
+          onlyIncludeVersions: ['2.1'],
         },
         blog: false,
         theme: {
@@ -82,7 +82,7 @@ const config: Config = {
   themeConfig: {
     colorMode: {
       defaultMode: 'dark',
-      respectPrefersColorScheme: true,
+      respectPrefersColorScheme: false,
     },
     metadata: [
       {name: 'keywords', content: 'GoZen, zen CLI, Claude Code proxy, Claude Code environment switcher, API proxy failover, multi-provider failover, Anthropic API proxy, scenario routing, project bindings'},
@@ -106,10 +106,6 @@ const config: Config = {
           label: 'Docs',
         },
         {to: '/releases', label: 'Releases', position: 'left'},
-        {
-          type: 'docsVersionDropdown',
-          position: 'right',
-        },
         {
           type: 'localeDropdown',
           position: 'right',

@@ -32,7 +32,7 @@ module.exports = function releasesPlugin(context) {
         path: '/releases',
         component: '@site/src/components/ReleasesPage.tsx',
         modules: {releases: dataPath},
-        exact: true,
+        exact: false,
       });
     },
   };

@@ -166,7 +166,10 @@ func (d *WebhookDispatcher) formatSlack(payload WebhookPayload) []byte {
 		},
 	}
 
-	data, _ := json.Marshal(msg)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return []byte(`{"text":"webhook format error"}`)
+	}
 	return data
 }
 
@@ -187,13 +190,19 @@ func (d *WebhookDispatcher) formatDiscord(payload WebhookPayload) []byte {
 		},
 	}
 
-	data, _ := json.Marshal(msg)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return []byte(`{"content":"webhook format error"}`)
+	}
 	return data
 }
 
 // formatGeneric formats the payload as generic JSON.
 func (d *WebhookDispatcher) formatGeneric(payload WebhookPayload) []byte {
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return []byte(`{"error":"webhook format error"}`)
+	}
 	return data
 }
 

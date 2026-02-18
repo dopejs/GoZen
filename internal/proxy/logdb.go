@@ -62,7 +62,8 @@ func openAndMigrate(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	os.Chmod(dbPath, 0600)
+	// Set restrictive permissions - ignore error as file may not exist yet
+	_ = os.Chmod(dbPath, 0600)
 
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
@@ -81,9 +82,9 @@ func openAndMigrate(dbPath string) (*sql.DB, error) {
 
 // rebuildDatabase removes the corrupt database and creates a fresh one.
 func rebuildDatabase(dbPath string) (*sql.DB, error) {
-	// Remove the main file and WAL/SHM sidecars
+	// Remove the main file and WAL/SHM sidecars - ignore errors
 	for _, suffix := range []string{"", "-wal", "-shm"} {
-		os.Remove(dbPath + suffix)
+		_ = os.Remove(dbPath + suffix)
 	}
 	return openAndMigrate(dbPath)
 }
@@ -340,8 +341,9 @@ func getSchemaVersion(db *sql.DB) int {
 }
 
 func setSchemaVersion(db *sql.DB, version int) {
-	db.Exec("DELETE FROM schema_version")
-	db.Exec("INSERT INTO schema_version (version) VALUES (?)", version)
+	// Best-effort schema version update - errors are not critical
+	_, _ = db.Exec("DELETE FROM schema_version")
+	_, _ = db.Exec("INSERT INTO schema_version (version) VALUES (?)", version)
 }
 
 func tableExists(db *sql.DB, name string) bool {

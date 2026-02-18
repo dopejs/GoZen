@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -328,6 +329,9 @@ func (q *TaskQueue) CleanOldTasks(maxAge time.Duration) int {
 // generateTaskID generates a unique task ID.
 func generateTaskID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
 	return "task-" + hex.EncodeToString(b)
 }

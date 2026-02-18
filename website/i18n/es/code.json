@@ -40,7 +40,7 @@
   "commands.items.profile": {"message": "Iniciar con el perfil especificado"},
   "commands.items.profilePick": {"message": "Seleccionar perfil de forma interactiva"},
   "commands.items.cli": {"message": "Usar CLI especificado (claude/codex/opencode)"},
-  "commands.items.yes": {"message": "Aprobar automáticamente permisos CLI (claude --yes, codex -a never)"},
+  "commands.items.yes": {"message": "Aprobar automáticamente permisos CLI (claude --permission-mode acceptEdits, codex -a never)"},
   "commands.items.use": {"message": "Usar proveedor especificado directamente (sin proxy)"},
   "commands.items.pick": {"message": "Seleccionar proveedor de forma interactiva para iniciar"},
   "commands.items.list": {"message": "Listar todos los proveedores y perfiles"},

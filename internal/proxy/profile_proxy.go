@@ -194,7 +194,7 @@ func (pp *ProfileProxy) InvalidateCache() {
 func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": map[string]string{
 			"type":    errType,
 			"message": message,

@@ -90,9 +90,11 @@ func (d *Daemon) handleTempProfiles(w http.ResponseWriter, r *http.Request) {
 
 	var req tempProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = r.Body.Close()
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 		return
 	}
+	_ = r.Body.Close()
 
 	if len(req.Providers) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "providers required"})

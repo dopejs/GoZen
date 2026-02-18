@@ -263,6 +263,7 @@ type ModelPricing struct {
 
 // DefaultModelPricing provides built-in pricing for common Claude models.
 var DefaultModelPricing = map[string]*ModelPricing{
+	// Anthropic Claude models
 	"claude-opus-4-20250514":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 	"claude-sonnet-4-20250514":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
 	"claude-haiku-3-5-20241022":  {InputPerMillion: 0.80, OutputPerMillion: 4.0},
@@ -271,6 +272,70 @@ var DefaultModelPricing = map[string]*ModelPricing{
 	"claude-3-opus-20240229":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
 	"claude-3-sonnet-20240229":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
 	"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
+
+	// OpenAI models
+	"gpt-4o":                {InputPerMillion: 2.5, OutputPerMillion: 10.0},
+	"gpt-4o-2024-11-20":     {InputPerMillion: 2.5, OutputPerMillion: 10.0},
+	"gpt-4o-2024-08-06":     {InputPerMillion: 2.5, OutputPerMillion: 10.0},
+	"gpt-4o-mini":           {InputPerMillion: 0.15, OutputPerMillion: 0.6},
+	"gpt-4o-mini-2024-07-18": {InputPerMillion: 0.15, OutputPerMillion: 0.6},
+	"gpt-4-turbo":           {InputPerMillion: 10.0, OutputPerMillion: 30.0},
+	"gpt-4-turbo-2024-04-09": {InputPerMillion: 10.0, OutputPerMillion: 30.0},
+	"gpt-4":                 {InputPerMillion: 30.0, OutputPerMillion: 60.0},
+	"gpt-4-32k":             {InputPerMillion: 60.0, OutputPerMillion: 120.0},
+	"gpt-3.5-turbo":         {InputPerMillion: 0.5, OutputPerMillion: 1.5},
+	"gpt-3.5-turbo-0125":    {InputPerMillion: 0.5, OutputPerMillion: 1.5},
+	"o1":                    {InputPerMillion: 15.0, OutputPerMillion: 60.0},
+	"o1-2024-12-17":         {InputPerMillion: 15.0, OutputPerMillion: 60.0},
+	"o1-mini":               {InputPerMillion: 3.0, OutputPerMillion: 12.0},
+	"o1-mini-2024-09-12":    {InputPerMillion: 3.0, OutputPerMillion: 12.0},
+	"o3-mini":               {InputPerMillion: 1.1, OutputPerMillion: 4.4},
+	"o3-mini-2025-01-31":    {InputPerMillion: 1.1, OutputPerMillion: 4.4},
+
+	// DeepSeek models
+	"deepseek-chat":      {InputPerMillion: 0.14, OutputPerMillion: 0.28},
+	"deepseek-coder":     {InputPerMillion: 0.14, OutputPerMillion: 0.28},
+	"deepseek-reasoner":  {InputPerMillion: 0.55, OutputPerMillion: 2.19},
+
+	// MiniMax models
+	"abab6.5s-chat":   {InputPerMillion: 1.0, OutputPerMillion: 1.0},
+	"abab6.5-chat":    {InputPerMillion: 3.0, OutputPerMillion: 3.0},
+	"abab6.5t-chat":   {InputPerMillion: 5.0, OutputPerMillion: 5.0},
+	"abab5.5-chat":    {InputPerMillion: 1.0, OutputPerMillion: 1.0},
+
+	// GLM (Zhipu AI) models
+	"glm-4-plus":       {InputPerMillion: 7.14, OutputPerMillion: 7.14},
+	"glm-4-0520":       {InputPerMillion: 14.29, OutputPerMillion: 14.29},
+	"glm-4":            {InputPerMillion: 14.29, OutputPerMillion: 14.29},
+	"glm-4-air":        {InputPerMillion: 0.14, OutputPerMillion: 0.14},
+	"glm-4-airx":       {InputPerMillion: 1.43, OutputPerMillion: 1.43},
+	"glm-4-long":       {InputPerMillion: 0.14, OutputPerMillion: 0.14},
+	"glm-4-flash":      {InputPerMillion: 0.014, OutputPerMillion: 0.014},
+	"glm-4-flashx":     {InputPerMillion: 0.07, OutputPerMillion: 0.07},
+	"codegeex-4":       {InputPerMillion: 0.07, OutputPerMillion: 0.07},
+
+	// Google Gemini models
+	"gemini-2.0-flash":       {InputPerMillion: 0.1, OutputPerMillion: 0.4},
+	"gemini-2.0-flash-lite":  {InputPerMillion: 0.075, OutputPerMillion: 0.3},
+	"gemini-1.5-pro":         {InputPerMillion: 1.25, OutputPerMillion: 5.0},
+	"gemini-1.5-flash":       {InputPerMillion: 0.075, OutputPerMillion: 0.3},
+	"gemini-1.5-flash-8b":    {InputPerMillion: 0.0375, OutputPerMillion: 0.15},
+
+	// Mistral models
+	"mistral-large-latest":  {InputPerMillion: 2.0, OutputPerMillion: 6.0},
+	"mistral-small-latest":  {InputPerMillion: 0.2, OutputPerMillion: 0.6},
+	"codestral-latest":      {InputPerMillion: 0.3, OutputPerMillion: 0.9},
+	"ministral-8b-latest":   {InputPerMillion: 0.1, OutputPerMillion: 0.1},
+	"ministral-3b-latest":   {InputPerMillion: 0.04, OutputPerMillion: 0.04},
+	"pixtral-large-latest":  {InputPerMillion: 2.0, OutputPerMillion: 6.0},
+
+	// Qwen (Alibaba) models - prices in USD converted from CNY
+	"qwen-max":         {InputPerMillion: 2.8, OutputPerMillion: 11.2},
+	"qwen-plus":        {InputPerMillion: 0.56, OutputPerMillion: 2.24},
+	"qwen-turbo":       {InputPerMillion: 0.042, OutputPerMillion: 0.168},
+	"qwen-long":        {InputPerMillion: 0.07, OutputPerMillion: 0.28},
+	"qwen-coder-plus":  {InputPerMillion: 0.49, OutputPerMillion: 1.96},
+	"qwen-coder-turbo": {InputPerMillion: 0.28, OutputPerMillion: 1.12},
 }
 
 // --- Budget Configuration ---

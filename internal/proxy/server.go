@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
@@ -156,6 +157,56 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract client type for logging (set by ProfileProxy)
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
+
+	// [BETA] Apply context compression if enabled
+	if compressor := GetGlobalCompressor(); compressor != nil && compressor.IsEnabled() {
+		compressedBody, compressed, err := compressor.CompressRequestBody(bodyBytes)
+		if err != nil {
+			s.Logger.Printf("[compression] error: %v", err)
+		} else if compressed {
+			s.Logger.Printf("[compression] compressed request body from %d to %d bytes", len(bodyBytes), len(compressedBody))
+			bodyBytes = compressedBody
+		}
+	}
+
+	// [BETA] Apply middleware pipeline if enabled
+	if pipeline := middleware.GetGlobalPipeline(); pipeline != nil && pipeline.IsEnabled() {
+		reqCtx := &middleware.RequestContext{
+			SessionID:  sessionID,
+			ClientType: clientType,
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			Headers:    r.Header.Clone(),
+			Body:       bodyBytes,
+			Metadata:   make(map[string]interface{}),
+		}
+
+		// Parse model and messages for middleware
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			if model, ok := bodyMap["model"].(string); ok {
+				reqCtx.Model = model
+			}
+			if msgs, ok := bodyMap["messages"].([]interface{}); ok {
+				for _, m := range msgs {
+					if msgMap, ok := m.(map[string]interface{}); ok {
+						reqCtx.Messages = append(reqCtx.Messages, middleware.Message{
+							Role:    msgMap["role"].(string),
+							Content: msgMap["content"],
+						})
+					}
+				}
+			}
+		}
+
+		processedCtx, err := pipeline.ProcessRequest(reqCtx)
+		if err != nil {
+			s.Logger.Printf("[middleware] request processing error: %v", err)
+			http.Error(w, fmt.Sprintf("middleware error: %v", err), http.StatusBadRequest)
+			return
+		}
+		bodyBytes = processedCtx.Body
+	}
 
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers

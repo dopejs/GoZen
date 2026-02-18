@@ -103,6 +103,15 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/pricing", s.handlePricing)
 	s.mux.HandleFunc("/api/v1/pricing/reset", s.handlePricingReset)
 
+	// Compression routes (BETA)
+	s.mux.HandleFunc("/api/v1/compression", s.handleCompression)
+	s.mux.HandleFunc("/api/v1/compression/stats", s.handleGetCompressionStats)
+
+	// Middleware routes (BETA)
+	s.mux.HandleFunc("/api/v1/middleware", s.handleMiddleware)
+	s.mux.HandleFunc("/api/v1/middleware/", s.handleMiddleware)
+	s.mux.HandleFunc("/api/v1/middleware/reload", s.handleMiddlewareReload)
+
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))

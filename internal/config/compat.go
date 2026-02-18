@@ -237,3 +237,27 @@ func GetHealthCheck() *HealthCheckConfig {
 func SetHealthCheck(hc *HealthCheckConfig) error {
 	return DefaultStore().SetHealthCheck(hc)
 }
+
+// --- Compression convenience functions (BETA) ---
+
+// GetCompression returns the compression configuration.
+func GetCompression() *CompressionConfig {
+	return DefaultStore().GetCompression()
+}
+
+// SetCompression sets the compression configuration.
+func SetCompression(cc *CompressionConfig) error {
+	return DefaultStore().SetCompression(cc)
+}
+
+// --- Middleware convenience functions (BETA) ---
+
+// GetMiddleware returns the middleware configuration.
+func GetMiddleware() *MiddlewareConfig {
+	return DefaultStore().GetMiddleware()
+}
+
+// SetMiddleware sets the middleware configuration.
+func SetMiddleware(mc *MiddlewareConfig) error {
+	return DefaultStore().SetMiddleware(mc)
+}

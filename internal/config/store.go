@@ -892,3 +892,49 @@ func (s *Store) SetHealthCheck(hc *HealthCheckConfig) error {
 	s.config.HealthCheck = hc
 	return s.saveLocked()
 }
+
+// --- Compression (BETA) ---
+
+// GetCompression returns the compression configuration.
+func (s *Store) GetCompression() *CompressionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Compression
+}
+
+// SetCompression sets the compression configuration and saves.
+func (s *Store) SetCompression(cc *CompressionConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Compression = cc
+	return s.saveLocked()
+}
+
+// --- Middleware (BETA) ---
+
+// GetMiddleware returns the middleware configuration.
+func (s *Store) GetMiddleware() *MiddlewareConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Middleware
+}
+
+// SetMiddleware sets the middleware configuration and saves.
+func (s *Store) SetMiddleware(mc *MiddlewareConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Middleware = mc
+	return s.saveLocked()
+}

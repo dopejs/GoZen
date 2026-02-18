@@ -250,7 +250,7 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 5 (v1.5.0+): project bindings with CLI support
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
 // - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port, web_password_hash
-// - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy
+// - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy; compression; middleware
 const CurrentConfigVersion = 8
 
 // --- Model Pricing ---
@@ -395,6 +395,38 @@ type HealthCheckConfig struct {
 	TimeoutSecs  int  `json:"timeout_secs,omitempty"`
 }
 
+// --- Context Compression Configuration (BETA) ---
+
+// CompressionConfig holds context compression settings.
+// [BETA] This feature is experimental and disabled by default.
+type CompressionConfig struct {
+	Enabled         bool   `json:"enabled"`          // default: false (BETA)
+	ThresholdTokens int    `json:"threshold_tokens"` // trigger compression above this (default: 50000)
+	TargetTokens    int    `json:"target_tokens"`    // compress to this size (default: 20000)
+	SummaryModel    string `json:"summary_model"`    // model for summarization (default: "claude-3-haiku-20240307")
+	PreserveRecent  int    `json:"preserve_recent"`  // keep last N messages uncompressed (default: 4)
+	SummaryProvider string `json:"summary_provider"` // provider to use for summarization (default: first healthy)
+}
+
+// --- Middleware Pipeline Configuration (BETA) ---
+
+// MiddlewareConfig holds middleware pipeline settings.
+// [BETA] This feature is experimental and disabled by default.
+type MiddlewareConfig struct {
+	Enabled     bool               `json:"enabled"`     // default: false (BETA)
+	Middlewares []*MiddlewareEntry `json:"middlewares"` // ordered list of middleware
+}
+
+// MiddlewareEntry defines a single middleware in the pipeline.
+type MiddlewareEntry struct {
+	Name    string          `json:"name"`             // middleware identifier
+	Enabled bool            `json:"enabled"`          // can disable individual middleware
+	Source  string          `json:"source,omitempty"` // "builtin", "local", "remote"
+	Path    string          `json:"path,omitempty"`   // path for local plugins
+	URL     string          `json:"url,omitempty"`    // URL for remote plugins
+	Config  json.RawMessage `json:"config,omitempty"` // middleware-specific config
+}
+
 // --- Load Balance Strategy ---
 
 // LoadBalanceStrategy defines how providers are selected for requests.
@@ -449,6 +481,8 @@ type OpenCCConfig struct {
 	Budgets         *BudgetConfig               `json:"budgets,omitempty"`           // budget configuration
 	Webhooks        []*WebhookConfig            `json:"webhooks,omitempty"`          // webhook configurations
 	HealthCheck     *HealthCheckConfig          `json:"health_check,omitempty"`      // health check configuration
+	Compression     *CompressionConfig          `json:"compression,omitempty"`       // [BETA] context compression
+	Middleware      *MiddlewareConfig           `json:"middleware,omitempty"`        // [BETA] middleware pipeline
 }
 
 // UnmarshalJSON supports multiple config versions:

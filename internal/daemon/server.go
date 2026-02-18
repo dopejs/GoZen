@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
@@ -98,6 +99,17 @@ func (d *Daemon) Start() error {
 	proxy.InitGlobalBudgetChecker(proxy.GetGlobalUsageTracker())
 	proxy.InitGlobalHealthChecker(logDB)
 	proxy.InitGlobalLoadBalancer(logDB)
+
+	// Initialize context compressor (BETA)
+	proxy.InitGlobalCompressor(nil) // providers will be set per-request
+
+	// Initialize middleware registry (BETA)
+	middleware.InitGlobalRegistry(d.logger)
+	if registry := middleware.GetGlobalRegistry(); registry != nil {
+		if err := registry.LoadFromConfig(); err != nil {
+			d.logger.Printf("Warning: failed to load middleware config: %v", err)
+		}
+	}
 
 	// Start health checker if enabled
 	proxy.StartGlobalHealthChecker()

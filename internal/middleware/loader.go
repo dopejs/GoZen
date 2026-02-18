@@ -117,8 +117,8 @@ func (l *PluginLoader) LoadRemote(manifestURL string) (Middleware, error) {
 		if l.verifyChecksum(pluginPath, expectedChecksum) {
 			return l.LoadLocal(pluginPath)
 		}
-		// Checksum mismatch, re-download
-		os.Remove(pluginPath)
+		// Checksum mismatch, re-download - ignore remove error
+		_ = os.Remove(pluginPath)
 	}
 
 	// Download plugin
@@ -220,7 +220,8 @@ func (l *PluginLoader) ClearCache() error {
 
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".so" {
-			os.Remove(filepath.Join(l.pluginDir, entry.Name()))
+			// Best-effort removal - ignore errors
+			_ = os.Remove(filepath.Join(l.pluginDir, entry.Name()))
 		}
 	}
 	return nil

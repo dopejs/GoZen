@@ -31,8 +31,8 @@ func runWeb(cmd *cobra.Command, args []string) error {
 func openBrowser(url string) {
 	switch runtime.GOOS {
 	case "darwin":
-		exec.Command("open", url).Start()
+		_ = exec.Command("open", url).Start()
 	case "linux":
-		exec.Command("xdg-open", url).Start()
+		_ = exec.Command("xdg-open", url).Start()
 	}
 }

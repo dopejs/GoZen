@@ -247,3 +247,64 @@ func TestEstimateTokensFromChars(t *testing.T) {
 		t.Errorf("expected positive token estimate with system, got %d", tokens2)
 	}
 }
+
+func TestExtractSessionIDVariants(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     map[string]interface{}
+		expected string
+	}{
+		{
+			name:     "no metadata",
+			body:     map[string]interface{}{},
+			expected: "",
+		},
+		{
+			name: "with user_session prefix",
+			body: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"user_id": "user_session_abc123",
+				},
+			},
+			expected: "abc123",
+		},
+		{
+			name: "without prefix",
+			body: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"user_id": "regular_user",
+				},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractSessionID(tt.body)
+			if result != tt.expected {
+				t.Errorf("extractSessionID() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStructuredLoggerGetEntriesLimit(t *testing.T) {
+	dir := t.TempDir()
+	logger, err := NewStructuredLogger(dir, 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	// Add 10 entries
+	for i := 0; i < 10; i++ {
+		logger.Info("p1", "msg")
+	}
+
+	// Get with limit
+	entries := logger.GetEntries(LogFilter{Limit: 5})
+	if len(entries) != 5 {
+		t.Errorf("expected 5 entries with limit, got %d", len(entries))
+	}
+}

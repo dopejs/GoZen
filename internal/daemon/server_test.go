@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -431,6 +432,55 @@ func TestTouchSessionNonExistent(t *testing.T) {
 	d := newTestDaemon()
 	// Should not panic
 	d.TouchSession("nonexistent")
+}
+
+func TestNewDaemon(t *testing.T) {
+	logger := log.New(os.Stderr, "[test] ", 0)
+	d := NewDaemon("1.0.0", logger)
+	if d == nil {
+		t.Fatal("Expected non-nil daemon")
+	}
+	if d.version != "1.0.0" {
+		t.Errorf("Expected version 1.0.0, got %s", d.version)
+	}
+	if d.sessions == nil {
+		t.Error("Expected sessions map to be initialized")
+	}
+	if d.tmpProfiles == nil {
+		t.Error("Expected tmpProfiles map to be initialized")
+	}
+}
+
+func TestDaemonOnConfigReload(t *testing.T) {
+	d := newTestDaemon()
+	// Should not panic even without profileProxy
+	d.onConfigReload()
+}
+
+func TestWriteDaemonPidError(t *testing.T) {
+	// Test with invalid path
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", "/nonexistent/path/that/does/not/exist")
+	defer os.Setenv("HOME", oldHome)
+
+	err := WriteDaemonPid(12345)
+	if err == nil {
+		t.Error("Expected error for invalid path")
+	}
+}
+
+func TestIsDaemonPortListeningWithServer(t *testing.T) {
+	// Start a simple server
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("Cannot create listener")
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	if !IsDaemonPortListening(port) {
+		t.Error("Expected port to be listening")
+	}
 }
 
 func newTestDaemon() *Daemon {

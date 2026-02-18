@@ -66,6 +66,20 @@ func doRequest(s *Server, method, path string, body interface{}) *httptest.Respo
 	return w
 }
 
+func doRequestRaw(s *Server, method, path string, body []byte) *httptest.ResponseRecorder {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reqBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	return w
+}
+
 func decodeJSON(t *testing.T, r *httptest.ResponseRecorder, v interface{}) {
 	t.Helper()
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {

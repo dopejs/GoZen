@@ -427,6 +427,59 @@ type MiddlewareEntry struct {
 	Config  json.RawMessage `json:"config,omitempty"` // middleware-specific config
 }
 
+// --- Agent Infrastructure Configuration (BETA) ---
+
+// AgentConfig holds agent infrastructure settings.
+// [BETA] This feature is experimental and disabled by default.
+type AgentConfig struct {
+	Enabled     bool               `json:"enabled"`               // default: false (BETA)
+	Coordinator *CoordinatorConfig `json:"coordinator,omitempty"` // file coordination
+	Observatory *ObservatoryConfig `json:"observatory,omitempty"` // session monitoring
+	Guardrails  *GuardrailsConfig  `json:"guardrails,omitempty"`  // safety controls
+	TaskQueue   *TaskQueueConfig   `json:"task_queue,omitempty"`  // task management
+	Runtime     *RuntimeConfig     `json:"runtime,omitempty"`     // autonomous runtime
+}
+
+// CoordinatorConfig holds agent coordinator settings.
+type CoordinatorConfig struct {
+	Enabled        bool `json:"enabled"`
+	LockTimeoutSec int  `json:"lock_timeout_sec,omitempty"` // default: 300
+	InjectWarnings bool `json:"inject_warnings,omitempty"`  // inject lock info into context
+}
+
+// ObservatoryConfig holds agent observatory settings.
+type ObservatoryConfig struct {
+	Enabled        bool `json:"enabled"`
+	StuckThreshold int  `json:"stuck_threshold,omitempty"` // consecutive errors before marking stuck (default: 5)
+	IdleTimeoutMin int  `json:"idle_timeout_min,omitempty"` // minutes before marking idle (default: 30)
+}
+
+// GuardrailsConfig holds agent guardrails settings.
+type GuardrailsConfig struct {
+	Enabled            bool    `json:"enabled"`
+	SessionSpendingCap float64 `json:"session_spending_cap,omitempty"` // max $ per session
+	RequestRateLimit   int     `json:"request_rate_limit,omitempty"`   // max requests per minute
+	SensitiveOpsDetect bool    `json:"sensitive_ops_detect,omitempty"` // detect dangerous operations
+	AutoPauseOnCap     bool    `json:"auto_pause_on_cap,omitempty"`    // pause when cap hit
+}
+
+// TaskQueueConfig holds task queue settings.
+type TaskQueueConfig struct {
+	Enabled    bool `json:"enabled"`
+	MaxRetries int  `json:"max_retries,omitempty"` // default: 3
+	Workers    int  `json:"workers,omitempty"`     // concurrent workers (default: 1)
+}
+
+// RuntimeConfig holds autonomous agent runtime settings.
+type RuntimeConfig struct {
+	Enabled         bool   `json:"enabled"`
+	PlanningModel   string `json:"planning_model,omitempty"`   // model for planning phase
+	ExecutionModel  string `json:"execution_model,omitempty"`  // model for execution phase
+	ValidationModel string `json:"validation_model,omitempty"` // model for validation phase
+	MaxTurns        int    `json:"max_turns,omitempty"`        // max conversation turns (default: 50)
+	MaxTokens       int    `json:"max_tokens,omitempty"`       // max total tokens (default: 500000)
+}
+
 // --- Load Balance Strategy ---
 
 // LoadBalanceStrategy defines how providers are selected for requests.
@@ -483,6 +536,7 @@ type OpenCCConfig struct {
 	HealthCheck     *HealthCheckConfig          `json:"health_check,omitempty"`      // health check configuration
 	Compression     *CompressionConfig          `json:"compression,omitempty"`       // [BETA] context compression
 	Middleware      *MiddlewareConfig           `json:"middleware,omitempty"`        // [BETA] middleware pipeline
+	Agent           *AgentConfig                `json:"agent,omitempty"`             // [BETA] agent infrastructure
 }
 
 // UnmarshalJSON supports multiple config versions:

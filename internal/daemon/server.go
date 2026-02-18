@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dopejs/gozen/internal/agent"
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
@@ -110,6 +111,13 @@ func (d *Daemon) Start() error {
 			d.logger.Printf("Warning: failed to load middleware config: %v", err)
 		}
 	}
+
+	// Initialize agent infrastructure (BETA)
+	agent.InitGlobalObservatory()
+	agent.InitGlobalGuardrails()
+	agent.InitGlobalCoordinator()
+	agent.InitGlobalTaskQueue()
+	agent.InitGlobalRuntime(d.proxyPort)
 
 	// Start health checker if enabled
 	proxy.StartGlobalHealthChecker()

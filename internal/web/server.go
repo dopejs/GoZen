@@ -112,6 +112,21 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/middleware/", s.handleMiddleware)
 	s.mux.HandleFunc("/api/v1/middleware/reload", s.handleMiddlewareReload)
 
+	// Agent routes (BETA)
+	s.mux.HandleFunc("/api/v1/agent/config", s.handleAgentConfig)
+	s.mux.HandleFunc("/api/v1/agent/stats", s.handleAgentStats)
+	s.mux.HandleFunc("/api/v1/agent/sessions", s.handleAgentSessions)
+	s.mux.HandleFunc("/api/v1/agent/sessions/", s.handleAgentSessions)
+	s.mux.HandleFunc("/api/v1/agent/locks", s.handleAgentLocks)
+	s.mux.HandleFunc("/api/v1/agent/locks/", s.handleAgentLocks)
+	s.mux.HandleFunc("/api/v1/agent/changes", s.handleAgentChanges)
+	s.mux.HandleFunc("/api/v1/agent/tasks", s.handleAgentTasks)
+	s.mux.HandleFunc("/api/v1/agent/tasks/", s.handleAgentTasks)
+	s.mux.HandleFunc("/api/v1/agent/runtime", s.handleAgentRuntime)
+	s.mux.HandleFunc("/api/v1/agent/runtime/", s.handleAgentRuntime)
+	s.mux.HandleFunc("/api/v1/agent/guardrails", s.handleAgentGuardrails)
+	s.mux.HandleFunc("/api/v1/agent/guardrails/", s.handleAgentGuardrails)
+
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))

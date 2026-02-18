@@ -938,3 +938,26 @@ func (s *Store) SetMiddleware(mc *MiddlewareConfig) error {
 	s.config.Middleware = mc
 	return s.saveLocked()
 }
+
+// --- Agent (BETA) ---
+
+// GetAgent returns the agent configuration.
+func (s *Store) GetAgent() *AgentConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Agent
+}
+
+// SetAgent sets the agent configuration and saves.
+func (s *Store) SetAgent(ac *AgentConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Agent = ac
+	return s.saveLocked()
+}

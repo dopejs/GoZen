@@ -261,3 +261,15 @@ func GetMiddleware() *MiddlewareConfig {
 func SetMiddleware(mc *MiddlewareConfig) error {
 	return DefaultStore().SetMiddleware(mc)
 }
+
+// --- Agent convenience functions (BETA) ---
+
+// GetAgent returns the agent configuration.
+func GetAgent() *AgentConfig {
+	return DefaultStore().GetAgent()
+}
+
+// SetAgent sets the agent configuration.
+func SetAgent(ac *AgentConfig) error {
+	return DefaultStore().SetAgent(ac)
+}

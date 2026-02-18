@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -488,4 +490,244 @@ func newTestDaemon() *Daemon {
 	d.proxyPort = 19841
 	d.webPort = 19840
 	return d
+}
+
+func TestDaemonShutdown(t *testing.T) {
+	d := newTestDaemon()
+
+	// Set up some resources that Shutdown should clean up
+	ctx, cancel := context.WithCancel(context.Background())
+	d.syncCancel = cancel
+
+	timer := time.NewTimer(time.Hour)
+	d.pushTimer = timer
+
+	// Create a mock watcher
+	d.watcher = NewConfigWatcher(d.logger, func() {})
+
+	// Shutdown should not panic and should clean up resources
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	err := d.Shutdown(shutdownCtx)
+	if err != nil {
+		t.Errorf("Shutdown returned error: %v", err)
+	}
+
+	// Verify context was cancelled
+	select {
+	case <-ctx.Done():
+		// Good - context was cancelled
+	default:
+		t.Error("syncCancel should have been called")
+	}
+}
+
+func TestDaemonShutdownNilResources(t *testing.T) {
+	d := newTestDaemon()
+
+	// Shutdown with nil resources should not panic
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := d.Shutdown(ctx)
+	if err != nil {
+		t.Errorf("Shutdown with nil resources returned error: %v", err)
+	}
+}
+
+func TestSessionCleanupRemovesStale(t *testing.T) {
+	d := newTestDaemon()
+
+	// Add a fresh session
+	d.RegisterSession("fresh", "default", "claude")
+
+	// Add a stale session (manually set LastSeen to past)
+	d.RegisterSession("stale", "default", "claude")
+	d.mu.Lock()
+	d.sessions["stale"].LastSeen = time.Now().Add(-3 * time.Hour)
+	d.mu.Unlock()
+
+	// Run cleanup manually (simulating what sessionCleanupLoop does)
+	d.mu.Lock()
+	now := time.Now()
+	for id, s := range d.sessions {
+		if now.Sub(s.LastSeen) > 2*time.Hour {
+			delete(d.sessions, id)
+		}
+	}
+	d.mu.Unlock()
+
+	// Fresh session should remain
+	if d.ActiveSessionCount() != 1 {
+		t.Errorf("expected 1 session after cleanup, got %d", d.ActiveSessionCount())
+	}
+
+	// Verify it's the fresh one
+	d.mu.RLock()
+	_, hasFresh := d.sessions["fresh"]
+	_, hasStale := d.sessions["stale"]
+	d.mu.RUnlock()
+
+	if !hasFresh {
+		t.Error("fresh session should remain")
+	}
+	if hasStale {
+		t.Error("stale session should be removed")
+	}
+}
+
+func TestInitSyncCancelsExisting(t *testing.T) {
+	d := newTestDaemon()
+
+	// Set up an existing sync cancel function
+	cancelled := false
+	d.syncCancel = func() {
+		cancelled = true
+	}
+
+	// Call initSync - it should cancel the existing one
+	d.initSync()
+
+	if !cancelled {
+		t.Error("initSync should cancel existing syncCancel")
+	}
+
+	// syncCancel should be nil after initSync (no sync config)
+	if d.syncCancel != nil {
+		t.Error("syncCancel should be nil when no sync config")
+	}
+}
+
+func TestDaemonStartProxy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	// Create minimal config
+	zenDir := filepath.Join(dir, ".zen")
+	os.MkdirAll(zenDir, 0755)
+	configPath := filepath.Join(zenDir, "zen.json")
+	os.WriteFile(configPath, []byte(`{"providers":{},"profiles":{"default":{"providers":[]}}}`), 0600)
+
+	d := newTestDaemon()
+
+	// Find an available port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("Cannot find available port")
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	d.proxyPort = port
+
+	// startProxy should work
+	err = d.startProxy()
+	if err != nil {
+		t.Fatalf("startProxy failed: %v", err)
+	}
+
+	// Clean up
+	if d.proxyServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		d.proxyServer.Shutdown(ctx)
+		cancel()
+	}
+}
+
+func TestDaemonResourceCleanupOnShutdown(t *testing.T) {
+	d := newTestDaemon()
+
+	// Track if resources are properly cleaned up
+	var cleanupOrder []string
+	var mu sync.Mutex
+
+	// Set up sync cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	d.syncCancel = func() {
+		mu.Lock()
+		cleanupOrder = append(cleanupOrder, "syncCancel")
+		mu.Unlock()
+		cancel()
+	}
+
+	// Set up push timer
+	d.pushTimer = time.AfterFunc(time.Hour, func() {})
+
+	// Set up watcher
+	d.watcher = NewConfigWatcher(d.logger, func() {})
+
+	// Shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	d.Shutdown(shutdownCtx)
+
+	// Verify sync was cancelled
+	select {
+	case <-ctx.Done():
+		// Good
+	default:
+		t.Error("sync context should be cancelled")
+	}
+
+	mu.Lock()
+	if len(cleanupOrder) == 0 || cleanupOrder[0] != "syncCancel" {
+		t.Error("syncCancel should be called during shutdown")
+	}
+	mu.Unlock()
+}
+
+func TestDaemonSysProcAttr(t *testing.T) {
+	attr := DaemonSysProcAttr()
+	if attr == nil {
+		t.Fatal("DaemonSysProcAttr returned nil")
+	}
+	if !attr.Setsid {
+		t.Error("Setsid should be true")
+	}
+}
+
+func TestIsDaemonRunningNoPidFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	pid, running := IsDaemonRunning()
+	if running {
+		t.Error("should not be running without PID file")
+	}
+	if pid != 0 {
+		t.Errorf("pid should be 0, got %d", pid)
+	}
+}
+
+func TestIsDaemonRunningDeadProcess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	// Write a PID that doesn't exist (very high PID)
+	WriteDaemonPid(999999999)
+
+	pid, running := IsDaemonRunning()
+	if running {
+		t.Error("should not be running with dead process PID")
+	}
+	if pid != 0 {
+		t.Errorf("pid should be 0, got %d", pid)
+	}
+
+	// PID file should be cleaned up
+	_, err := ReadDaemonPid()
+	if err == nil {
+		t.Error("PID file should be removed for dead process")
+	}
+}
+
+func TestStopDaemonProcessNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	err := StopDaemonProcess(time.Second)
+	if err == nil {
+		t.Error("should return error when daemon is not running")
+	}
 }

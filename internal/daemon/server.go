@@ -92,6 +92,16 @@ func (d *Daemon) Start() error {
 		d.logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
 
+	// Initialize usage tracker, budget checker, health checker, and load balancer
+	logDB := proxy.GetGlobalLogDB()
+	proxy.InitGlobalUsageTracker(logDB)
+	proxy.InitGlobalBudgetChecker(proxy.GetGlobalUsageTracker())
+	proxy.InitGlobalHealthChecker(logDB)
+	proxy.InitGlobalLoadBalancer(logDB)
+
+	// Start health checker if enabled
+	proxy.StartGlobalHealthChecker()
+
 	// Generate web password on first start if not configured
 	if config.GetWebPasswordHash() == "" {
 		if password, err := web.GeneratePassword(); err == nil {
@@ -174,6 +184,9 @@ func (d *Daemon) startProxy() error {
 // Shutdown gracefully stops the daemon.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.logger.Println("shutting down zend...")
+
+	// Stop health checker
+	proxy.StopGlobalHealthChecker()
 
 	// Stop sync auto-pull ticker
 	if d.syncCancel != nil {

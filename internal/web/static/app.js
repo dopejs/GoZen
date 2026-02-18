@@ -59,6 +59,7 @@
     loadProfiles();
     loadSettings();
     setupSync();
+    setupUsage();
   }
 
   // --- Theme Toggle ---
@@ -122,6 +123,10 @@
     // Load settings when switching to settings tab
     if (tab === "settings") {
       loadSettings();
+    }
+    // Load usage when switching to usage tab
+    if (tab === "usage") {
+      loadUsage();
     }
   }
 
@@ -1794,5 +1799,148 @@
       btn.disabled = false;
       btn.textContent = "Create Gist";
     });
+  }
+
+  // --- Usage & Budget ---
+  function setupUsage() {
+    document.getElementById("btn-refresh-usage").addEventListener("click", loadUsage);
+    document.getElementById("usage-period").addEventListener("change", loadUsage);
+  }
+
+  function loadUsage() {
+    var period = document.getElementById("usage-period").value;
+
+    // Load usage summary
+    api("GET", "/usage/summary?period=" + period).then(function(data) {
+      document.getElementById("usage-total-cost").textContent = "$" + (data.total_cost || 0).toFixed(2);
+      document.getElementById("usage-total-input").textContent = formatNumber(data.total_input_tokens || 0);
+      document.getElementById("usage-total-output").textContent = formatNumber(data.total_output_tokens || 0);
+      document.getElementById("usage-total-requests").textContent = formatNumber(data.request_count || 0);
+
+      // Render by provider
+      renderUsageBreakdown("usage-by-provider", data.by_provider);
+      // Render by model
+      renderUsageBreakdown("usage-by-model", data.by_model);
+    }).catch(function(err) {
+      console.error("Failed to load usage:", err);
+    });
+
+    // Load budget status
+    loadBudgetStatus();
+
+    // Load provider health
+    loadProviderHealth();
+  }
+
+  function loadBudgetStatus() {
+    api("GET", "/budget/status").then(function(data) {
+      var container = document.getElementById("budget-status");
+
+      if (!data.daily_limit && !data.weekly_limit && !data.monthly_limit) {
+        container.innerHTML = '<div class="budget-empty">No budget limits configured. Set limits in Settings.</div>';
+        return;
+      }
+
+      var html = "";
+      if (data.daily_limit > 0) {
+        html += renderBudgetBar("Daily", data.daily_spent, data.daily_limit, data.daily_percent);
+      }
+      if (data.weekly_limit > 0) {
+        html += renderBudgetBar("Weekly", data.weekly_spent, data.weekly_limit, data.weekly_percent);
+      }
+      if (data.monthly_limit > 0) {
+        html += renderBudgetBar("Monthly", data.monthly_spent, data.monthly_limit, data.monthly_percent);
+      }
+
+      container.innerHTML = html || '<div class="budget-empty">No budget limits configured.</div>';
+    }).catch(function() {
+      document.getElementById("budget-status").innerHTML = '<div class="budget-empty">Failed to load budget status.</div>';
+    });
+  }
+
+  function renderBudgetBar(label, spent, limit, percent) {
+    var statusClass = "safe";
+    if (percent >= 90) statusClass = "danger";
+    else if (percent >= 70) statusClass = "warning";
+
+    return '<div class="budget-item">' +
+      '<div class="budget-label">' + label + '</div>' +
+      '<div class="budget-bar"><div class="budget-bar-fill ' + statusClass + '" style="width:' + Math.min(percent, 100) + '%"></div></div>' +
+      '<div class="budget-values">$' + spent.toFixed(2) + ' / $' + limit.toFixed(2) + '</div>' +
+    '</div>';
+  }
+
+  function loadProviderHealth() {
+    api("GET", "/health/providers").then(function(data) {
+      var container = document.getElementById("provider-health");
+
+      if (!data || data.length === 0) {
+        container.innerHTML = '<div class="health-empty">No provider health data available.</div>';
+        return;
+      }
+
+      var html = "";
+      data.forEach(function(p) {
+        var statusClass = p.status || "unknown";
+        var stats = "";
+        if (p.success_rate > 0) {
+          stats = p.success_rate.toFixed(1) + "% success";
+          if (p.latency_ms > 0) stats += " · " + p.latency_ms + "ms";
+        } else if (p.check_count > 0) {
+          stats = p.check_count + " checks";
+        } else {
+          stats = "No data";
+        }
+
+        html += '<div class="health-card">' +
+          '<div class="health-indicator ' + statusClass + '"></div>' +
+          '<div class="health-info">' +
+            '<div class="health-name">' + esc(p.provider) + '</div>' +
+            '<div class="health-stats">' + stats + '</div>' +
+          '</div>' +
+        '</div>';
+      });
+
+      container.innerHTML = html;
+    }).catch(function() {
+      document.getElementById("provider-health").innerHTML = '<div class="health-empty">Failed to load health data.</div>';
+    });
+  }
+
+  function renderUsageBreakdown(containerId, data) {
+    var container = document.getElementById(containerId);
+
+    if (!data || Object.keys(data).length === 0) {
+      container.innerHTML = '<div class="usage-empty">No usage data for this period.</div>';
+      return;
+    }
+
+    // Sort by cost descending
+    var items = Object.entries(data).sort(function(a, b) {
+      return (b[1].cost || 0) - (a[1].cost || 0);
+    });
+
+    var html = "";
+    items.forEach(function(item) {
+      var name = item[0];
+      var stats = item[1];
+      html += '<div class="usage-row">' +
+        '<div class="usage-row-name">' + esc(name) + '</div>' +
+        '<div class="usage-row-stats">' +
+          '<span>' + formatNumber(stats.input_tokens || 0) + ' in</span>' +
+          '<span>' + formatNumber(stats.output_tokens || 0) + ' out</span>' +
+          '<span>' + (stats.request_count || 0) + ' req</span>' +
+        '</div>' +
+        '<div class="usage-row-cost">$' + (stats.cost || 0).toFixed(2) + '</div>' +
+      '</div>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+    if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+    return num.toString();
   }
 })();

@@ -1196,4 +1196,178 @@ select{
   color:var(--text-primary);
 }
 
+/* ---- Usage & Budget Section ---- */
+.usage-summary{
+  display:grid;
+  grid-template-columns:repeat(4, 1fr);
+  gap:16px;
+  margin-bottom:24px;
+}
+@media(max-width:1024px){
+  .usage-summary{grid-template-columns:repeat(2, 1fr)}
+}
+@media(max-width:480px){
+  .usage-summary{grid-template-columns:1fr}
+}
+
+.usage-card{
+  background:var(--bg-surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  padding:20px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+}
+.usage-card-icon{
+  width:48px;height:48px;border-radius:var(--r-md);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.usage-card-icon svg{width:24px;height:24px}
+.usage-card-icon.teal{background:var(--teal-dim);color:var(--teal)}
+.usage-card-icon.lavender{background:var(--lavender-dim);color:var(--lavender)}
+.usage-card-icon.sage{background:var(--sage-dim);color:var(--sage)}
+.usage-card-icon.amber{background:var(--amber-dim);color:var(--amber)}
+
+.usage-card-content{flex:1}
+.usage-card-value{
+  font-size:24px;font-weight:700;
+  color:var(--text-primary);
+  letter-spacing:-.02em;
+}
+.usage-card-label{
+  font-size:13px;color:var(--text-muted);
+  margin-top:2px;
+}
+
+.usage-section{
+  background:var(--bg-surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  padding:20px;
+  margin-bottom:16px;
+}
+.usage-section h3{
+  font-size:15px;font-weight:600;
+  color:var(--text-primary);
+  margin-bottom:16px;
+}
+
+/* Budget Status */
+.budget-status-container{
+  display:flex;flex-direction:column;gap:12px;
+}
+.budget-item{
+  display:flex;align-items:center;gap:16px;
+}
+.budget-label{
+  width:80px;font-size:13px;font-weight:500;
+  color:var(--text-secondary);
+}
+.budget-bar{
+  flex:1;height:8px;
+  background:var(--bg-overlay);
+  border-radius:4px;
+  overflow:hidden;
+}
+.budget-bar-fill{
+  height:100%;border-radius:4px;
+  transition:width .3s var(--ease);
+}
+.budget-bar-fill.safe{background:var(--sage)}
+.budget-bar-fill.warning{background:var(--amber)}
+.budget-bar-fill.danger{background:var(--red)}
+
+.budget-values{
+  width:140px;font-size:12px;
+  color:var(--text-muted);text-align:right;
+}
+.budget-empty{
+  text-align:center;padding:20px;
+  color:var(--text-muted);font-size:13px;
+}
+
+/* Provider Health */
+.provider-health-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
+  gap:12px;
+}
+.health-card{
+  background:var(--bg-base);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:14px;
+  display:flex;align-items:center;gap:12px;
+}
+.health-indicator{
+  width:12px;height:12px;border-radius:50%;
+  flex-shrink:0;
+}
+.health-indicator.healthy{background:var(--sage)}
+.health-indicator.degraded{background:var(--amber)}
+.health-indicator.unhealthy{background:var(--red)}
+.health-indicator.unknown{background:var(--text-faint)}
+
+.health-info{flex:1;min-width:0}
+.health-name{
+  font-size:13px;font-weight:600;
+  color:var(--text-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.health-stats{
+  font-size:11px;color:var(--text-muted);
+  margin-top:2px;
+}
+.health-empty{
+  grid-column:1/-1;
+  text-align:center;padding:20px;
+  color:var(--text-muted);font-size:13px;
+}
+
+/* Usage Breakdown */
+.usage-breakdown{
+  display:flex;flex-direction:column;gap:8px;
+}
+.usage-row{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 14px;
+  background:var(--bg-base);
+  border:1px solid var(--border);
+  border-radius:var(--r-sm);
+}
+.usage-row-name{
+  flex:1;font-size:13px;font-weight:500;
+  color:var(--text-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.usage-row-stats{
+  display:flex;gap:16px;
+  font-size:12px;color:var(--text-secondary);
+}
+.usage-row-cost{
+  font-weight:600;color:var(--teal);
+  min-width:70px;text-align:right;
+}
+.usage-empty{
+  text-align:center;padding:20px;
+  color:var(--text-muted);font-size:13px;
+}
+
+/* Usage period select */
+#usage-period{
+  padding:8px 32px 8px 12px;
+  background:var(--bg-surface);
+  border:1px solid var(--border-strong);
+  border-radius:var(--r-sm);
+  color:var(--text-primary);font-size:13px;
+  cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+  -webkit-appearance:none;
+  appearance:none;
+}
+
 

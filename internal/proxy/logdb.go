@@ -14,12 +14,14 @@ import (
 // Schema version history:
 //   v1: original schema (logs table with basic fields)
 //   v2: add session_id and client_type columns + indexes
-const currentSchemaVersion = 2
+//   v3: add usage, provider_metrics, usage_hourly tables for v2.2 observability
+const currentSchemaVersion = 3
 
 // migrations is an ordered list of schema upgrade functions.
 // migrations[0] upgrades v1 → v2, migrations[1] upgrades v2 → v3, etc.
 var migrations = []func(tx *sql.Tx) error{
 	migrateV1ToV2,
+	migrateV2ToV3,
 }
 
 // LogDB provides SQLite-backed log storage with batched writes.
@@ -160,12 +162,71 @@ func initFreshSchema(db *sql.DB) error {
 		return fmt.Errorf("create logs table: %w", err)
 	}
 
+	// Create usage table for tracking API usage and costs
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS usage (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp     DATETIME NOT NULL,
+			session_id    TEXT NOT NULL,
+			provider      TEXT NOT NULL,
+			model         TEXT NOT NULL,
+			input_tokens  INTEGER NOT NULL,
+			output_tokens INTEGER NOT NULL,
+			cost_usd      REAL NOT NULL,
+			latency_ms    INTEGER DEFAULT 0,
+			project_path  TEXT DEFAULT '',
+			client_type   TEXT DEFAULT ''
+		)
+	`); err != nil {
+		return fmt.Errorf("create usage table: %w", err)
+	}
+
+	// Create provider_metrics table for health monitoring
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS provider_metrics (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp     DATETIME NOT NULL,
+			provider      TEXT NOT NULL,
+			latency_ms    INTEGER NOT NULL,
+			status_code   INTEGER NOT NULL,
+			is_error      INTEGER DEFAULT 0,
+			is_rate_limit INTEGER DEFAULT 0
+		)
+	`); err != nil {
+		return fmt.Errorf("create provider_metrics table: %w", err)
+	}
+
+	// Create usage_hourly table for aggregated dashboard data
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS usage_hourly (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			hour          DATETIME NOT NULL,
+			provider      TEXT NOT NULL,
+			model         TEXT NOT NULL,
+			project_path  TEXT DEFAULT '',
+			total_input   INTEGER NOT NULL,
+			total_output  INTEGER NOT NULL,
+			total_cost    REAL NOT NULL,
+			request_count INTEGER NOT NULL,
+			UNIQUE(hour, provider, model, project_path)
+		)
+	`); err != nil {
+		return fmt.Errorf("create usage_hourly table: %w", err)
+	}
+
 	for _, idx := range []string{
 		"CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_provider ON logs(provider)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_session_id ON logs(session_id)",
 		"CREATE INDEX IF NOT EXISTS idx_logs_client_type ON logs(client_type)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_session_id ON usage(session_id)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_project_path ON usage(project_path)",
+		"CREATE INDEX IF NOT EXISTS idx_provider_metrics_timestamp ON provider_metrics(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider ON provider_metrics(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_hourly_hour ON usage_hourly(hour)",
 	} {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("create index: %w", err)
@@ -193,6 +254,78 @@ func migrateV1ToV2(tx *sql.Tx) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// migrateV2ToV3 adds usage, provider_metrics, and usage_hourly tables.
+func migrateV2ToV3(tx *sql.Tx) error {
+	// Create usage table
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS usage (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp     DATETIME NOT NULL,
+			session_id    TEXT NOT NULL,
+			provider      TEXT NOT NULL,
+			model         TEXT NOT NULL,
+			input_tokens  INTEGER NOT NULL,
+			output_tokens INTEGER NOT NULL,
+			cost_usd      REAL NOT NULL,
+			latency_ms    INTEGER DEFAULT 0,
+			project_path  TEXT DEFAULT '',
+			client_type   TEXT DEFAULT ''
+		)
+	`); err != nil {
+		return err
+	}
+
+	// Create provider_metrics table
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS provider_metrics (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp     DATETIME NOT NULL,
+			provider      TEXT NOT NULL,
+			latency_ms    INTEGER NOT NULL,
+			status_code   INTEGER NOT NULL,
+			is_error      INTEGER DEFAULT 0,
+			is_rate_limit INTEGER DEFAULT 0
+		)
+	`); err != nil {
+		return err
+	}
+
+	// Create usage_hourly table
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS usage_hourly (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			hour          DATETIME NOT NULL,
+			provider      TEXT NOT NULL,
+			model         TEXT NOT NULL,
+			project_path  TEXT DEFAULT '',
+			total_input   INTEGER NOT NULL,
+			total_output  INTEGER NOT NULL,
+			total_cost    REAL NOT NULL,
+			request_count INTEGER NOT NULL,
+			UNIQUE(hour, provider, model, project_path)
+		)
+	`); err != nil {
+		return err
+	}
+
+	// Create indexes
+	for _, idx := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_session_id ON usage(session_id)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_project_path ON usage(project_path)",
+		"CREATE INDEX IF NOT EXISTS idx_provider_metrics_timestamp ON provider_metrics(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_provider_metrics_provider ON provider_metrics(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_hourly_hour ON usage_hourly(hour)",
+	} {
+		if _, err := tx.Exec(idx); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

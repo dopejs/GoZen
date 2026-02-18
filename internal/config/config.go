@@ -209,6 +209,7 @@ type ProfileConfig struct {
 	Providers            []string                    `json:"providers"`
 	Routing              map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
 	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
+	Strategy             LoadBalanceStrategy         `json:"strategy,omitempty"`               // load balancing strategy
 }
 
 // UnmarshalJSON supports both old format (["p1","p2"]) and new format ({providers: [...], routing: {...}}).
@@ -249,7 +250,97 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 5 (v1.5.0+): project bindings with CLI support
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
 // - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port, web_password_hash
-const CurrentConfigVersion = 7
+// - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy
+const CurrentConfigVersion = 8
+
+// --- Model Pricing ---
+
+// ModelPricing defines the cost per million tokens for a model.
+type ModelPricing struct {
+	InputPerMillion  float64 `json:"input_per_million"`
+	OutputPerMillion float64 `json:"output_per_million"`
+}
+
+// DefaultModelPricing provides built-in pricing for common Claude models.
+var DefaultModelPricing = map[string]*ModelPricing{
+	"claude-opus-4-20250514":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+	"claude-sonnet-4-20250514":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+	"claude-haiku-3-5-20241022":  {InputPerMillion: 0.80, OutputPerMillion: 4.0},
+	"claude-3-5-sonnet-20241022": {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+	"claude-3-5-haiku-20241022":  {InputPerMillion: 0.80, OutputPerMillion: 4.0},
+	"claude-3-opus-20240229":     {InputPerMillion: 15.0, OutputPerMillion: 75.0},
+	"claude-3-sonnet-20240229":   {InputPerMillion: 3.0, OutputPerMillion: 15.0},
+	"claude-3-haiku-20240307":    {InputPerMillion: 0.25, OutputPerMillion: 1.25},
+}
+
+// --- Budget Configuration ---
+
+// BudgetAction defines what happens when a budget limit is reached.
+type BudgetAction string
+
+const (
+	BudgetActionWarn      BudgetAction = "warn"
+	BudgetActionDowngrade BudgetAction = "downgrade"
+	BudgetActionBlock     BudgetAction = "block"
+)
+
+// BudgetLimit defines a spending limit and the action to take when exceeded.
+type BudgetLimit struct {
+	Amount float64      `json:"amount"`
+	Action BudgetAction `json:"action,omitempty"`
+}
+
+// BudgetConfig holds budget limits for different time periods.
+type BudgetConfig struct {
+	Daily      *BudgetLimit `json:"daily,omitempty"`
+	Weekly     *BudgetLimit `json:"weekly,omitempty"`
+	Monthly    *BudgetLimit `json:"monthly,omitempty"`
+	PerProject bool         `json:"per_project,omitempty"`
+}
+
+// --- Webhook Configuration ---
+
+// WebhookEvent defines the types of events that can trigger webhooks.
+type WebhookEvent string
+
+const (
+	WebhookEventBudgetWarning  WebhookEvent = "budget_warning"
+	WebhookEventBudgetExceeded WebhookEvent = "budget_exceeded"
+	WebhookEventProviderDown   WebhookEvent = "provider_down"
+	WebhookEventProviderUp     WebhookEvent = "provider_up"
+	WebhookEventFailover       WebhookEvent = "failover"
+	WebhookEventDailySummary   WebhookEvent = "daily_summary"
+)
+
+// WebhookConfig defines a webhook endpoint configuration.
+type WebhookConfig struct {
+	Name    string            `json:"name"`
+	URL     string            `json:"url"`
+	Events  []WebhookEvent    `json:"events"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Enabled bool              `json:"enabled"`
+}
+
+// --- Health Check Configuration ---
+
+// HealthCheckConfig defines settings for provider health monitoring.
+type HealthCheckConfig struct {
+	Enabled      bool `json:"enabled"`
+	IntervalSecs int  `json:"interval_secs,omitempty"`
+	TimeoutSecs  int  `json:"timeout_secs,omitempty"`
+}
+
+// --- Load Balance Strategy ---
+
+// LoadBalanceStrategy defines how providers are selected for requests.
+type LoadBalanceStrategy string
+
+const (
+	LoadBalanceFailover     LoadBalanceStrategy = "failover"
+	LoadBalanceRoundRobin   LoadBalanceStrategy = "round-robin"
+	LoadBalanceLeastLatency LoadBalanceStrategy = "least-latency"
+	LoadBalanceLeastCost    LoadBalanceStrategy = "least-cost"
+)
 
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
@@ -279,16 +370,20 @@ type SyncConfig struct {
 
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
-	Version         int                         `json:"version,omitempty"`          // config file version
-	DefaultProfile  string                      `json:"default_profile,omitempty"`  // default profile name (defaults to "default")
-	DefaultClient   string                      `json:"default_client,omitempty"`   // default client (claude, codex, opencode)
-	ProxyPort       int                         `json:"proxy_port,omitempty"`       // proxy port (defaults to 19841)
-	WebPort         int                         `json:"web_port,omitempty"`         // web UI port (defaults to 19840)
+	Version         int                         `json:"version,omitempty"`           // config file version
+	DefaultProfile  string                      `json:"default_profile,omitempty"`   // default profile name (defaults to "default")
+	DefaultClient   string                      `json:"default_client,omitempty"`    // default client (claude, codex, opencode)
+	ProxyPort       int                         `json:"proxy_port,omitempty"`        // proxy port (defaults to 19841)
+	WebPort         int                         `json:"web_port,omitempty"`          // web UI port (defaults to 19840)
 	WebPasswordHash string                      `json:"web_password_hash,omitempty"` // bcrypt hash for Web UI access password
-	Providers       map[string]*ProviderConfig  `json:"providers"`                  // provider configurations
-	Profiles        map[string]*ProfileConfig   `json:"profiles"`                   // profile configurations
-	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"` // directory path -> binding config
-	Sync            *SyncConfig                 `json:"sync,omitempty"`             // remote sync configuration
+	Providers       map[string]*ProviderConfig  `json:"providers"`                   // provider configurations
+	Profiles        map[string]*ProfileConfig   `json:"profiles"`                    // profile configurations
+	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"`  // directory path -> binding config
+	Sync            *SyncConfig                 `json:"sync,omitempty"`              // remote sync configuration
+	Pricing         map[string]*ModelPricing    `json:"pricing,omitempty"`           // custom model pricing overrides
+	Budgets         *BudgetConfig               `json:"budgets,omitempty"`           // budget configuration
+	Webhooks        []*WebhookConfig            `json:"webhooks,omitempty"`          // webhook configurations
+	HealthCheck     *HealthCheckConfig          `json:"health_check,omitempty"`      // health check configuration
 }
 
 // UnmarshalJSON supports multiple config versions:

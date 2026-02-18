@@ -316,6 +316,9 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		// Update session cache with token usage from response
 		s.updateSessionCache(sessionID, resp)
 
+		// Record usage and metrics
+		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp)
+
 		s.copyResponse(w, resp, p)
 		return true
 	}
@@ -622,6 +625,69 @@ func (s *ProxyServer) updateSessionCache(sessionID string, resp *http.Response) 
 		s.Logger.Printf("[session] updated cache for %s: input=%d, output=%d",
 			sessionID, int(inputTokens), int(outputTokens))
 	}
+}
+
+// recordUsageAndMetrics records usage data and provider metrics after a successful request.
+func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType string, requestBody []byte, resp *http.Response) {
+	// Extract model from request
+	var reqData map[string]interface{}
+	model := ""
+	if err := json.Unmarshal(requestBody, &reqData); err == nil {
+		model, _ = reqData["model"].(string)
+	}
+
+	// We need to peek at the response body for usage info
+	// Note: For non-streaming responses, the body was already read by updateSessionCache
+	// and restored. For streaming, we skip usage tracking.
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		// Streaming response - record metric without usage details
+		if db := GetGlobalLogDB(); db != nil {
+			db.RecordMetric(providerName, 0, resp.StatusCode, false, false)
+		}
+		return
+	}
+
+	// Get usage from session cache (was just updated by updateSessionCache)
+	usage := GetSessionUsage(sessionID)
+	if usage == nil {
+		return
+	}
+
+	// Calculate cost
+	tracker := GetGlobalUsageTracker()
+	if tracker == nil {
+		return
+	}
+
+	cost := tracker.CalculateCost(model, usage.InputTokens, usage.OutputTokens)
+
+	// Record usage entry
+	entry := UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    sessionID,
+		Provider:     providerName,
+		Model:        model,
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		CostUSD:      cost,
+		ClientType:   clientType,
+	}
+	tracker.Record(entry)
+
+	// Record provider metric
+	if db := GetGlobalLogDB(); db != nil {
+		db.RecordMetric(providerName, 0, resp.StatusCode, false, false)
+	}
+
+	// Update session with turn info
+	AddTurnToSession(sessionID, TurnUsage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		Cost:         cost,
+		Model:        model,
+		Provider:     providerName,
+		Timestamp:    time.Now(),
+	})
 }
 
 func singleJoiningSlash(a, b string) string {

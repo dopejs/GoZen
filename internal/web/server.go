@@ -79,6 +79,30 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/sync/test", s.handleSyncTest)
 	s.mux.HandleFunc("/api/v1/sync/create-gist", s.handleSyncCreateGist)
 
+	// Usage & Budget routes
+	s.mux.HandleFunc("/api/v1/usage", s.handleUsage)
+	s.mux.HandleFunc("/api/v1/usage/summary", s.handleUsageSummary)
+	s.mux.HandleFunc("/api/v1/usage/hourly", s.handleUsageHourly)
+	s.mux.HandleFunc("/api/v1/budget", s.handleBudget)
+	s.mux.HandleFunc("/api/v1/budget/status", s.handleBudgetStatus)
+
+	// Health monitoring routes
+	s.mux.HandleFunc("/api/v1/health/providers", s.handleHealthProviders)
+	s.mux.HandleFunc("/api/v1/health/providers/", s.handleHealthProvider)
+
+	// Session routes
+	s.mux.HandleFunc("/api/v1/sessions", s.handleSessions)
+	s.mux.HandleFunc("/api/v1/sessions/", s.handleSession)
+
+	// Webhook routes
+	s.mux.HandleFunc("/api/v1/webhooks", s.handleWebhooks)
+	s.mux.HandleFunc("/api/v1/webhooks/test", s.handleWebhookTest)
+	s.mux.HandleFunc("/api/v1/webhooks/", s.handleWebhook)
+
+	// Pricing routes
+	s.mux.HandleFunc("/api/v1/pricing", s.handlePricing)
+	s.mux.HandleFunc("/api/v1/pricing/reset", s.handlePricingReset)
+
 	// Static files
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))

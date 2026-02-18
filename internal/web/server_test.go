@@ -1484,3 +1484,35 @@ func TestSyncCreateGistWithToken(t *testing.T) {
 	}
 }
 
+func TestServerHandleFunc(t *testing.T) {
+	s := setupTestServer(t)
+
+	called := false
+	s.HandleFunc("/test-custom", func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/test-custom", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	if !called {
+		t.Error("custom handler should be called")
+	}
+}
+
+func TestServerSetSyncManager(t *testing.T) {
+	s := setupTestServer(t)
+
+	// SetSyncManager should not panic with nil
+	s.SetSyncManager(nil)
+
+	s.syncMu.RLock()
+	if s.syncMgr != nil {
+		t.Error("syncMgr should be nil")
+	}
+	s.syncMu.RUnlock()
+}
+

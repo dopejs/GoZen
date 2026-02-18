@@ -36,7 +36,7 @@ const cmdDefaults: Record<string, string> = {
   profile: 'Start with specified profile',
   profilePick: 'Interactively select profile',
   cli: 'Use specified CLI (claude/codex/opencode)',
-  yes: 'Auto-approve CLI permissions (claude --yes, codex -a never)',
+  yes: 'Auto-approve CLI permissions (claude --permission-mode acceptEdits, codex -a never)',
   use: 'Use specified provider directly (no proxy)',
   pick: 'Interactively select provider to start',
   list: 'List all providers and profiles',

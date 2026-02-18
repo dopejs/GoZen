@@ -62,7 +62,7 @@ zen --cli codex
 | `zen -p <profile>` | 使用指定 profile 啟動 |
 | `zen -p` | 互動選擇 profile |
 | `zen --cli <cli>` | 使用指定 CLI（claude/codex/opencode） |
-| `zen -y` / `zen --yes` | 自動批准 CLI 權限（claude `--yes`, codex `-a never`） |
+| `zen -y` / `zen --yes` | 自動批准 CLI 權限（claude `--permission-mode acceptEdits`, codex `-a never`） |
 | `zen use <provider>` | 直接使用指定 provider（不經代理） |
 | `zen pick` | 互動選擇 provider 啟動 |
 | `zen list` | 列出所有 provider 與 profile |

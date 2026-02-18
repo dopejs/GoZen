@@ -69,7 +69,7 @@ func init() {
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
 	rootCmd.Flags().Lookup("fallback").Hidden = true
 	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
-	rootCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "auto-approve CLI permissions (claude --yes, codex -a never)")
+	rootCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "auto-approve CLI permissions (claude --permission-mode acceptEdits, codex -a never)")
 	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
 	rootCmd.Flags().Lookup("cli").Hidden = true
 	rootCmd.AddCommand(useCmd)
@@ -777,11 +777,11 @@ func GetClientFormat(clientType ClientType) string {
 }
 
 // prependAutoApproveArgs prepends the appropriate auto-approve flags for each CLI.
-// Claude Code: --yes, Codex: -a never, OpenCode: auto-approves by default (no flag needed).
+// Claude Code: --permission-mode acceptEdits, Codex: -a never, OpenCode: auto-approves by default (no flag needed).
 func prependAutoApproveArgs(clientBin string, args []string) []string {
 	switch GetClientType(clientBin) {
 	case ClientClaude:
-		return append([]string{"--yes"}, args...)
+		return append([]string{"--permission-mode", "acceptEdits"}, args...)
 	case ClientCodex:
 		return append([]string{"-a", "never"}, args...)
 	default:

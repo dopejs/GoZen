@@ -378,10 +378,11 @@ func (d *Daemon) initSync() {
 					return
 				case <-ticker.C:
 					pullCtx, pullCancel := context.WithTimeout(ctx, 30*time.Second)
-					if err := mgr.Pull(pullCtx); err != nil {
+					err := mgr.Pull(pullCtx)
+					pullCancel()
+					if err != nil {
 						d.logger.Printf("sync auto-pull failed: %v", err)
 					}
-					pullCancel()
 				}
 			}
 		}()

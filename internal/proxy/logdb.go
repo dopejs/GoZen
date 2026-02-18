@@ -431,10 +431,10 @@ func (ldb *LogDB) flushBatch(batch []LogEntry) {
 	}
 
 	if execErr != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return
 	}
-	tx.Commit()
+	_ = tx.Commit()
 }
 
 // Query returns log entries matching the filter, newest first.

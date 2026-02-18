@@ -138,6 +138,7 @@ func (o *Observatory) RemoveSession(id string) {
 func (o *Observatory) RecordRequest(sessionID string, tokens int, cost float64, err error) {
 	o.mu.RLock()
 	session, ok := o.sessions[sessionID]
+	stuckThreshold := o.config.StuckThreshold
 	o.mu.RUnlock()
 
 	if !ok {
@@ -161,7 +162,7 @@ func (o *Observatory) RecordRequest(sessionID string, tokens int, cost float64, 
 		session.RetryCount++
 
 		// Check for stuck condition
-		if session.RetryCount >= o.config.StuckThreshold {
+		if session.RetryCount >= stuckThreshold {
 			session.Status = SessionStatusStuck
 		}
 	} else {

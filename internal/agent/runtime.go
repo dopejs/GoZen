@@ -185,7 +185,10 @@ func (r *Runtime) executeTask(task *RuntimeTask) {
 		r.failTask(task, err)
 		return
 	}
+
+	r.mu.Lock()
 	task.Plan = plan
+	r.mu.Unlock()
 
 	// Check if cancelled
 	if r.isTaskCancelled(task.ID) {
@@ -469,6 +472,9 @@ func (r *Runtime) isTaskCancelled(id string) bool {
 // generateRuntimeTaskID generates a unique runtime task ID.
 func generateRuntimeTaskID() string {
 	b := make([]byte, 8)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("rt-%d", time.Now().UnixNano())
+	}
 	return "rt-" + hex.EncodeToString(b)
 }

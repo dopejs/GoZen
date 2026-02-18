@@ -80,12 +80,12 @@ func GetSessionUsage(sessionID string) *SessionUsage {
 	if sessionID == "" {
 		return nil
 	}
+	globalSessionCache.mu.Lock()
+	defer globalSessionCache.mu.Unlock()
+
 	if val, ok := globalSessionCache.data.Load(sessionID); ok {
 		usage := val.(*SessionUsage)
-		// Update timestamp under lock to avoid race
-		globalSessionCache.mu.Lock()
 		usage.Timestamp = time.Now()
-		globalSessionCache.mu.Unlock()
 		return usage
 	}
 	return nil
@@ -249,13 +249,15 @@ func GetSessionInsight(sessionID string) *SessionInsight {
 		return nil
 	}
 
+	globalSessionCache.mu.Lock()
 	val, ok := globalSessionCache.data.Load(sessionID)
 	if !ok {
+		globalSessionCache.mu.Unlock()
 		return nil
 	}
 
 	usage := val.(*SessionUsage)
-
+	// Copy data under lock to avoid race
 	insight := &SessionInsight{
 		SessionID:   sessionID,
 		TotalInput:  usage.InputTokens,
@@ -263,31 +265,34 @@ func GetSessionInsight(sessionID string) *SessionInsight {
 		TotalCost:   usage.TotalCost,
 		TurnCount:   usage.TurnCount,
 	}
+	turnsCopy := make([]TurnUsage, len(usage.Turns))
+	copy(turnsCopy, usage.Turns)
+	globalSessionCache.mu.Unlock()
 
-	if usage.TurnCount > 0 {
+	if insight.TurnCount > 0 {
 		// Calculate cumulative input across all turns for average
 		var totalInputAcrossTurns int
-		for _, t := range usage.Turns {
+		for _, t := range turnsCopy {
 			totalInputAcrossTurns += t.InputTokens
 		}
-		if len(usage.Turns) > 0 {
-			insight.AvgInputPerTurn = float64(totalInputAcrossTurns) / float64(len(usage.Turns))
+		if len(turnsCopy) > 0 {
+			insight.AvgInputPerTurn = float64(totalInputAcrossTurns) / float64(len(turnsCopy))
 		}
-		insight.AvgOutputPerTurn = float64(usage.OutputTokens) / float64(usage.TurnCount)
-		insight.AvgCostPerTurn = usage.TotalCost / float64(usage.TurnCount)
+		insight.AvgOutputPerTurn = float64(insight.TotalOutput) / float64(insight.TurnCount)
+		insight.AvgCostPerTurn = insight.TotalCost / float64(insight.TurnCount)
 	}
 
 	// Get recent turns (last 10)
-	if len(usage.Turns) > 0 {
+	if len(turnsCopy) > 0 {
 		start := 0
-		if len(usage.Turns) > 10 {
-			start = len(usage.Turns) - 10
+		if len(turnsCopy) > 10 {
+			start = len(turnsCopy) - 10
 		}
-		insight.RecentTurns = usage.Turns[start:]
+		insight.RecentTurns = turnsCopy[start:]
 
 		// Calculate duration
-		firstTurn := usage.Turns[0].Timestamp
-		lastTurn := usage.Turns[len(usage.Turns)-1].Timestamp
+		firstTurn := turnsCopy[0].Timestamp
+		lastTurn := turnsCopy[len(turnsCopy)-1].Timestamp
 		insight.StartTime = &firstTurn
 		insight.LastActivity = &lastTurn
 		insight.Duration = formatDuration(lastTurn.Sub(firstTurn))
@@ -306,13 +311,16 @@ func GetContextWarning(sessionID string, threshold int) *ContextWarning {
 		threshold = 100000 // Default 100k tokens
 	}
 
+	globalSessionCache.mu.Lock()
 	val, ok := globalSessionCache.data.Load(sessionID)
 	if !ok {
+		globalSessionCache.mu.Unlock()
 		return nil
 	}
 
 	usage := val.(*SessionUsage)
 	currentTokens := usage.InputTokens
+	globalSessionCache.mu.Unlock()
 
 	if currentTokens < int(float64(threshold)*0.7) {
 		return nil // No warning needed

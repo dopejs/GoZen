@@ -52,6 +52,7 @@ type HealthChecker struct {
 	mu       sync.RWMutex
 	statuses map[string]*ProviderHealthStatus
 	running  bool
+	stopped  bool // tracks if stopCh has been closed
 }
 
 // NewHealthChecker creates a new health checker.
@@ -100,11 +101,12 @@ func (h *HealthChecker) Start() {
 // Stop stops the health checker.
 func (h *HealthChecker) Stop() {
 	h.mu.Lock()
-	if !h.running {
+	if !h.running || h.stopped {
 		h.mu.Unlock()
 		return
 	}
 	h.running = false
+	h.stopped = true
 	h.mu.Unlock()
 
 	close(h.stopCh)

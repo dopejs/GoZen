@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
@@ -24,6 +25,7 @@ type Server struct {
 	port       int
 	auth       *AuthManager
 	keys       *KeyPair
+	syncMu     sync.RWMutex
 	syncMgr    *gosync.SyncManager
 }
 
@@ -148,7 +150,9 @@ func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
 
 // SetSyncManager sets the sync manager for the web server.
 func (s *Server) SetSyncManager(mgr *gosync.SyncManager) {
+	s.syncMu.Lock()
 	s.syncMgr = mgr
+	s.syncMu.Unlock()
 }
 
 // Start begins listening. Returns an error if the port is already in use.
@@ -171,6 +175,8 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop the session cleanup loop
+	s.auth.StopCleanup()
 	return s.httpServer.Shutdown(ctx)
 }
 

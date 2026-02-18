@@ -173,6 +173,7 @@ func MigrateFromOpenCC() (*OpenCCConfig, error) {
 }
 
 // copyFile copies a single file from src to dst, ignoring errors.
+// If copy fails, the incomplete destination file is removed.
 func copyFile(src, dst string) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -187,6 +188,7 @@ func copyFile(src, dst string) {
 
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
+		os.Remove(dst) // Clean up incomplete file
 		return
 	}
 	out.Close()

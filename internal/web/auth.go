@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -222,12 +223,21 @@ func isLocalRequest(r *http.Request) bool {
 }
 
 // clientIP extracts the client IP from the request.
+// For X-Forwarded-For, only the first (leftmost) IP is used as it represents
+// the original client. Note: This can still be spoofed if there's no trusted
+// proxy in front. For production use behind a reverse proxy, consider using
+// the rightmost IP or a trusted proxy configuration.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+		// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+		// Use the first IP (original client), but trim whitespace
+		if idx := strings.Index(xff, ","); idx != -1 {
+			xff = xff[:idx]
+		}
+		return strings.TrimSpace(xff)
 	}
 	if rip := r.Header.Get("X-Real-IP"); rip != "" {
-		return rip
+		return strings.TrimSpace(rip)
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host

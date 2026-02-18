@@ -159,7 +159,8 @@ func (sr *ScenarioRoute) UnmarshalJSON(data []byte) error {
 	var alias scenarioRouteAlias
 	if err := json.Unmarshal(data, &alias); err == nil && len(alias.Providers) > 0 {
 		// Check if first provider is actually a ProviderRoute (has Name field)
-		if alias.Providers[0].Name != "" {
+		// Also check for nil to avoid panic
+		if alias.Providers[0] != nil && alias.Providers[0].Name != "" {
 			sr.Providers = alias.Providers
 			return nil
 		}
@@ -187,9 +188,11 @@ func (sr *ScenarioRoute) UnmarshalJSON(data []byte) error {
 
 // ProviderNames returns the list of provider names in order.
 func (sr *ScenarioRoute) ProviderNames() []string {
-	names := make([]string, len(sr.Providers))
-	for i, pr := range sr.Providers {
-		names[i] = pr.Name
+	names := make([]string, 0, len(sr.Providers))
+	for _, pr := range sr.Providers {
+		if pr != nil {
+			names = append(names, pr.Name)
+		}
 	}
 	return names
 }
@@ -197,7 +200,7 @@ func (sr *ScenarioRoute) ProviderNames() []string {
 // ModelForProvider returns the model override for a specific provider, or empty string.
 func (sr *ScenarioRoute) ModelForProvider(name string) string {
 	for _, pr := range sr.Providers {
-		if pr.Name == name {
+		if pr != nil && pr.Name == name {
 			return pr.Model
 		}
 	}

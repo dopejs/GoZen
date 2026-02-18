@@ -408,8 +408,9 @@ func (ldb *LogDB) flushBatch(batch []LogEntry) {
 	}
 	defer stmt.Close()
 
+	var execErr error
 	for _, e := range batch {
-		stmt.Exec(
+		_, err := stmt.Exec(
 			e.Timestamp.UTC().Format(time.RFC3339Nano),
 			string(e.Level),
 			e.Provider,
@@ -422,8 +423,15 @@ func (ldb *LogDB) flushBatch(batch []LogEntry) {
 			e.SessionID,
 			e.ClientType,
 		)
+		if err != nil {
+			execErr = err
+		}
 	}
 
+	if execErr != nil {
+		tx.Rollback()
+		return
+	}
 	tx.Commit()
 }
 

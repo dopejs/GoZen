@@ -190,8 +190,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if msgs, ok := bodyMap["messages"].([]interface{}); ok {
 				for _, m := range msgs {
 					if msgMap, ok := m.(map[string]interface{}); ok {
+						role, _ := msgMap["role"].(string)
 						reqCtx.Messages = append(reqCtx.Messages, middleware.Message{
-							Role:    msgMap["role"].(string),
+							Role:    role,
 							Content: msgMap["content"],
 						})
 					}

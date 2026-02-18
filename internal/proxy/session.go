@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -375,12 +376,12 @@ func formatDuration(d time.Duration) string {
 		if mins == 1 {
 			return "1 minute"
 		}
-		return string(rune('0'+mins/10)) + string(rune('0'+mins%10)) + " minutes"
+		return fmt.Sprintf("%02d minutes", mins)
 	}
 	hours := int(d.Hours())
 	mins := int(d.Minutes()) % 60
 	if hours == 1 {
-		return "1 hour " + string(rune('0'+mins/10)) + string(rune('0'+mins%10)) + " minutes"
+		return fmt.Sprintf("1 hour %02d minutes", mins)
 	}
-	return string(rune('0'+hours/10)) + string(rune('0'+hours%10)) + " hours"
+	return fmt.Sprintf("%02d hours", hours)
 }

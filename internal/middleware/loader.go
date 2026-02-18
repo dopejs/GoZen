@@ -147,14 +147,16 @@ func (l *PluginLoader) downloadPlugin(url, destPath, expectedChecksum string) er
 		return err
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
+	defer func() {
+		tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}()
 
 	// Download and compute checksum
 	hasher := sha256.New()
 	writer := io.MultiWriter(tmpFile, hasher)
 
 	if _, err := io.Copy(writer, resp.Body); err != nil {
-		tmpFile.Close()
 		return err
 	}
 	tmpFile.Close()

@@ -483,6 +483,89 @@ type RuntimeConfig struct {
 	MaxTokens       int    `json:"max_tokens,omitempty"`       // max total tokens (default: 500000)
 }
 
+// --- Bot Configuration ---
+
+// BotConfig holds bot gateway settings.
+type BotConfig struct {
+	Enabled     bool                    `json:"enabled"`
+	Profile     string                  `json:"profile,omitempty"`     // profile for NLU (recommend small model)
+	SocketPath  string                  `json:"socket_path,omitempty"` // IPC socket path
+	Platforms   *BotPlatformsConfig     `json:"platforms,omitempty"`
+	Interaction *BotInteractionConfig   `json:"interaction,omitempty"`
+	Aliases     map[string]string       `json:"aliases,omitempty"` // alias -> project path
+	Notify      *BotNotifyConfig        `json:"notify,omitempty"`
+}
+
+// BotPlatformsConfig holds configuration for all chat platforms.
+type BotPlatformsConfig struct {
+	Telegram    *BotTelegramConfig    `json:"telegram,omitempty"`
+	Discord     *BotDiscordConfig     `json:"discord,omitempty"`
+	Slack       *BotSlackConfig       `json:"slack,omitempty"`
+	Lark        *BotLarkConfig        `json:"lark,omitempty"`
+	FBMessenger *BotFBMessengerConfig `json:"fbmessenger,omitempty"`
+}
+
+// BotTelegramConfig holds Telegram bot settings.
+type BotTelegramConfig struct {
+	Enabled      bool     `json:"enabled"`
+	Token        string   `json:"token"`
+	AllowedUsers []string `json:"allowed_users,omitempty"`
+	AllowedChats []string `json:"allowed_chats,omitempty"`
+}
+
+// BotDiscordConfig holds Discord bot settings.
+type BotDiscordConfig struct {
+	Enabled         bool     `json:"enabled"`
+	Token           string   `json:"token"`
+	AllowedUsers    []string `json:"allowed_users,omitempty"`
+	AllowedChannels []string `json:"allowed_channels,omitempty"`
+	AllowedGuilds   []string `json:"allowed_guilds,omitempty"`
+}
+
+// BotSlackConfig holds Slack bot settings.
+type BotSlackConfig struct {
+	Enabled         bool     `json:"enabled"`
+	BotToken        string   `json:"bot_token"`
+	AppToken        string   `json:"app_token"`
+	AllowedUsers    []string `json:"allowed_users,omitempty"`
+	AllowedChannels []string `json:"allowed_channels,omitempty"`
+}
+
+// BotLarkConfig holds Lark/Feishu bot settings.
+type BotLarkConfig struct {
+	Enabled      bool     `json:"enabled"`
+	AppID        string   `json:"app_id"`
+	AppSecret    string   `json:"app_secret"`
+	AllowedUsers []string `json:"allowed_users,omitempty"`
+	AllowedChats []string `json:"allowed_chats,omitempty"`
+}
+
+// BotFBMessengerConfig holds Facebook Messenger bot settings.
+type BotFBMessengerConfig struct {
+	Enabled      bool     `json:"enabled"`
+	PageToken    string   `json:"page_token"`
+	VerifyToken  string   `json:"verify_token"`
+	AppSecret    string   `json:"app_secret,omitempty"`
+	AllowedUsers []string `json:"allowed_users,omitempty"`
+}
+
+// BotInteractionConfig controls how the bot responds to messages.
+type BotInteractionConfig struct {
+	RequireMention  bool     `json:"require_mention"`             // default: true
+	MentionKeywords []string `json:"mention_keywords,omitempty"`  // default: ["@zen", "/zen"]
+	DirectMsgMode   string   `json:"direct_message_mode,omitempty"` // "always" or "mention"
+	ChannelMode     string   `json:"channel_mode,omitempty"`        // "always" or "mention"
+}
+
+// BotNotifyConfig controls notification behavior.
+type BotNotifyConfig struct {
+	DefaultPlatform string `json:"default_platform,omitempty"` // telegram, discord, etc.
+	DefaultChatID   string `json:"default_chat_id,omitempty"`
+	QuietHoursStart string `json:"quiet_hours_start,omitempty"` // "23:00"
+	QuietHoursEnd   string `json:"quiet_hours_end,omitempty"`   // "08:00"
+	QuietHoursZone  string `json:"quiet_hours_zone,omitempty"`  // "Asia/Shanghai"
+}
+
 // --- Load Balance Strategy ---
 
 // LoadBalanceStrategy defines how providers are selected for requests.
@@ -540,6 +623,7 @@ type OpenCCConfig struct {
 	Compression     *CompressionConfig          `json:"compression,omitempty"`       // [BETA] context compression
 	Middleware      *MiddlewareConfig           `json:"middleware,omitempty"`        // [BETA] middleware pipeline
 	Agent           *AgentConfig                `json:"agent,omitempty"`             // [BETA] agent infrastructure
+	Bot             *BotConfig                  `json:"bot,omitempty"`               // bot gateway configuration
 }
 
 // UnmarshalJSON supports multiple config versions:

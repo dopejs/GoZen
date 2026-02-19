@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/agent"
+	"github.com/dopejs/gozen/internal/bot"
+	"github.com/dopejs/gozen/internal/bot/adapters"
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
@@ -25,6 +27,7 @@ type Daemon struct {
 	proxyServer  *http.Server
 	proxyMux     *http.ServeMux
 	profileProxy *proxy.ProfileProxy
+	botGateway   *bot.Gateway
 	logger       *log.Logger
 	version      string
 	watcher      *ConfigWatcher
@@ -156,6 +159,9 @@ func (d *Daemon) Start() error {
 	// Initialize sync if configured
 	d.initSync()
 
+	// Initialize bot gateway if configured
+	d.initBot()
+
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
 	// Start web server (blocks)
@@ -204,6 +210,11 @@ func (d *Daemon) startProxy() error {
 // Shutdown gracefully stops the daemon.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.logger.Println("shutting down zend...")
+
+	// Stop bot gateway
+	if d.botGateway != nil {
+		d.botGateway.Stop()
+	}
 
 	// Stop health checker
 	proxy.StopGlobalHealthChecker()
@@ -450,4 +461,133 @@ func randomID() string {
 	b[2] = byte(t >> 8)
 	b[3] = byte(t)
 	return fmt.Sprintf("%x", b)
+}
+
+// initBot initializes the bot gateway if configured.
+func (d *Daemon) initBot() {
+	cfg := config.GetBot()
+	if cfg == nil || !cfg.Enabled {
+		return
+	}
+
+	// Convert config types to bot gateway config
+	gwConfig := &bot.GatewayConfig{
+		Enabled:    cfg.Enabled,
+		SocketPath: cfg.SocketPath,
+		Profile:    cfg.Profile,
+		Aliases:    cfg.Aliases,
+	}
+
+	// Convert platform configs
+	if cfg.Platforms != nil {
+		gwConfig.Platforms = bot.PlatformsConfig{}
+
+		if cfg.Platforms.Telegram != nil {
+			gwConfig.Platforms.Telegram = &adapters.TelegramConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.Telegram.Enabled,
+					AllowedUsers: cfg.Platforms.Telegram.AllowedUsers,
+					AllowedChats: cfg.Platforms.Telegram.AllowedChats,
+				},
+				Token: cfg.Platforms.Telegram.Token,
+			}
+		}
+
+		if cfg.Platforms.Discord != nil {
+			gwConfig.Platforms.Discord = &adapters.DiscordConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:         cfg.Platforms.Discord.Enabled,
+					AllowedUsers:    cfg.Platforms.Discord.AllowedUsers,
+					AllowedChannels: cfg.Platforms.Discord.AllowedChannels,
+				},
+				Token:         cfg.Platforms.Discord.Token,
+				AllowedGuilds: cfg.Platforms.Discord.AllowedGuilds,
+			}
+		}
+
+		if cfg.Platforms.Slack != nil {
+			gwConfig.Platforms.Slack = &adapters.SlackConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:         cfg.Platforms.Slack.Enabled,
+					AllowedUsers:    cfg.Platforms.Slack.AllowedUsers,
+					AllowedChannels: cfg.Platforms.Slack.AllowedChannels,
+				},
+				BotToken: cfg.Platforms.Slack.BotToken,
+				AppToken: cfg.Platforms.Slack.AppToken,
+			}
+		}
+
+		if cfg.Platforms.Lark != nil {
+			gwConfig.Platforms.Lark = &adapters.LarkConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.Lark.Enabled,
+					AllowedUsers: cfg.Platforms.Lark.AllowedUsers,
+					AllowedChats: cfg.Platforms.Lark.AllowedChats,
+				},
+				AppID:     cfg.Platforms.Lark.AppID,
+				AppSecret: cfg.Platforms.Lark.AppSecret,
+			}
+		}
+
+		if cfg.Platforms.FBMessenger != nil {
+			gwConfig.Platforms.FBMessenger = &adapters.FBMessengerConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.FBMessenger.Enabled,
+					AllowedUsers: cfg.Platforms.FBMessenger.AllowedUsers,
+				},
+				PageToken:   cfg.Platforms.FBMessenger.PageToken,
+				VerifyToken: cfg.Platforms.FBMessenger.VerifyToken,
+				AppSecret:   cfg.Platforms.FBMessenger.AppSecret,
+			}
+		}
+	}
+
+	// Convert interaction config
+	if cfg.Interaction != nil {
+		gwConfig.Interaction = bot.InteractionConfig{
+			RequireMention:  cfg.Interaction.RequireMention,
+			MentionKeywords: cfg.Interaction.MentionKeywords,
+			DirectMsgMode:   cfg.Interaction.DirectMsgMode,
+			ChannelMode:     cfg.Interaction.ChannelMode,
+		}
+	} else {
+		gwConfig.Interaction = bot.InteractionConfig{
+			RequireMention: true,
+		}
+	}
+
+	// Convert notification config
+	if cfg.Notify != nil && cfg.Notify.DefaultPlatform != "" {
+		gwConfig.Notifications = bot.NotifyConfig{
+			DefaultChat: &struct {
+				Platform bot.Platform `json:"platform"`
+				ChatID   string       `json:"chat_id"`
+			}{
+				Platform: bot.Platform(cfg.Notify.DefaultPlatform),
+				ChatID:   cfg.Notify.DefaultChatID,
+			},
+		}
+		if cfg.Notify.QuietHoursStart != "" {
+			gwConfig.Notifications.QuietHours = &struct {
+				Enabled  bool   `json:"enabled"`
+				Start    string `json:"start"`
+				End      string `json:"end"`
+				Timezone string `json:"timezone"`
+			}{
+				Enabled:  true,
+				Start:    cfg.Notify.QuietHoursStart,
+				End:      cfg.Notify.QuietHoursEnd,
+				Timezone: cfg.Notify.QuietHoursZone,
+			}
+		}
+	}
+
+	d.botGateway = bot.NewGateway(gwConfig, d.logger)
+	if err := d.botGateway.Start(context.Background()); err != nil {
+		d.logger.Printf("Failed to start bot gateway: %v", err)
+		d.botGateway = nil
+		return
+	}
+
+	d.logger.Println("Bot gateway started")
 }

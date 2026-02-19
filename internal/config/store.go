@@ -961,3 +961,24 @@ func (s *Store) SetAgent(ac *AgentConfig) error {
 	s.config.Agent = ac
 	return s.saveLocked()
 }
+
+// GetBot returns the bot configuration.
+func (s *Store) GetBot() *BotConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Bot
+}
+
+// SetBot sets the bot configuration and saves.
+func (s *Store) SetBot(bc *BotConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Bot = bc
+	return s.saveLocked()
+}

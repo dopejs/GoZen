@@ -273,3 +273,15 @@ func GetAgent() *AgentConfig {
 func SetAgent(ac *AgentConfig) error {
 	return DefaultStore().SetAgent(ac)
 }
+
+// --- Bot convenience functions ---
+
+// GetBot returns the bot configuration.
+func GetBot() *BotConfig {
+	return DefaultStore().GetBot()
+}
+
+// SetBot sets the bot configuration.
+func SetBot(bc *BotConfig) error {
+	return DefaultStore().SetBot(bc)
+}

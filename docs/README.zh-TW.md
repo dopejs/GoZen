@@ -36,6 +36,7 @@
 - **上下文壓縮** — token 數量超過閾值時自動壓縮上下文
 - **中介軟體管道** — 可插拔中介軟體，用於請求/回應轉換
 - **Agent 基礎設施** — 內建 agent 工作流程支援，具備工作階段管理
+- **Bot 閘道** — 透過 Telegram、Discord、Slack、飛書或 Facebook Messenger 遠端監控與控制 Claude Code 工作階段
 
 ## 安裝
 
@@ -448,6 +449,68 @@ zen config sync
 ```
 
 內建中介軟體：`context-injection`、`request-logger`、`rate-limiter`、`compression`
+
+## Bot 閘道
+
+透過聊天平台遠端監控與控制您的 Claude Code 工作階段。Bot 透過 IPC 連接到執行中的 `zen` 程序，讓您可以：
+
+- 檢視已連接的程序及其狀態
+- 向指定程序傳送任務
+- 接收審批請求、錯誤與完成通知
+- 控制任務（暫停/繼續/取消）
+
+### 支援的平台
+
+| 平台 | 所需設定 |
+|------|---------|
+| Telegram | BotFather 權杖 |
+| Discord | Bot 應用程式權杖 |
+| Slack | Bot + App 權杖（Socket Mode） |
+| 飛書/Lark | App ID + Secret |
+| Facebook Messenger | Page 權杖 + Verify 權杖 |
+
+### Bot 指令
+
+| 指令 | 說明 |
+|------|------|
+| `list` | 列出所有已連接的程序 |
+| `status [名稱]` | 顯示程序狀態 |
+| `bind <名稱>` | 綁定到某個程序，後續指令將針對該程序 |
+| `pause/resume/cancel [名稱]` | 控制任務 |
+| `<名稱> <任務>` | 向程序傳送任務 |
+| `help` | 顯示可用指令 |
+
+Bot 也支援自然語言查詢，如「幫我看看 gozen 的狀態」。
+
+### 設定範例
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["your_username"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/path/to/api-project",
+      "web": "/path/to/web-project"
+    }
+  }
+}
+```
+
+詳細的平台設定指南請參閱 [Bot 閘道文件](https://gozen.dev/docs/bot)。
 
 ## 組態檔案
 

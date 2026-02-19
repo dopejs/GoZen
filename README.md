@@ -36,6 +36,7 @@ Multi-CLI environment switcher for Claude Code, Codex, and OpenCode with API pro
 - **Context Compression** — Automatic context compression when token count exceeds threshold
 - **Middleware Pipeline** — Pluggable middleware for request/response transformation
 - **Agent Infrastructure** — Built-in support for agent-based workflows with session management
+- **Bot Gateway** — Monitor and control Claude Code sessions remotely via Telegram, Discord, Slack, Lark, or Facebook Messenger
 
 ## Installation
 
@@ -448,6 +449,68 @@ Transform requests and responses with pluggable middleware:
 ```
 
 Built-in middleware: `context-injection`, `request-logger`, `rate-limiter`, `compression`
+
+## Bot Gateway
+
+Monitor and control your Claude Code sessions remotely via chat platforms. The bot connects to running `zen` processes via IPC and lets you:
+
+- View connected processes and their status
+- Send tasks to specific processes
+- Receive notifications for approvals, errors, and completions
+- Control tasks (pause/resume/cancel)
+
+### Supported Platforms
+
+| Platform | Setup Required |
+|----------|----------------|
+| Telegram | BotFather token |
+| Discord | Bot application token |
+| Slack | Bot + App tokens (Socket Mode) |
+| Lark/Feishu | App ID + Secret |
+| Facebook Messenger | Page token + Verify token |
+
+### Bot Commands
+
+| Command | Description |
+|---------|-------------|
+| `list` | List all connected processes |
+| `status [name]` | Show process status |
+| `bind <name>` | Bind to a process for subsequent commands |
+| `pause/resume/cancel [name]` | Control tasks |
+| `<name> <task>` | Send a task to a process |
+| `help` | Show available commands |
+
+The bot also understands natural language queries like "帮我看看 gozen 的状态" (show me gozen's status).
+
+### Configuration
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["your_username"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/path/to/api-project",
+      "web": "/path/to/web-project"
+    }
+  }
+}
+```
+
+See the [Bot Gateway documentation](https://gozen.dev/docs/bot) for detailed platform setup guides.
 
 ## Config Files
 

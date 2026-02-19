@@ -36,6 +36,7 @@
 - **上下文压缩** — token 数量超过阈值时自动压缩上下文
 - **中间件管道** — 可插拔中间件，用于请求/响应转换
 - **Agent 基础设施** — 内置 agent 工作流支持，带会话管理
+- **Bot 网关** — 通过 Telegram、Discord、Slack、飞书或 Facebook Messenger 远程监控和控制 Claude Code 会话
 
 ## 安装
 
@@ -448,6 +449,68 @@ zen config sync
 ```
 
 内置中间件：`context-injection`、`request-logger`、`rate-limiter`、`compression`
+
+## Bot 网关
+
+通过聊天平台远程监控和控制你的 Claude Code 会话。Bot 通过 IPC 连接到运行中的 `zen` 进程，让你可以：
+
+- 查看已连接的进程及其状态
+- 向指定进程发送任务
+- 接收审批请求、错误和完成通知
+- 控制任务（暂停/恢复/取消）
+
+### 支持的平台
+
+| 平台 | 所需配置 |
+|------|---------|
+| Telegram | BotFather 令牌 |
+| Discord | Bot 应用令牌 |
+| Slack | Bot + App 令牌（Socket Mode） |
+| 飞书/Lark | App ID + Secret |
+| Facebook Messenger | Page 令牌 + Verify 令牌 |
+
+### Bot 命令
+
+| 命令 | 说明 |
+|------|------|
+| `list` | 列出所有已连接的进程 |
+| `status [名称]` | 显示进程状态 |
+| `bind <名称>` | 绑定到某个进程，后续命令将针对该进程 |
+| `pause/resume/cancel [名称]` | 控制任务 |
+| `<名称> <任务>` | 向进程发送任务 |
+| `help` | 显示可用命令 |
+
+Bot 也支持自然语言查询，如"帮我看看 gozen 的状态"。
+
+### 配置示例
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["your_username"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/path/to/api-project",
+      "web": "/path/to/web-project"
+    }
+  }
+}
+```
+
+详细的平台配置指南请参阅 [Bot 网关文档](https://gozen.dev/docs/bot)。
 
 ## 配置文件
 

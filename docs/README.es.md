@@ -36,6 +36,7 @@ Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutac
 - **Compresión de contexto** — Compresión automática del contexto cuando el conteo de tokens excede el umbral
 - **Pipeline de middleware** — Middleware enchufable para transformación de solicitudes/respuestas
 - **Infraestructura de agentes** — Soporte integrado para flujos de trabajo basados en agentes con gestión de sesiones
+- **Bot Gateway** — Monitorea y controla sesiones de Claude Code remotamente vía Telegram, Discord, Slack, Lark o Facebook Messenger
 
 ## Instalación
 
@@ -448,6 +449,68 @@ Transforma solicitudes y respuestas con middleware enchufable:
 ```
 
 Middleware integrado: `context-injection`, `request-logger`, `rate-limiter`, `compression`
+
+## Bot Gateway
+
+Monitorea y controla tus sesiones de Claude Code remotamente a través de plataformas de chat. El bot se conecta a los procesos `zen` en ejecución vía IPC y te permite:
+
+- Ver procesos conectados y su estado
+- Enviar tareas a procesos específicos
+- Recibir notificaciones de aprobaciones, errores y finalizaciones
+- Controlar tareas (pausar/reanudar/cancelar)
+
+### Plataformas soportadas
+
+| Plataforma | Configuración requerida |
+|------------|------------------------|
+| Telegram | Token de BotFather |
+| Discord | Token de aplicación Bot |
+| Slack | Tokens de Bot + App (Socket Mode) |
+| Lark/Feishu | App ID + Secret |
+| Facebook Messenger | Token de página + Token de verificación |
+
+### Comandos del Bot
+
+| Comando | Descripción |
+|---------|-------------|
+| `list` | Listar todos los procesos conectados |
+| `status [nombre]` | Mostrar estado del proceso |
+| `bind <nombre>` | Vincular a un proceso para comandos subsiguientes |
+| `pause/resume/cancel [nombre]` | Controlar tareas |
+| `<nombre> <tarea>` | Enviar una tarea a un proceso |
+| `help` | Mostrar comandos disponibles |
+
+El bot también entiende consultas en lenguaje natural como "muéstrame el estado de gozen".
+
+### Configuración
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["tu_usuario"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/ruta/al/proyecto-api",
+      "web": "/ruta/al/proyecto-web"
+    }
+  }
+}
+```
+
+Consulta la [documentación de Bot Gateway](https://gozen.dev/docs/bot) para guías detalladas de configuración de plataformas.
 
 ## Archivos de configuración
 

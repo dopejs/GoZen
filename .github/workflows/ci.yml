@@ -29,6 +29,9 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+      - name: Integration Tests
+        run: go test -tags=integration -race -count=1 -timeout 180s ./test/integration/...
+
       - name: Check coverage thresholds
         run: |
           check_pkg() {

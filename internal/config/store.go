@@ -13,8 +13,12 @@ import (
 
 // --- Path helpers ---
 
-// ConfigDirPath returns ~/.zen
+// ConfigDirPath returns the config directory path.
+// Uses GOZEN_CONFIG_DIR environment variable if set, otherwise ~/.zen
 func ConfigDirPath() string {
+	if dir := os.Getenv("GOZEN_CONFIG_DIR"); dir != "" {
+		return dir
+	}
 	return filepath.Join(os.Getenv("HOME"), ConfigDir)
 }
 

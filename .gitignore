@@ -7,3 +7,4 @@
 /.dev/
 web/node_modules/
 web/dist/
+bin/

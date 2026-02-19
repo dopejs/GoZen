@@ -37,11 +37,15 @@ func IsDaemonRunning() (int, bool) {
 	}
 
 	// PID-port validation: verify the process is listening on the proxy port
+	// Note: We don't remove the PID file here even if port check fails, because
+	// the process is confirmed alive. The port check might fail due to timeout
+	// or the daemon still starting up. Removing the PID file would make it
+	// impossible to stop the daemon later.
 	proxyPort := config.GetProxyPort()
 	if !IsDaemonPortListening(proxyPort) {
-		// PID is alive but not listening on expected port — stale PID or wrong process
-		RemoveDaemonPid()
-		return 0, false
+		// Process is alive but not listening — could be starting up or wrong process
+		// Return the PID anyway so caller can decide what to do
+		return pid, false
 	}
 
 	return pid, true
@@ -51,10 +55,13 @@ func IsDaemonRunning() (int, bool) {
 // timeout specifies the maximum time to wait for graceful shutdown.
 func StopDaemonProcess(timeout time.Duration) error {
 	pid, running := IsDaemonRunning()
-	if !running {
+	if !running && pid == 0 {
+		// No PID file or process is dead
 		RemoveDaemonPid()
 		return fmt.Errorf("zend is not running")
 	}
+	// If pid > 0 but running == false, the process is alive but not listening
+	// on the expected port. We should still try to stop it.
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {

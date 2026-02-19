@@ -644,6 +644,15 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
 		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`
+		Sync            *SyncConfig                    `json:"sync,omitempty"`
+		Pricing         map[string]*ModelPricing       `json:"pricing,omitempty"`
+		Budgets         *BudgetConfig                  `json:"budgets,omitempty"`
+		Webhooks        []*WebhookConfig               `json:"webhooks,omitempty"`
+		HealthCheck     *HealthCheckConfig             `json:"health_check,omitempty"`
+		Compression     *CompressionConfig             `json:"compression,omitempty"`
+		Middleware      *MiddlewareConfig              `json:"middleware,omitempty"`
+		Agent           *AgentConfig                   `json:"agent,omitempty"`
+		Bot             *BotConfig                     `json:"bot,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -656,6 +665,15 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.WebPasswordHash = raw.WebPasswordHash
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
+	c.Sync = raw.Sync
+	c.Pricing = raw.Pricing
+	c.Budgets = raw.Budgets
+	c.Webhooks = raw.Webhooks
+	c.HealthCheck = raw.HealthCheck
+	c.Compression = raw.Compression
+	c.Middleware = raw.Middleware
+	c.Agent = raw.Agent
+	c.Bot = raw.Bot
 
 	// Migrate default_cli → default_client
 	c.DefaultClient = raw.DefaultClient

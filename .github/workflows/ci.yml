@@ -53,6 +53,7 @@ jobs:
           check_pkg "internal/proxy" 80 || failed=1
           check_pkg "internal/proxy/transform" 80 || failed=1
           check_pkg "internal/web" 80 || failed=1
+          check_pkg "internal/bot" 80 || failed=1
           check_pkg "internal/daemon" 50 || failed=1
           check_pkg "internal/update" 50 || failed=1
           check_pkg "internal/sync" 50 || failed=1

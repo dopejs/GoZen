@@ -38,7 +38,7 @@ const config: Config = {
     },
   },
 
-  plugins: ['docusaurus-plugin-sass', './plugins/releases-plugin.js'],
+  plugins: ['docusaurus-plugin-sass'],
 
   presets: [
     [
@@ -107,7 +107,6 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
-        {to: '/releases', label: 'Releases', position: 'left'},
         {
           type: 'localeDropdown',
           position: 'right',

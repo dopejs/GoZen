@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dopejs/gozen/internal/config"
 )
 
 func TestDaemonStatusAPI(t *testing.T) {
@@ -730,4 +732,149 @@ func TestStopDaemonProcessNotRunning(t *testing.T) {
 	if err == nil {
 		t.Error("should return error when daemon is not running")
 	}
+}
+
+func TestInitBotNilConfig(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config without bot section
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	d := newTestDaemon()
+	d.initBot() // Should return early without error
+
+	if d.botGateway != nil {
+		t.Error("botGateway should be nil when bot config is nil")
+	}
+}
+
+func TestInitBotDisabled(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create config with bot disabled
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	configData := `{"version":5,"bot":{"enabled":false}}`
+	os.WriteFile(configPath, []byte(configData), 0644)
+
+	d := newTestDaemon()
+	d.initBot() // Should return early without error
+
+	if d.botGateway != nil {
+		t.Error("botGateway should be nil when bot is disabled")
+	}
+}
+
+func TestInitBotEnabled(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config first
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	// Use SetBot to set bot config programmatically
+	socketPath := filepath.Join(dir, "bot.sock")
+	botCfg := &config.BotConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Profile:    "default",
+		Aliases:    map[string]string{"proj": "/path/to/project"},
+		Interaction: &config.BotInteractionConfig{
+			RequireMention:  true,
+			MentionKeywords: []string{"@zen"},
+			DirectMsgMode:   "always",
+			ChannelMode:     "mention",
+		},
+		Notify: &config.BotNotifyConfig{
+			DefaultPlatform: "telegram",
+			DefaultChatID:   "123456",
+			QuietHoursStart: "23:00",
+			QuietHoursEnd:   "08:00",
+			QuietHoursZone:  "UTC",
+		},
+	}
+	config.SetBot(botCfg)
+
+	d := newTestDaemon()
+	d.initBot()
+
+	// Gateway should be created (may fail to start without adapters, but that's ok)
+	// The test covers the config conversion code path
+}
+
+func TestInitBotWithPlatforms(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config first
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	// Use SetBot to set bot config with all platforms
+	socketPath := filepath.Join(dir, "bot.sock")
+	botCfg := &config.BotConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Platforms: &config.BotPlatformsConfig{
+			Telegram: &config.BotTelegramConfig{
+				Enabled:      false,
+				Token:        "test-token",
+				AllowedUsers: []string{"user1"},
+				AllowedChats: []string{"chat1"},
+			},
+			Discord: &config.BotDiscordConfig{
+				Enabled:         false,
+				Token:           "discord-token",
+				AllowedUsers:    []string{"user1"},
+				AllowedChannels: []string{"channel1"},
+				AllowedGuilds:   []string{"guild1"},
+			},
+			Slack: &config.BotSlackConfig{
+				Enabled:         false,
+				BotToken:        "xoxb-token",
+				AppToken:        "xapp-token",
+				AllowedUsers:    []string{"user1"},
+				AllowedChannels: []string{"channel1"},
+			},
+			Lark: &config.BotLarkConfig{
+				Enabled:      false,
+				AppID:        "cli_xxx",
+				AppSecret:    "secret",
+				AllowedUsers: []string{"user1"},
+				AllowedChats: []string{"chat1"},
+			},
+			FBMessenger: &config.BotFBMessengerConfig{
+				Enabled:      false,
+				PageToken:    "page-token",
+				VerifyToken:  "verify-token",
+				AppSecret:    "app-secret",
+				AllowedUsers: []string{"user1"},
+			},
+		},
+	}
+	config.SetBot(botCfg)
+
+	d := newTestDaemon()
+	d.initBot()
+
+	// This test covers all platform config conversion code paths
 }

@@ -309,10 +309,18 @@ func TestDaemonStop_ShouldRemovePIDFile(t *testing.T) {
 		t.Fatalf("daemon did not stop: %v", err)
 	}
 
+	// Wait a bit for filesystem to sync (CI environments may have delays)
+	time.Sleep(500 * time.Millisecond)
+
 	// Check PID file is removed
 	pidPath := filepath.Join(tc.ConfigDir, "zend.pid")
 	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-		t.Errorf("PID file still exists after daemon stop")
+		// Read PID file content for debugging
+		if content, readErr := os.ReadFile(pidPath); readErr == nil {
+			t.Errorf("PID file still exists after daemon stop, content: %s", content)
+		} else {
+			t.Errorf("PID file still exists after daemon stop")
+		}
 	}
 }
 

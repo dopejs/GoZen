@@ -117,14 +117,26 @@ func runDaemonForeground() error {
 	// Graceful shutdown on signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	shutdownDone := make(chan struct{})
 	go func() {
 		<-sigCh
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		d.Shutdown(ctx)
+		close(shutdownDone)
 	}()
 
-	return d.Start()
+	err := d.Start()
+
+	// Wait for shutdown to complete (if triggered by signal)
+	select {
+	case <-shutdownDone:
+		// Shutdown completed
+	default:
+		// Start returned without signal (error case)
+	}
+
+	return err
 }
 
 // startDaemonBackground forks a child process to run the daemon.

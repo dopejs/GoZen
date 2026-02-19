@@ -92,8 +92,6 @@ export function BotPage() {
   )
 }
 
-// __CONTINUE_HERE__
-
 interface TabProps {
   config: Partial<BotConfig>
   setConfig: React.Dispatch<React.SetStateAction<Partial<BotConfig>>>
@@ -172,8 +170,6 @@ function GeneralTab({ config, setConfig }: TabProps) {
     </Card>
   )
 }
-
-// __CONTINUE_PLATFORMS__
 
 function PlatformsTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()
@@ -302,8 +298,6 @@ function PlatformsTab({ config, setConfig }: TabProps) {
             </div>
           </CollapsibleContent>
         </Collapsible>
-
-// __CONTINUE_PLATFORMS_2__
 
         {/* Slack */}
         <Collapsible open={openPlatforms.slack} onOpenChange={() => togglePlatform('slack')}>
@@ -452,8 +446,6 @@ function PlatformsTab({ config, setConfig }: TabProps) {
   )
 }
 
-// __CONTINUE_INTERACTION__
-
 function InteractionTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()
   const updateBot = useUpdateBot()
@@ -541,8 +533,6 @@ function InteractionTab({ config, setConfig }: TabProps) {
     </Card>
   )
 }
-
-// __CONTINUE_ALIASES__
 
 function AliasesTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()

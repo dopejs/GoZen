@@ -108,27 +108,30 @@ export interface ProviderHealth {
 
 // Settings types
 export interface Settings {
+  default_profile?: string
+  default_client?: string
   web_port: number
-  proxy_port: number
-  log_level: string
-  max_retries: number
-  timeout_ms: number
+  proxy_port?: number
+  profiles?: string[]
+  clients?: string[]
 }
 
 // Binding types
 export interface Binding {
   path: string
-  profile: string
-  created_at: string
+  profile?: string
+  cli?: string
 }
 
 // Sync types
 export interface SyncConfig {
-  enabled: boolean
+  configured: boolean
+  enabled?: boolean
+  backend?: string
   gist_id?: string
-  github_token?: string
-  auto_sync: boolean
-  sync_interval_minutes: number
+  gist_token?: string
+  auto_pull?: boolean
+  pull_interval?: number
 }
 
 export interface SyncStatus {

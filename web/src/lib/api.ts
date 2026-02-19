@@ -181,11 +181,11 @@ export const settingsApi = {
 
 // Bindings API
 export const bindingsApi = {
-  list: () => request<Binding[]>('/bindings'),
-  create: (binding: { path: string; profile: string }) =>
+  list: () => request<{ bindings: Binding[]; profiles: string[]; clients: string[] }>('/bindings'),
+  create: (path: string, profile?: string, cli?: string) =>
     request<Binding>('/bindings', {
       method: 'POST',
-      body: JSON.stringify(binding),
+      body: JSON.stringify({ path, profile, cli }),
     }),
   delete: (path: string) =>
     request<{ success: boolean }>(`/bindings/${encodeURIComponent(path)}`, {

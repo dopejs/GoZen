@@ -1,13 +1,21 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Settings as SettingsIcon, FolderOpen, Lock, RefreshCw, Trash2 } from 'lucide-react'
+import { Settings as SettingsIcon, FolderOpen, Lock, RefreshCw, Trash2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +33,7 @@ import {
   useSyncPull,
   useSyncPush,
 } from '@/hooks/use-settings'
+import { settingsApi, bindingsApi } from '@/lib/api'
 
 export function SettingsPage() {
   const { t } = useTranslation()
@@ -41,7 +50,7 @@ export function SettingsPage() {
           <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
           <TabsTrigger value="bindings">{t('settings.bindings')}</TabsTrigger>
           <TabsTrigger value="sync">{t('settings.sync')}</TabsTrigger>
-          <TabsTrigger value="password">{t('settings.password')}</TabsTrigger>
+          <TabsTrigger value="password">{t('settings.webPassword')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general" className="mt-4">
@@ -66,6 +75,45 @@ export function SettingsPage() {
 
 function GeneralSettings() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
+
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  })
+
+  const updateSettings = useMutation({
+    mutationFn: settingsApi.update,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+      toast.success(t('common.success'))
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : t('common.error'))
+    },
+  })
+
+  const [defaultProfile, setDefaultProfile] = useState('')
+  const [defaultClient, setDefaultClient] = useState('')
+
+  // Initialize form when data loads
+  useState(() => {
+    if (settings) {
+      setDefaultProfile(settings.default_profile || '')
+      setDefaultClient(settings.default_client || '')
+    }
+  })
+
+  if (isLoading) {
+    return <div className="flex justify-center py-4">{t('common.loading')}</div>
+  }
+
+  const handleSave = () => {
+    updateSettings.mutate({
+      default_profile: defaultProfile || settings?.default_profile,
+      default_client: defaultClient || settings?.default_client,
+    })
+  }
 
   return (
     <Card>
@@ -74,11 +122,52 @@ function GeneralSettings() {
           <SettingsIcon className="h-5 w-5" />
           {t('settings.general')}
         </CardTitle>
+        <CardDescription>{t('settings.generalDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          General settings are configured via the CLI or config file.
-        </p>
+        <div className="grid gap-2">
+          <Label>{t('settings.defaultProfile')}</Label>
+          <Select
+            value={defaultProfile || settings?.default_profile || ''}
+            onValueChange={setDefaultProfile}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t('settings.selectProfile')} />
+            </SelectTrigger>
+            <SelectContent>
+              {settings?.profiles?.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label>{t('settings.defaultClient')}</Label>
+          <Select
+            value={defaultClient || settings?.default_client || ''}
+            onValueChange={setDefaultClient}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t('settings.selectClient')} />
+            </SelectTrigger>
+            <SelectContent>
+              {settings?.clients?.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="grid gap-2">
+          <Label>{t('settings.webPort')}</Label>
+          <Input value={settings?.web_port || ''} disabled />
+          <p className="text-xs text-muted-foreground">{t('settings.webPortHint')}</p>
+        </div>
+
+        <Button onClick={handleSave} disabled={updateSettings.isPending}>
+          {t('common.save')}
+        </Button>
       </CardContent>
     </Card>
   )
@@ -86,10 +175,32 @@ function GeneralSettings() {
 
 function BindingsSettings() {
   const { t } = useTranslation()
-  const { data: bindings, isLoading } = useBindings()
+  const queryClient = useQueryClient()
+  const { data: bindingsData, isLoading } = useBindings()
   const deleteBinding = useDeleteBinding()
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deletingPath, setDeletingPath] = useState<string | null>(null)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [newPath, setNewPath] = useState('')
+  const [newProfile, setNewProfile] = useState('')
+  const [newClient, setNewClient] = useState('')
+
+  const addBinding = useMutation({
+    mutationFn: (data: { path: string; profile?: string; cli?: string }) =>
+      bindingsApi.create(data.path, data.profile, data.cli),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bindings'] })
+      toast.success(t('common.success'))
+      setAddDialogOpen(false)
+      setNewPath('')
+      setNewProfile('')
+      setNewClient('')
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : t('common.error'))
+    },
+  })
 
   const handleOpenDelete = (path: string) => {
     setDeletingPath(path)
@@ -107,26 +218,54 @@ function BindingsSettings() {
     }
   }
 
+  const handleAdd = () => {
+    if (!newPath) {
+      toast.error(t('settings.pathRequired'))
+      return
+    }
+    addBinding.mutate({
+      path: newPath,
+      profile: newProfile || undefined,
+      cli: newClient || undefined,
+    })
+  }
+
+  const bindings = bindingsData?.bindings || []
+  const profiles = bindingsData?.profiles || []
+  const clients = bindingsData?.clients || []
+
   return (
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FolderOpen className="h-5 w-5" />
-            {t('settings.bindings')}
-          </CardTitle>
-          <CardDescription>Project-specific profile bindings</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FolderOpen className="h-5 w-5" />
+                {t('settings.bindings')}
+              </CardTitle>
+              <CardDescription>{t('settings.bindingsDesc')}</CardDescription>
+            </div>
+            <Button onClick={() => setAddDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('settings.addBinding')}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-4">{t('common.loading')}</div>
-          ) : bindings && bindings.length > 0 ? (
+          ) : bindings.length > 0 ? (
             <div className="space-y-2">
               {bindings.map((binding) => (
                 <div key={binding.path} className="flex items-center justify-between rounded-lg border p-3">
                   <div>
-                    <p className="font-medium">{binding.path}</p>
-                    <p className="text-sm text-muted-foreground">Profile: {binding.profile}</p>
+                    <p className="font-mono text-sm">{binding.path}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {binding.profile && `Profile: ${binding.profile}`}
+                      {binding.profile && binding.cli && ' · '}
+                      {binding.cli && `CLI: ${binding.cli}`}
+                    </p>
                   </div>
                   <Button variant="ghost" size="icon" onClick={() => handleOpenDelete(binding.path)}>
                     <Trash2 className="h-4 w-4" />
@@ -135,16 +274,71 @@ function BindingsSettings() {
               ))}
             </div>
           ) : (
-            <p className="text-muted-foreground">{t('settings.noBindings')}</p>
+            <p className="text-center text-muted-foreground py-4">{t('settings.noBindings')}</p>
           )}
         </CardContent>
       </Card>
 
+      {/* Add Binding Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('settings.addBinding')}</DialogTitle>
+            <DialogDescription>{t('settings.addBindingDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>{t('settings.projectPath')}</Label>
+              <Input
+                value={newPath}
+                onChange={(e) => setNewPath(e.target.value)}
+                placeholder="/path/to/project"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('settings.profile')}</Label>
+              <Select value={newProfile} onValueChange={setNewProfile}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('settings.selectProfile')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {profiles.map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('settings.client')}</Label>
+              <Select value={newClient} onValueChange={setNewClient}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('settings.selectClient')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleAdd} disabled={addBinding.isPending}>
+              {t('common.add')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Binding Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('common.delete')}</DialogTitle>
-            <DialogDescription>Are you sure you want to delete this binding?</DialogDescription>
+            <DialogDescription>{t('settings.deleteBindingConfirm')}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
@@ -160,12 +354,63 @@ function BindingsSettings() {
   )
 }
 
+// __CONTINUE_SYNC__
+
 function SyncSettings() {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const { data: syncConfig } = useSyncConfig()
   const { data: syncStatus } = useSyncStatus()
   const syncPull = useSyncPull()
   const syncPush = useSyncPush()
+
+  const [enabled, setEnabled] = useState(false)
+  const [backend, setBackend] = useState('')
+  const [gistId, setGistId] = useState('')
+  const [gistToken, setGistToken] = useState('')
+  const [autoPull, setAutoPull] = useState(false)
+  const [pullInterval, setPullInterval] = useState(300)
+
+  // Initialize form when data loads
+  useState(() => {
+    if (syncConfig) {
+      setEnabled(syncConfig.enabled || false)
+      setBackend(syncConfig.backend || '')
+      setGistId(syncConfig.gist_id || '')
+      setAutoPull(syncConfig.auto_pull || false)
+      setPullInterval(syncConfig.pull_interval || 300)
+    }
+  })
+
+  const updateSync = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch('/api/v1/sync/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      if (!res.ok) throw new Error('Failed to update sync config')
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sync', 'config'] })
+      toast.success(t('common.success'))
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : t('common.error'))
+    },
+  })
+
+  const handleSave = () => {
+    updateSync.mutate({
+      enabled,
+      backend: backend || undefined,
+      gist_id: gistId || undefined,
+      gist_token: gistToken || undefined,
+      auto_pull: autoPull,
+      pull_interval: pullInterval,
+    })
+  }
 
   const handlePull = async () => {
     try {
@@ -192,12 +437,79 @@ function SyncSettings() {
           <RefreshCw className="h-5 w-5" />
           {t('settings.sync')}
         </CardTitle>
+        <CardDescription>{t('settings.syncDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
-          <Label>{t('settings.syncEnabled')}</Label>
-          <Switch checked={syncConfig?.enabled ?? false} disabled />
+          <Label htmlFor="sync-enabled">{t('settings.syncEnabled')}</Label>
+          <Switch
+            id="sync-enabled"
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
         </div>
+
+        {enabled && (
+          <>
+            <div className="grid gap-2">
+              <Label>{t('settings.syncBackend')}</Label>
+              <Select value={backend} onValueChange={setBackend}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('settings.selectBackend')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gist">GitHub Gist</SelectItem>
+                  <SelectItem value="s3">Amazon S3</SelectItem>
+                  <SelectItem value="webdav">WebDAV</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {backend === 'gist' && (
+              <>
+                <div className="grid gap-2">
+                  <Label>{t('settings.gistId')}</Label>
+                  <Input
+                    value={gistId}
+                    onChange={(e) => setGistId(e.target.value)}
+                    placeholder="Gist ID (leave empty to create new)"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.gistToken')}</Label>
+                  <Input
+                    type="password"
+                    value={gistToken}
+                    onChange={(e) => setGistToken(e.target.value)}
+                    placeholder="GitHub Personal Access Token"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="auto-pull">{t('settings.autoPull')}</Label>
+              <Switch
+                id="auto-pull"
+                checked={autoPull}
+                onCheckedChange={setAutoPull}
+              />
+            </div>
+
+            {autoPull && (
+              <div className="grid gap-2">
+                <Label>{t('settings.pullInterval')}</Label>
+                <Input
+                  type="number"
+                  value={pullInterval}
+                  onChange={(e) => setPullInterval(parseInt(e.target.value) || 300)}
+                  min={60}
+                />
+                <p className="text-xs text-muted-foreground">{t('settings.pullIntervalHint')}</p>
+              </div>
+            )}
+          </>
+        )}
 
         {syncStatus?.last_sync && (
           <div className="text-sm text-muted-foreground">
@@ -210,20 +522,27 @@ function SyncSettings() {
         )}
 
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handlePull}
-            disabled={!syncConfig?.enabled || syncPull.isPending}
-          >
-            Pull
+          <Button onClick={handleSave} disabled={updateSync.isPending}>
+            {t('common.save')}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handlePush}
-            disabled={!syncConfig?.enabled || syncPush.isPending}
-          >
-            Push
-          </Button>
+          {syncConfig?.configured && (
+            <>
+              <Button
+                variant="outline"
+                onClick={handlePull}
+                disabled={syncPull.isPending}
+              >
+                Pull
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handlePush}
+                disabled={syncPush.isPending}
+              >
+                Push
+              </Button>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -259,8 +578,9 @@ function PasswordSettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Lock className="h-5 w-5" />
-          {t('settings.changePassword')}
+          {t('settings.webPassword')}
         </CardTitle>
+        <CardDescription>{t('settings.webPasswordDesc')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -36,7 +36,8 @@ export function useBindings() {
 export function useCreateBinding() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (binding: { path: string; profile: string }) => bindingsApi.create(binding),
+    mutationFn: ({ path, profile, cli }: { path: string; profile?: string; cli?: string }) =>
+      bindingsApi.create(path, profile, cli),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bindings'] })
     },

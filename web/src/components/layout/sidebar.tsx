@@ -16,8 +16,8 @@ const navItems = [
   { to: '/providers', icon: Server, labelKey: 'nav.providers' },
   { to: '/profiles', icon: Layers, labelKey: 'nav.profiles' },
   { to: '/bot', icon: Bot, labelKey: 'nav.bot' },
-  { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
   { to: '/usage', icon: BarChart3, labelKey: 'nav.usage' },
+  { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 

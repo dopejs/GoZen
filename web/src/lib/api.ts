@@ -16,6 +16,7 @@ import type {
   AuthCheckResponse,
   LoginResponse,
   HealthResponse,
+  BotConfig,
 } from '@/types/api'
 
 const API_BASE = '/api/v1'
@@ -238,6 +239,16 @@ export const sessionsApi = {
   delete: (id: string) =>
     request<{ success: boolean }>(`/sessions/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+}
+
+// Bot API
+export const botApi = {
+  get: () => request<BotConfig>('/bot'),
+  update: (bot: Partial<BotConfig>) =>
+    request<BotConfig>('/bot', {
+      method: 'PUT',
+      body: JSON.stringify(bot),
     }),
 }
 

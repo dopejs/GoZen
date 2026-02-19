@@ -186,3 +186,76 @@ export interface HealthResponse {
   status: string
   version: string
 }
+
+// Bot types
+export interface BotConfig {
+  enabled: boolean
+  profile?: string
+  socket_path?: string
+  platforms?: BotPlatformsConfig
+  interaction?: BotInteractionConfig
+  aliases?: Record<string, string>
+  notify?: BotNotifyConfig
+}
+
+export interface BotPlatformsConfig {
+  telegram?: BotTelegramConfig
+  discord?: BotDiscordConfig
+  slack?: BotSlackConfig
+  lark?: BotLarkConfig
+  fbmessenger?: BotFBMessengerConfig
+}
+
+export interface BotTelegramConfig {
+  enabled: boolean
+  token: string
+  allowed_users?: string[]
+  allowed_chats?: string[]
+}
+
+export interface BotDiscordConfig {
+  enabled: boolean
+  token: string
+  allowed_users?: string[]
+  allowed_channels?: string[]
+  allowed_guilds?: string[]
+}
+
+export interface BotSlackConfig {
+  enabled: boolean
+  bot_token: string
+  app_token: string
+  allowed_users?: string[]
+  allowed_channels?: string[]
+}
+
+export interface BotLarkConfig {
+  enabled: boolean
+  app_id: string
+  app_secret: string
+  allowed_users?: string[]
+  allowed_chats?: string[]
+}
+
+export interface BotFBMessengerConfig {
+  enabled: boolean
+  page_token: string
+  verify_token: string
+  app_secret?: string
+  allowed_users?: string[]
+}
+
+export interface BotInteractionConfig {
+  require_mention?: boolean
+  mention_keywords?: string[]
+  direct_message_mode?: string
+  channel_mode?: string
+}
+
+export interface BotNotifyConfig {
+  default_platform?: string
+  default_chat_id?: string
+  quiet_hours_start?: string
+  quiet_hours_end?: string
+  quiet_hours_zone?: string
+}

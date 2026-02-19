@@ -6,6 +6,7 @@ import { LoginPage } from '@/pages/login'
 import { DashboardPage } from '@/pages/dashboard'
 import { ProvidersPage } from '@/pages/providers'
 import { ProfilesPage } from '@/pages/profiles'
+import { BotPage } from '@/pages/bot'
 import { LogsPage } from '@/pages/logs'
 import { UsagePage } from '@/pages/usage'
 import { SettingsPage } from '@/pages/settings'
@@ -44,6 +45,7 @@ function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/profiles" element={<ProfilesPage />} />
+          <Route path="/bot" element={<BotPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/settings" element={<SettingsPage />} />

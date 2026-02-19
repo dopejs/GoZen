@@ -7,6 +7,7 @@ import {
   BarChart3,
   Settings,
   LayoutDashboard,
+  Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +15,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { to: '/providers', icon: Server, labelKey: 'nav.providers' },
   { to: '/profiles', icon: Layers, labelKey: 'nav.profiles' },
+  { to: '/bot', icon: Bot, labelKey: 'nav.bot' },
   { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
   { to: '/usage', icon: BarChart3, labelKey: 'nav.usage' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },

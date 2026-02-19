@@ -114,6 +114,9 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/middleware/", s.handleMiddleware)
 	s.mux.HandleFunc("/api/v1/middleware/reload", s.handleMiddlewareReload)
 
+	// Bot routes
+	s.mux.HandleFunc("/api/v1/bot", s.handleBot)
+
 	// Agent routes (BETA)
 	s.mux.HandleFunc("/api/v1/agent/config", s.handleAgentConfig)
 	s.mux.HandleFunc("/api/v1/agent/stats", s.handleAgentStats)

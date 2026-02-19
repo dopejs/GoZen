@@ -128,12 +128,14 @@ func runDaemonForeground() error {
 
 	err := d.Start()
 
-	// Wait for shutdown to complete (if triggered by signal)
+	// If Start() returned due to shutdown signal, wait for cleanup to complete
+	// Use a short timeout to avoid hanging if shutdown wasn't triggered
 	select {
 	case <-shutdownDone:
-		// Shutdown completed
-	default:
-		// Start returned without signal (error case)
+		// Shutdown completed, PID file should be removed
+	case <-time.After(100 * time.Millisecond):
+		// Start returned for other reason (error), clean up PID file
+		daemon.RemoveDaemonPid()
 	}
 
 	return err

@@ -130,7 +130,7 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/agent/guardrails/", s.handleAgentGuardrails)
 
 	// Static files
-	staticSub, _ := fs.Sub(staticFS, "static")
+	staticSub, _ := fs.Sub(staticFS, "dist")
 	fileServer := http.FileServer(http.FS(staticSub))
 	s.mux.Handle("/", fileServer)
 

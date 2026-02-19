@@ -26,6 +26,17 @@ Multi-CLI environment switcher for Claude Code, Codex, and OpenCode with API pro
 - **Self-Update** — One-command upgrade via `zen upgrade` with semver version matching (supports prerelease versions)
 - **Shell Completion** — Supports zsh / bash / fish
 
+### v3.0 New Features
+
+- **Usage Tracking** — Track token usage and costs per provider, model, and project
+- **Budget Control** — Set daily/weekly/monthly spending limits with warn/downgrade/block actions
+- **Provider Health Monitoring** — Real-time health checks with latency and error rate tracking
+- **Smart Load Balancing** — Multiple strategies: failover, round-robin, least-latency, least-cost
+- **Webhooks** — Notifications for budget alerts, provider status changes, and daily summaries (Slack/Discord/Generic)
+- **Context Compression** — Automatic context compression when token count exceeds threshold
+- **Middleware Pipeline** — Pluggable middleware for request/response transformation
+- **Agent Infrastructure** — Built-in support for agent-based workflows with session management
+
 ## Installation
 
 ```sh
@@ -89,7 +100,7 @@ zen --cli codex
 
 ## Daemon Architecture
 
-In v2.1, GoZen uses a unified daemon process (`zend`) that hosts both the HTTP proxy and the Web UI:
+In v3.0, GoZen uses a unified daemon process (`zend`) that hosts both the HTTP proxy and the Web UI:
 
 - **Proxy server** runs on port `19841` (configurable via `proxy_port`)
 - **Web UI** runs on port `19840` (configurable via `web_port`)
@@ -330,6 +341,114 @@ Configuration example:
 }
 ```
 
+## Usage Tracking & Budget Control
+
+Track API usage and set spending limits:
+
+```json
+{
+  "pricing": {
+    "claude-sonnet-4-20250514": {"input_per_million": 3.0, "output_per_million": 15.0},
+    "claude-opus-4-20250514": {"input_per_million": 15.0, "output_per_million": 75.0}
+  },
+  "budgets": {
+    "daily": {"amount": 10.0, "action": "warn"},
+    "monthly": {"amount": 100.0, "action": "block"},
+    "per_project": true
+  }
+}
+```
+
+Budget actions: `warn` (log warning), `downgrade` (switch to cheaper model), `block` (reject requests).
+
+## Provider Health Monitoring
+
+Automatic health checks with metrics tracking:
+
+```json
+{
+  "health_check": {
+    "enabled": true,
+    "interval_secs": 60,
+    "timeout_secs": 10
+  }
+}
+```
+
+View provider health via Web UI or API: `GET /api/v1/health/providers`
+
+## Smart Load Balancing
+
+Configure load balancing strategy per profile:
+
+```json
+{
+  "profiles": {
+    "balanced": {
+      "providers": ["provider-a", "provider-b", "provider-c"],
+      "strategy": "least-latency"
+    }
+  }
+}
+```
+
+Strategies:
+- `failover` — Try providers in order (default)
+- `round-robin` — Distribute requests evenly
+- `least-latency` — Route to fastest provider
+- `least-cost` — Route to cheapest provider for the model
+
+## Webhooks
+
+Get notified about important events:
+
+```json
+{
+  "webhooks": [
+    {
+      "name": "slack-alerts",
+      "url": "https://hooks.slack.com/services/xxx",
+      "events": ["budget_warning", "budget_exceeded", "provider_down", "provider_up"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+Events: `budget_warning`, `budget_exceeded`, `provider_down`, `provider_up`, `failover`, `daily_summary`
+
+## Context Compression
+
+Automatically compress context when it exceeds a threshold:
+
+```json
+{
+  "compression": {
+    "enabled": true,
+    "threshold_tokens": 100000,
+    "target_ratio": 0.5
+  }
+}
+```
+
+## Middleware Pipeline
+
+Transform requests and responses with pluggable middleware:
+
+```json
+{
+  "middleware": {
+    "enabled": true,
+    "middlewares": [
+      {"name": "context-injection", "enabled": true, "config": {"inject_cursorrules": true}},
+      {"name": "rate-limiter", "enabled": true, "config": {"requests_per_minute": 60}}
+    ]
+  }
+}
+```
+
+Built-in middleware: `context-injection`, `request-logger`, `rate-limiter`, `compression`
+
 ## Config Files
 
 | File | Description |
@@ -343,7 +462,7 @@ Configuration example:
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "default_profile": "default",
   "default_client": "claude",
   "proxy_port": 19841,
@@ -379,11 +498,11 @@ Configuration example:
 zen upgrade
 
 # Specific version
-zen upgrade 2.1
-zen upgrade 2.1.0
+zen upgrade 3.0
+zen upgrade 3.0.0
 
 # Prerelease version
-zen upgrade 2.1.0-alpha.1
+zen upgrade 3.0.0-alpha.1
 ```
 
 ## Migrating from Older Versions
@@ -405,8 +524,8 @@ go test ./...
 Release: Push a tag and GitHub Actions will build automatically.
 
 ```sh
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ## License

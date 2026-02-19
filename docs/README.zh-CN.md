@@ -26,6 +26,17 @@
 - **自更新** — `zen upgrade` 一键升级，支持 semver 版本匹配（支持预发布版本）
 - **Shell 补全** — 支持 zsh / bash / fish
 
+### v3.0 新功能
+
+- **使用量追踪** — 按 provider、模型、项目追踪 token 使用量和成本
+- **预算控制** — 设置每日/每周/每月支出限制，支持警告/降级/阻止动作
+- **Provider 健康监控** — 实时健康检查，追踪延迟和错误率
+- **智能负载均衡** — 多种策略：故障转移、轮询、最低延迟、最低成本
+- **Webhook 通知** — 预算警报、provider 状态变化、每日摘要通知（Slack/Discord/通用）
+- **上下文压缩** — token 数量超过阈值时自动压缩上下文
+- **中间件管道** — 可插拔中间件，用于请求/响应转换
+- **Agent 基础设施** — 内置 agent 工作流支持，带会话管理
+
 ## 安装
 
 ```sh
@@ -89,7 +100,7 @@ zen --cli codex
 
 ## 守护进程架构
 
-v2.1 中，GoZen 使用统一的守护进程（`zend`）同时托管 HTTP 代理和 Web 管理界面：
+v3.0 中，GoZen 使用统一的守护进程（`zend`）同时托管 HTTP 代理和 Web 管理界面：
 
 - **代理服务** 运行在端口 `19841`（可通过 `proxy_port` 配置）
 - **Web UI** 运行在端口 `19840`（可通过 `web_port` 配置）
@@ -330,6 +341,114 @@ zen config sync
 }
 ```
 
+## 使用量追踪与预算控制
+
+追踪 API 使用量并设置支出限制：
+
+```json
+{
+  "pricing": {
+    "claude-sonnet-4-20250514": {"input_per_million": 3.0, "output_per_million": 15.0},
+    "claude-opus-4-20250514": {"input_per_million": 15.0, "output_per_million": 75.0}
+  },
+  "budgets": {
+    "daily": {"amount": 10.0, "action": "warn"},
+    "monthly": {"amount": 100.0, "action": "block"},
+    "per_project": true
+  }
+}
+```
+
+预算动作：`warn`（记录警告）、`downgrade`（切换到更便宜的模型）、`block`（拒绝请求）。
+
+## Provider 健康监控
+
+自动健康检查与指标追踪：
+
+```json
+{
+  "health_check": {
+    "enabled": true,
+    "interval_secs": 60,
+    "timeout_secs": 10
+  }
+}
+```
+
+通过 Web UI 或 API 查看 provider 健康状态：`GET /api/v1/health/providers`
+
+## 智能负载均衡
+
+为每个 profile 配置负载均衡策略：
+
+```json
+{
+  "profiles": {
+    "balanced": {
+      "providers": ["provider-a", "provider-b", "provider-c"],
+      "strategy": "least-latency"
+    }
+  }
+}
+```
+
+策略：
+- `failover` — 按顺序尝试 provider（默认）
+- `round-robin` — 均匀分配请求
+- `least-latency` — 路由到最快的 provider
+- `least-cost` — 路由到该模型最便宜的 provider
+
+## Webhook 通知
+
+获取重要事件通知：
+
+```json
+{
+  "webhooks": [
+    {
+      "name": "slack-alerts",
+      "url": "https://hooks.slack.com/services/xxx",
+      "events": ["budget_warning", "budget_exceeded", "provider_down", "provider_up"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+事件：`budget_warning`、`budget_exceeded`、`provider_down`、`provider_up`、`failover`、`daily_summary`
+
+## 上下文压缩
+
+当上下文超过阈值时自动压缩：
+
+```json
+{
+  "compression": {
+    "enabled": true,
+    "threshold_tokens": 100000,
+    "target_ratio": 0.5
+  }
+}
+```
+
+## 中间件管道
+
+使用可插拔中间件转换请求和响应：
+
+```json
+{
+  "middleware": {
+    "enabled": true,
+    "middlewares": [
+      {"name": "context-injection", "enabled": true, "config": {"inject_cursorrules": true}},
+      {"name": "rate-limiter", "enabled": true, "config": {"requests_per_minute": 60}}
+    ]
+  }
+}
+```
+
+内置中间件：`context-injection`、`request-logger`、`rate-limiter`、`compression`
+
 ## 配置文件
 
 | 文件 | 说明 |
@@ -343,7 +462,7 @@ zen config sync
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "default_profile": "default",
   "default_client": "claude",
   "proxy_port": 19841,
@@ -379,11 +498,11 @@ zen config sync
 zen upgrade
 
 # 指定版本
-zen upgrade 2.1
-zen upgrade 2.1.0
+zen upgrade 3.0
+zen upgrade 3.0.0
 
 # 预发布版本
-zen upgrade 2.1.0-alpha.1
+zen upgrade 3.0.0-alpha.1
 ```
 
 ## 从旧版迁移
@@ -405,8 +524,8 @@ go test ./...
 发布：打 tag 后 GitHub Actions 自动构建。
 
 ```sh
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ## License

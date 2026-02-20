@@ -361,6 +361,158 @@ type HourlyUsage struct {
 	RequestCount int       `json:"request_count"`
 }
 
+// HourlyUsageByDimension represents hourly usage grouped by a dimension (provider or model).
+type HourlyUsageByDimension struct {
+	Hour         time.Time `json:"hour"`
+	Dimension    string    `json:"dimension"` // provider name or model id
+	InputTokens  int       `json:"input_tokens"`
+	OutputTokens int       `json:"output_tokens"`
+	Cost         float64   `json:"cost"`
+	RequestCount int       `json:"request_count"`
+}
+
+// GetHourlySummaryByProvider returns hourly data grouped by provider.
+func (t *UsageTracker) GetHourlySummaryByProvider(since, until time.Time) ([]HourlyUsageByDimension, error) {
+	return t.getHourlySummaryByDimension("provider", since, until)
+}
+
+// GetHourlySummaryByModel returns hourly data grouped by model.
+func (t *UsageTracker) GetHourlySummaryByModel(since, until time.Time) ([]HourlyUsageByDimension, error) {
+	return t.getHourlySummaryByDimension("model", since, until)
+}
+
+func (t *UsageTracker) getHourlySummaryByDimension(dimension string, since, until time.Time) ([]HourlyUsageByDimension, error) {
+	if t.db == nil || t.db.db == nil {
+		return nil, nil
+	}
+
+	query := `
+		SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as hour, ` + dimension + `,
+			SUM(input_tokens), SUM(output_tokens), SUM(cost_usd), COUNT(*)
+		FROM usage
+		WHERE timestamp >= ? AND timestamp < ?
+		GROUP BY hour, ` + dimension + `
+		ORDER BY hour ASC, ` + dimension + ` ASC
+	`
+
+	rows, err := t.db.db.Query(query, since.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []HourlyUsageByDimension
+	for rows.Next() {
+		var h HourlyUsageByDimension
+		var hourStr string
+		if err := rows.Scan(&hourStr, &h.Dimension, &h.InputTokens, &h.OutputTokens, &h.Cost, &h.RequestCount); err != nil {
+			continue
+		}
+		if t, err := time.Parse("2006-01-02 15:04:05", hourStr); err == nil {
+			h.Hour = t
+		}
+		result = append(result, h)
+	}
+
+	return result, nil
+}
+
+// GetSummaryByTimeRange returns usage summary for a custom time range.
+func (t *UsageTracker) GetSummaryByTimeRange(since, until time.Time, projectPath string) (*UsageSummary, error) {
+	if t.db == nil || t.db.db == nil {
+		return &UsageSummary{
+			ByProvider: make(map[string]*UsageStats),
+			ByModel:    make(map[string]*UsageStats),
+			ByProject:  make(map[string]*UsageStats),
+		}, nil
+	}
+
+	return t.querySummaryByRange(since, until, projectPath)
+}
+
+func (t *UsageTracker) querySummaryByRange(since, until time.Time, projectPath string) (*UsageSummary, error) {
+	summary := &UsageSummary{
+		ByProvider: make(map[string]*UsageStats),
+		ByModel:    make(map[string]*UsageStats),
+		ByProject:  make(map[string]*UsageStats),
+	}
+
+	var conditions []string
+	var args []interface{}
+
+	conditions = append(conditions, "timestamp >= ?", "timestamp < ?")
+	args = append(args, since.Format(time.RFC3339Nano), until.Format(time.RFC3339Nano))
+
+	if projectPath != "" {
+		conditions = append(conditions, "project_path = ?")
+		args = append(args, projectPath)
+	}
+
+	whereClause := " WHERE " + strings.Join(conditions, " AND ")
+
+	// Query totals
+	query := `SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(cost_usd), 0), COUNT(*) FROM usage` + whereClause
+	err := t.db.db.QueryRow(query, args...).Scan(&summary.TotalInputTokens, &summary.TotalOutputTokens, &summary.TotalCost, &summary.RequestCount)
+	if err != nil {
+		return nil, err
+	}
+
+	// Query by provider
+	query = `SELECT provider, SUM(input_tokens), SUM(output_tokens), SUM(cost_usd), COUNT(*) FROM usage` + whereClause + ` GROUP BY provider`
+	rows, err := t.db.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var provider string
+		var stats UsageStats
+		if err := rows.Scan(&provider, &stats.InputTokens, &stats.OutputTokens, &stats.Cost, &stats.RequestCount); err != nil {
+			continue
+		}
+		summary.ByProvider[provider] = &stats
+	}
+
+	// Query by model
+	query = `SELECT model, SUM(input_tokens), SUM(output_tokens), SUM(cost_usd), COUNT(*) FROM usage` + whereClause + ` GROUP BY model`
+	rows, err = t.db.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var model string
+		var stats UsageStats
+		if err := rows.Scan(&model, &stats.InputTokens, &stats.OutputTokens, &stats.Cost, &stats.RequestCount); err != nil {
+			continue
+		}
+		summary.ByModel[model] = &stats
+	}
+
+	// Query by project
+	query = `SELECT project_path, SUM(input_tokens), SUM(output_tokens), SUM(cost_usd), COUNT(*) FROM usage` + whereClause + ` GROUP BY project_path`
+	rows, err = t.db.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var project string
+		var stats UsageStats
+		if err := rows.Scan(&project, &stats.InputTokens, &stats.OutputTokens, &stats.Cost, &stats.RequestCount); err != nil {
+			continue
+		}
+		if project != "" {
+			summary.ByProject[project] = &stats
+		}
+	}
+
+	return summary, nil
+}
+
 // GetRecentUsage returns recent usage entries.
 func (t *UsageTracker) GetRecentUsage(limit int) ([]UsageEntry, error) {
 	if t.db == nil || t.db.db == nil {

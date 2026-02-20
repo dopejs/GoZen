@@ -2,17 +2,27 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usageApi, budgetApi, providerHealthApi } from '@/lib/api'
 import type { Budget } from '@/types/api'
 
-export function useUsageSummary(period?: 'today' | 'week' | 'month') {
+export function useUsageSummary(params?: {
+  period?: 'today' | 'week' | 'month'
+  since?: string
+  until?: string
+  project?: string
+}) {
   return useQuery({
-    queryKey: ['usage', 'summary', period],
-    queryFn: () => usageApi.summary(period),
+    queryKey: ['usage', 'summary', params],
+    queryFn: () => usageApi.summary(params),
   })
 }
 
-export function useHourlyUsage(date?: string) {
+export function useHourlyUsage(params?: {
+  hours?: number
+  since?: string
+  until?: string
+  groupBy?: 'provider' | 'model'
+}) {
   return useQuery({
-    queryKey: ['usage', 'hourly', date],
-    queryFn: () => usageApi.hourly(date),
+    queryKey: ['usage', 'hourly', params],
+    queryFn: () => usageApi.hourly(params),
   })
 }
 

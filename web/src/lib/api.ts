@@ -4,6 +4,7 @@ import type {
   LogsResponse,
   UsageSummary,
   HourlyUsage,
+  HourlyUsageByDimension,
   Budget,
   BudgetStatus,
   ProviderHealth,
@@ -133,13 +134,36 @@ export const logsApi = {
 
 // Usage API
 export const usageApi = {
-  summary: (period?: 'today' | 'week' | 'month') => {
-    const query = period ? `?period=${period}` : ''
-    return request<UsageSummary>(`/usage/summary${query}`)
+  summary: (params?: {
+    period?: 'today' | 'week' | 'month'
+    since?: string
+    until?: string
+    project?: string
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.period) searchParams.set('period', params.period)
+    if (params?.since) searchParams.set('since', params.since)
+    if (params?.until) searchParams.set('until', params.until)
+    if (params?.project) searchParams.set('project', params.project)
+    const query = searchParams.toString()
+    return request<UsageSummary>(`/usage/summary${query ? `?${query}` : ''}`)
   },
-  hourly: (date?: string) => {
-    const query = date ? `?date=${date}` : ''
-    return request<HourlyUsage[]>(`/usage/hourly${query}`)
+  hourly: (params?: {
+    hours?: number
+    since?: string
+    until?: string
+    groupBy?: 'provider' | 'model'
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.hours) searchParams.set('hours', params.hours.toString())
+    if (params?.since) searchParams.set('since', params.since)
+    if (params?.until) searchParams.set('until', params.until)
+    if (params?.groupBy) searchParams.set('group_by', params.groupBy)
+    const query = searchParams.toString()
+    if (params?.groupBy) {
+      return request<HourlyUsageByDimension[]>(`/usage/hourly${query ? `?${query}` : ''}`)
+    }
+    return request<HourlyUsage[]>(`/usage/hourly${query ? `?${query}` : ''}`)
   },
 }
 

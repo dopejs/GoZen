@@ -48,23 +48,17 @@ export interface LogsResponse {
 
 // Usage types
 export interface UsageSummary {
-  total_requests: number
+  request_count: number
   total_input_tokens: number
   total_output_tokens: number
   total_cost: number
-  by_provider: Record<string, ProviderUsage>
-  by_model: Record<string, ModelUsage>
+  by_provider: Record<string, UsageStats>
+  by_model: Record<string, UsageStats>
+  by_project?: Record<string, UsageStats>
 }
 
-export interface ProviderUsage {
-  requests: number
-  input_tokens: number
-  output_tokens: number
-  cost: number
-}
-
-export interface ModelUsage {
-  requests: number
+export interface UsageStats {
+  request_count: number
   input_tokens: number
   output_tokens: number
   cost: number
@@ -72,7 +66,16 @@ export interface ModelUsage {
 
 export interface HourlyUsage {
   hour: string
-  requests: number
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  cost: number
+}
+
+export interface HourlyUsageByDimension {
+  hour: string
+  dimension: string
+  request_count: number
   input_tokens: number
   output_tokens: number
   cost: number

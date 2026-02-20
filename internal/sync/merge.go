@@ -37,7 +37,6 @@ func Merge(local, remote *SyncPayload) *SyncPayload {
 
 	// Merge scalars
 	merged.DefaultProfile = mergeScalar(local.DefaultProfile, remote.DefaultProfile)
-	merged.DefaultClient = mergeScalar(local.DefaultClient, remote.DefaultClient)
 
 	return merged
 }

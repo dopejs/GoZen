@@ -24,7 +24,6 @@ type SyncPayload struct {
 	Providers      map[string]*SyncEntity             `json:"providers"`
 	Profiles       map[string]*SyncEntity             `json:"profiles"`
 	DefaultProfile *SyncScalar                        `json:"default_profile,omitempty"`
-	DefaultClient  *SyncScalar                        `json:"default_client,omitempty"`
 	Tombstones     map[string]*Tombstone              `json:"tombstones,omitempty"`
 }
 
@@ -54,7 +53,6 @@ type SyncMeta struct {
 	Providers      map[string]time.Time  `json:"providers"`
 	Profiles       map[string]time.Time  `json:"profiles"`
 	DefaultProfile time.Time             `json:"default_profile,omitempty"`
-	DefaultClient  time.Time             `json:"default_client,omitempty"`
 	Tombstones     map[string]*Tombstone `json:"tombstones,omitempty"`
 }
 

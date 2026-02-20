@@ -15,7 +15,7 @@ export function DashboardPage() {
 
   const { data: usage } = useQuery({
     queryKey: ['usage', 'summary', 'today'],
-    queryFn: () => usageApi.summary('today'),
+    queryFn: () => usageApi.summary({ period: 'today' }),
   })
 
   const { data: providerHealth } = useQuery({
@@ -67,7 +67,7 @@ export function DashboardPage() {
             <Zap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{usage?.total_requests ?? 0}</div>
+            <div className="text-2xl font-bold">{usage?.request_count ?? 0}</div>
             <p className="text-xs text-muted-foreground">{t('usage.today')}</p>
           </CardContent>
         </Card>

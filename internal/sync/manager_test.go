@@ -389,11 +389,6 @@ func TestManagerMarkModified(t *testing.T) {
 	if mgr.meta.DefaultProfile.IsZero() {
 		t.Fatal("default_profile timestamp should be set")
 	}
-
-	mgr.MarkModified("default_client", "")
-	if mgr.meta.DefaultClient.IsZero() {
-		t.Fatal("default_client timestamp should be set")
-	}
 }
 
 func TestGenerateDeviceID(t *testing.T) {
@@ -491,7 +486,6 @@ func TestUpdateMetaTimestamps(t *testing.T) {
 	payload.Providers["new-prov"] = &SyncEntity{ModifiedAt: now}
 	payload.Profiles["default"] = &SyncEntity{ModifiedAt: now}
 	payload.DefaultProfile = &SyncScalar{ModifiedAt: now, Value: "default"}
-	payload.DefaultClient = &SyncScalar{ModifiedAt: now, Value: "claude"}
 
 	mgr.updateMetaTimestamps(payload)
 

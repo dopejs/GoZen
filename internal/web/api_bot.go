@@ -4,17 +4,19 @@ import (
 	"net/http"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy"
 )
 
 // botResponse is the JSON shape returned for bot configuration.
 type botResponse struct {
-	Enabled     bool                       `json:"enabled"`
-	Profile     string                     `json:"profile,omitempty"`
-	SocketPath  string                     `json:"socket_path,omitempty"`
-	Platforms   *botPlatformsResponse      `json:"platforms,omitempty"`
+	Enabled     bool                         `json:"enabled"`
+	Profile     string                       `json:"profile,omitempty"`
+	SocketPath  string                       `json:"socket_path,omitempty"`
+	Platforms   *botPlatformsResponse        `json:"platforms,omitempty"`
 	Interaction *config.BotInteractionConfig `json:"interaction,omitempty"`
-	Aliases     map[string]string          `json:"aliases,omitempty"`
-	Notify      *config.BotNotifyConfig    `json:"notify,omitempty"`
+	Aliases     map[string]string            `json:"aliases,omitempty"`
+	Notify      *config.BotNotifyConfig      `json:"notify,omitempty"`
+	RecentPaths []string                     `json:"recent_paths,omitempty"`
 }
 
 type botPlatformsResponse struct {
@@ -81,6 +83,27 @@ func (s *Server) getBot(w http.ResponseWriter, r *http.Request) {
 	bot := store.GetBot()
 
 	resp := toBotResponse(bot, true)
+
+	// Add recent paths from usage tracker (excluding already aliased paths)
+	if tracker := proxy.GetGlobalUsageTracker(); tracker != nil {
+		if paths, err := tracker.GetRecentPaths(20); err == nil {
+			// Filter out paths that already have aliases
+			aliased := make(map[string]bool)
+			if bot != nil && bot.Aliases != nil {
+				for _, path := range bot.Aliases {
+					aliased[path] = true
+				}
+			}
+			var unaliased []string
+			for _, path := range paths {
+				if !aliased[path] {
+					unaliased = append(unaliased, path)
+				}
+			}
+			resp.RecentPaths = unaliased
+		}
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 

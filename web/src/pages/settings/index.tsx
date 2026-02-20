@@ -244,7 +244,7 @@ function BindingsSettings() {
                 <FolderOpen className="h-5 w-5" />
                 {t('settings.bindings')}
               </CardTitle>
-              <CardDescription>{t('settings.bindingsDesc')}</CardDescription>
+              <CardDescription className="mt-1.5">{t('settings.bindingsDesc')}</CardDescription>
             </div>
             <Button onClick={() => setAddDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
@@ -366,8 +366,24 @@ function SyncSettings() {
 
   const [enabled, setEnabled] = useState(false)
   const [backend, setBackend] = useState('')
+  // GitHub Gist & Repo
   const [gistId, setGistId] = useState('')
-  const [gistToken, setGistToken] = useState('')
+  const [token, setToken] = useState('')
+  const [repoOwner, setRepoOwner] = useState('')
+  const [repoName, setRepoName] = useState('')
+  const [repoPath, setRepoPath] = useState('')
+  const [repoBranch, setRepoBranch] = useState('')
+  // S3
+  const [s3Endpoint, setS3Endpoint] = useState('')
+  const [s3Bucket, setS3Bucket] = useState('')
+  const [s3Region, setS3Region] = useState('')
+  const [s3AccessKey, setS3AccessKey] = useState('')
+  const [s3SecretKey, setS3SecretKey] = useState('')
+  // WebDAV
+  const [webdavEndpoint, setWebdavEndpoint] = useState('')
+  const [webdavUsername, setWebdavUsername] = useState('')
+  const [webdavPassword, setWebdavPassword] = useState('')
+  // Common
   const [autoPull, setAutoPull] = useState(false)
   const [pullInterval, setPullInterval] = useState(300)
 
@@ -377,6 +393,16 @@ function SyncSettings() {
       setEnabled(syncConfig.enabled || false)
       setBackend(syncConfig.backend || '')
       setGistId(syncConfig.gist_id || '')
+      setRepoOwner(syncConfig.repo_owner || '')
+      setRepoName(syncConfig.repo_name || '')
+      setRepoPath(syncConfig.repo_path || '')
+      setRepoBranch(syncConfig.repo_branch || '')
+      setS3Endpoint(syncConfig.endpoint || '')
+      setS3Bucket(syncConfig.bucket || '')
+      setS3Region(syncConfig.region || '')
+      setS3AccessKey(syncConfig.access_key || '')
+      setWebdavEndpoint(syncConfig.endpoint || '')
+      setWebdavUsername(syncConfig.username || '')
       setAutoPull(syncConfig.auto_pull || false)
       setPullInterval(syncConfig.pull_interval || 300)
     }
@@ -402,14 +428,33 @@ function SyncSettings() {
   })
 
   const handleSave = () => {
-    updateSync.mutate({
+    const data: any = {
       enabled,
       backend: backend || undefined,
-      gist_id: gistId || undefined,
-      gist_token: gistToken || undefined,
       auto_pull: autoPull,
       pull_interval: pullInterval,
-    })
+    }
+    if (backend === 'gist') {
+      data.gist_id = gistId || undefined
+      data.token = token || undefined
+    } else if (backend === 'repo') {
+      data.repo_owner = repoOwner || undefined
+      data.repo_name = repoName || undefined
+      data.repo_path = repoPath || undefined
+      data.repo_branch = repoBranch || undefined
+      data.token = token || undefined
+    } else if (backend === 's3') {
+      data.endpoint = s3Endpoint || undefined
+      data.bucket = s3Bucket || undefined
+      data.region = s3Region || undefined
+      data.access_key = s3AccessKey || undefined
+      data.secret_key = s3SecretKey || undefined
+    } else if (backend === 'webdav') {
+      data.endpoint = webdavEndpoint || undefined
+      data.username = webdavUsername || undefined
+      data.token = webdavPassword || undefined
+    }
+    updateSync.mutate(data)
   }
 
   const handlePull = async () => {
@@ -440,7 +485,7 @@ function SyncSettings() {
         <CardDescription>{t('settings.syncDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="grid gap-2">
           <Label htmlFor="sync-enabled">{t('settings.syncEnabled')}</Label>
           <Switch
             id="sync-enabled"
@@ -459,6 +504,7 @@ function SyncSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="gist">GitHub Gist</SelectItem>
+                  <SelectItem value="repo">GitHub Repo</SelectItem>
                   <SelectItem value="s3">Amazon S3</SelectItem>
                   <SelectItem value="webdav">WebDAV</SelectItem>
                 </SelectContent>
@@ -472,22 +518,168 @@ function SyncSettings() {
                   <Input
                     value={gistId}
                     onChange={(e) => setGistId(e.target.value)}
-                    placeholder="Gist ID (leave empty to create new)"
+                    placeholder={t('settings.gistIdPlaceholder')}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>{t('settings.gistToken')}</Label>
+                  <Label>{t('settings.githubToken')}</Label>
                   <Input
                     type="password"
-                    value={gistToken}
-                    onChange={(e) => setGistToken(e.target.value)}
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
                     placeholder="GitHub Personal Access Token"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.githubTokenHintGist')}{' '}
+                    <a
+                      href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {t('settings.githubTokenLink')}
+                    </a>
+                  </p>
+                </div>
+              </>
+            )}
+
+            {backend === 'repo' && (
+              <>
+                <div className="grid gap-2">
+                  <Label>{t('settings.repoOwner')}</Label>
+                  <Input
+                    value={repoOwner}
+                    onChange={(e) => setRepoOwner(e.target.value)}
+                    placeholder="username or org"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.repoName')}</Label>
+                  <Input
+                    value={repoName}
+                    onChange={(e) => setRepoName(e.target.value)}
+                    placeholder="repository-name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.repoPath')}</Label>
+                  <Input
+                    value={repoPath}
+                    onChange={(e) => setRepoPath(e.target.value)}
+                    placeholder="zen-sync.json"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('settings.repoPathHint')}</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.repoBranch')}</Label>
+                  <Input
+                    value={repoBranch}
+                    onChange={(e) => setRepoBranch(e.target.value)}
+                    placeholder="main"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.githubToken')}</Label>
+                  <Input
+                    type="password"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    placeholder="GitHub Personal Access Token"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.githubTokenHintRepo')}{' '}
+                    <a
+                      href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {t('settings.githubTokenLink')}
+                    </a>
+                  </p>
+                </div>
+              </>
+            )}
+
+            {backend === 's3' && (
+              <>
+                <div className="grid gap-2">
+                  <Label>{t('settings.s3Endpoint')}</Label>
+                  <Input
+                    value={s3Endpoint}
+                    onChange={(e) => setS3Endpoint(e.target.value)}
+                    placeholder="https://s3.amazonaws.com"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('settings.s3EndpointHint')}</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.s3Bucket')}</Label>
+                  <Input
+                    value={s3Bucket}
+                    onChange={(e) => setS3Bucket(e.target.value)}
+                    placeholder="my-bucket"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.s3Region')}</Label>
+                  <Input
+                    value={s3Region}
+                    onChange={(e) => setS3Region(e.target.value)}
+                    placeholder="us-east-1"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.s3AccessKey')}</Label>
+                  <Input
+                    value={s3AccessKey}
+                    onChange={(e) => setS3AccessKey(e.target.value)}
+                    placeholder="AKIAIOSFODNN7EXAMPLE"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.s3SecretKey')}</Label>
+                  <Input
+                    type="password"
+                    value={s3SecretKey}
+                    onChange={(e) => setS3SecretKey(e.target.value)}
+                    placeholder="Secret Access Key"
                   />
                 </div>
               </>
             )}
 
-            <div className="flex items-center justify-between">
+            {backend === 'webdav' && (
+              <>
+                <div className="grid gap-2">
+                  <Label>{t('settings.webdavEndpoint')}</Label>
+                  <Input
+                    value={webdavEndpoint}
+                    onChange={(e) => setWebdavEndpoint(e.target.value)}
+                    placeholder="https://dav.example.com/path"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.webdavUsername')}</Label>
+                  <Input
+                    value={webdavUsername}
+                    onChange={(e) => setWebdavUsername(e.target.value)}
+                    placeholder="username"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{t('settings.webdavPassword')}</Label>
+                  <Input
+                    type="password"
+                    value={webdavPassword}
+                    onChange={(e) => setWebdavPassword(e.target.value)}
+                    placeholder="password"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="grid gap-2">
               <Label htmlFor="auto-pull">{t('settings.autoPull')}</Label>
               <Switch
                 id="auto-pull"

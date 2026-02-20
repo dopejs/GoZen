@@ -398,6 +398,38 @@ func (t *UsageTracker) GetRecentUsage(limit int) ([]UsageEntry, error) {
 	return entries, nil
 }
 
+// GetRecentPaths returns distinct project paths from recent usage, ordered by last use.
+// Excludes empty paths.
+func (t *UsageTracker) GetRecentPaths(limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := t.db.db.Query(`
+		SELECT project_path, MAX(timestamp) as last_used
+		FROM usage
+		WHERE project_path != ''
+		GROUP BY project_path
+		ORDER BY last_used DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var path, lastUsed string
+		if err := rows.Scan(&path, &lastUsed); err != nil {
+			continue
+		}
+		paths = append(paths, path)
+	}
+
+	return paths, nil
+}
+
 // --- Global usage tracker ---
 
 var globalUsageTracker *UsageTracker

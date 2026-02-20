@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/collapsible'
 import { useBot, useUpdateBot } from '@/hooks/use-bot'
 import { useProfiles } from '@/hooks/use-profiles'
+import { useSettings } from '@/hooks/use-settings'
 import type { BotConfig } from '@/types/api'
 
 export function BotPage() {
@@ -100,13 +101,17 @@ interface TabProps {
 function GeneralTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()
   const { data: profiles } = useProfiles()
+  const { data: settings } = useSettings()
   const updateBot = useUpdateBot()
+
+  // Get effective profile value: bot config > default from settings
+  const effectiveProfile = config.profile || settings?.default_profile || ''
 
   const handleSave = async () => {
     try {
       await updateBot.mutateAsync({
         enabled: config.enabled,
-        profile: config.profile,
+        profile: effectiveProfile,
         socket_path: config.socket_path,
       })
       toast.success(t('common.success'))
@@ -125,7 +130,7 @@ function GeneralTab({ config, setConfig }: TabProps) {
         <CardDescription>{t('bot.generalDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="grid gap-2">
           <Label htmlFor="bot-enabled">{t('bot.enabled')}</Label>
           <Switch
             id="bot-enabled"
@@ -135,9 +140,9 @@ function GeneralTab({ config, setConfig }: TabProps) {
         </div>
 
         <div className="grid gap-2">
-          <Label htmlFor="bot-profile">{t('bot.nluProfile')}</Label>
+          <Label htmlFor="bot-profile">{t('bot.profile')}</Label>
           <Select
-            value={config.profile || ''}
+            value={effectiveProfile}
             onValueChange={(value) => setConfig((c) => ({ ...c, profile: value }))}
           >
             <SelectTrigger id="bot-profile">
@@ -151,6 +156,7 @@ function GeneralTab({ config, setConfig }: TabProps) {
               ))}
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground">{t('bot.profileHint')}</p>
         </div>
 
         <div className="grid gap-2">
@@ -161,6 +167,7 @@ function GeneralTab({ config, setConfig }: TabProps) {
             onChange={(e) => setConfig((c) => ({ ...c, socket_path: e.target.value }))}
             placeholder="/tmp/zen-gateway.sock"
           />
+          <p className="text-xs text-muted-foreground">{t('bot.socketPathHint')}</p>
         </div>
 
         <Button onClick={handleSave} disabled={updateBot.isPending}>
@@ -476,7 +483,7 @@ function InteractionTab({ config, setConfig }: TabProps) {
         <CardDescription>{t('bot.interactionDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="grid gap-2">
           <Label htmlFor="require-mention">{t('bot.requireMention')}</Label>
           <Switch
             id="require-mention"
@@ -536,6 +543,7 @@ function InteractionTab({ config, setConfig }: TabProps) {
 
 function AliasesTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()
+  const { data: botData } = useBot()
   const updateBot = useUpdateBot()
   const [newAlias, setNewAlias] = useState('')
   const [newPath, setNewPath] = useState('')
@@ -567,7 +575,12 @@ function AliasesTab({ config, setConfig }: TabProps) {
     })
   }
 
+  const selectRecentPath = (path: string) => {
+    setNewPath(path)
+  }
+
   const aliases = Object.entries(config.aliases || {})
+  const recentPaths = botData?.recent_paths || []
 
   return (
     <Card>
@@ -576,6 +589,24 @@ function AliasesTab({ config, setConfig }: TabProps) {
         <CardDescription>{t('bot.aliasesDesc')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {recentPaths.length > 0 && (
+          <div className="space-y-2">
+            <Label>{t('bot.recentPaths')}</Label>
+            <div className="flex flex-wrap gap-2">
+              {recentPaths.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => selectRecentPath(path)}
+                  className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80 hover:text-foreground transition-colors"
+                >
+                  {path.length > 40 ? `...${path.slice(-37)}` : path}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="rounded-lg border">
           <div className="grid grid-cols-[1fr_2fr_auto] gap-2 border-b bg-muted/50 p-3 text-sm font-medium">
             <div>{t('bot.alias')}</div>

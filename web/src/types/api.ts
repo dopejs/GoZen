@@ -128,8 +128,24 @@ export interface SyncConfig {
   configured: boolean
   enabled?: boolean
   backend?: string
+  // Gist
   gist_id?: string
-  gist_token?: string
+  // Repo
+  repo_owner?: string
+  repo_name?: string
+  repo_path?: string
+  repo_branch?: string
+  // GitHub (Gist & Repo)
+  token?: string
+  // S3
+  endpoint?: string
+  bucket?: string
+  region?: string
+  access_key?: string
+  secret_key?: string
+  // WebDAV
+  username?: string
+  // Common
   auto_pull?: boolean
   pull_interval?: number
 }
@@ -199,6 +215,7 @@ export interface BotConfig {
   interaction?: BotInteractionConfig
   aliases?: Record<string, string>
   notify?: BotNotifyConfig
+  recent_paths?: string[]
 }
 
 export interface BotPlatformsConfig {

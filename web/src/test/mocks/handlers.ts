@@ -28,7 +28,7 @@ export const handlers = [
   }),
 
   http.delete('/api/v1/providers/:name', () => {
-    return HttpResponse.json({ status: 'ok' })
+    return HttpResponse.json({ success: true })
   }),
 
   // Profiles
@@ -53,7 +53,7 @@ export const handlers = [
   }),
 
   http.delete('/api/v1/profiles/:name', () => {
-    return HttpResponse.json({ status: 'ok' })
+    return HttpResponse.json({ success: true })
   }),
 
   // Settings
@@ -89,7 +89,7 @@ export const handlers = [
   }),
 
   http.delete('/api/v1/bindings/:path', () => {
-    return HttpResponse.json({ status: 'ok' })
+    return HttpResponse.json({ success: true })
   }),
 
   // Bot
@@ -130,7 +130,7 @@ export const handlers = [
 
   // Logs
   http.get('/api/v1/logs', () => {
-    return HttpResponse.json({ logs: [], total: 0 })
+    return HttpResponse.json({ entries: [], total: 0, providers: [] })
   }),
 
   // Health
@@ -140,16 +140,16 @@ export const handlers = [
 
   // Sync
   http.get('/api/v1/sync/config', () => {
-    return HttpResponse.json({ configured: false })
+    return HttpResponse.json({ configured: false, enabled: false })
   }),
 
   http.get('/api/v1/sync/status', () => {
-    return HttpResponse.json({ configured: false })
+    return HttpResponse.json({ enabled: false })
   }),
 
   // Auth
   http.get('/api/v1/auth/check', () => {
-    return HttpResponse.json({ authenticated: true, password_required: false, is_local: true })
+    return HttpResponse.json({ authenticated: true, password_set: false })
   }),
 
   http.post('/api/v1/settings/password', () => {

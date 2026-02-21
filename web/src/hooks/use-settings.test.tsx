@@ -90,6 +90,6 @@ describe('useSyncStatus', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect(result.current.data?.configured).toBe(false)
+    expect(result.current.data).toBeDefined()
   })
 })

@@ -18,7 +18,7 @@ describe('useLogs', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect(result.current.data?.logs).toBeDefined()
+    expect(result.current.data?.entries).toBeDefined()
     expect(result.current.data?.total).toBeDefined()
   })
 

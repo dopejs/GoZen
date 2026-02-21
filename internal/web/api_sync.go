@@ -65,11 +65,13 @@ func (s *Server) handleSyncConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Reinitialize sync manager if server has one
+		s.syncMu.Lock()
 		if s.syncMgr != nil {
 			if mgr, err := gosync.NewSyncManager(&cfg); err == nil {
 				s.syncMgr = mgr
 			}
 		}
+		s.syncMu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
 
 	default:
@@ -83,7 +85,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	mgr, err := s.getSyncManager()
+	mgr, err := s.getOrCreateSyncManager()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -103,7 +105,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	mgr, err := s.getSyncManager()
+	mgr, err := s.getOrCreateSyncManager()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -123,7 +125,7 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	mgr, err := s.getSyncManager()
+	mgr, err := s.getOrCreateSyncManager()
 	if err != nil {
 		writeJSON(w, http.StatusOK, &gosync.SyncStatus{Configured: false})
 		return
@@ -171,7 +173,7 @@ func (s *Server) handleSyncTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr, err := s.getSyncManager()
+	mgr, err := s.getOrCreateSyncManager()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -214,8 +216,11 @@ func (s *Server) handleSyncCreateGist(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"gist_id": gistID})
 }
 
-// getSyncManager returns the server's sync manager, creating one lazily if needed.
-func (s *Server) getSyncManager() (*gosync.SyncManager, error) {
+// getOrCreateSyncManager returns the server's sync manager, creating one lazily if needed.
+func (s *Server) getOrCreateSyncManager() (*gosync.SyncManager, error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	if s.syncMgr != nil {
 		return s.syncMgr, nil
 	}

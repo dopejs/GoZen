@@ -174,3 +174,114 @@ func GetSyncConfig() *SyncConfig {
 func SetSyncConfig(cfg *SyncConfig) error {
 	return DefaultStore().SetSyncConfig(cfg)
 }
+
+// --- Pricing convenience functions ---
+
+// GetPricing returns the model pricing map (custom overrides merged with defaults).
+func GetPricing() map[string]*ModelPricing {
+	return DefaultStore().GetPricing()
+}
+
+// SetPricing sets custom model pricing overrides.
+func SetPricing(pricing map[string]*ModelPricing) error {
+	return DefaultStore().SetPricing(pricing)
+}
+
+// --- Budget convenience functions ---
+
+// GetBudgets returns the budget configuration.
+func GetBudgets() *BudgetConfig {
+	return DefaultStore().GetBudgets()
+}
+
+// SetBudgets sets the budget configuration.
+func SetBudgets(budgets *BudgetConfig) error {
+	return DefaultStore().SetBudgets(budgets)
+}
+
+// --- Webhook convenience functions ---
+
+// GetWebhooks returns all webhook configurations.
+func GetWebhooks() []*WebhookConfig {
+	return DefaultStore().GetWebhooks()
+}
+
+// SetWebhooks sets all webhook configurations.
+func SetWebhooks(webhooks []*WebhookConfig) error {
+	return DefaultStore().SetWebhooks(webhooks)
+}
+
+// GetWebhook returns a webhook by name.
+func GetWebhook(name string) *WebhookConfig {
+	return DefaultStore().GetWebhook(name)
+}
+
+// AddWebhook adds or updates a webhook configuration.
+func AddWebhook(webhook *WebhookConfig) error {
+	return DefaultStore().AddWebhook(webhook)
+}
+
+// DeleteWebhook removes a webhook by name.
+func DeleteWebhook(name string) error {
+	return DefaultStore().DeleteWebhook(name)
+}
+
+// --- Health Check convenience functions ---
+
+// GetHealthCheck returns the health check configuration.
+func GetHealthCheck() *HealthCheckConfig {
+	return DefaultStore().GetHealthCheck()
+}
+
+// SetHealthCheck sets the health check configuration.
+func SetHealthCheck(hc *HealthCheckConfig) error {
+	return DefaultStore().SetHealthCheck(hc)
+}
+
+// --- Compression convenience functions (BETA) ---
+
+// GetCompression returns the compression configuration.
+func GetCompression() *CompressionConfig {
+	return DefaultStore().GetCompression()
+}
+
+// SetCompression sets the compression configuration.
+func SetCompression(cc *CompressionConfig) error {
+	return DefaultStore().SetCompression(cc)
+}
+
+// --- Middleware convenience functions (BETA) ---
+
+// GetMiddleware returns the middleware configuration.
+func GetMiddleware() *MiddlewareConfig {
+	return DefaultStore().GetMiddleware()
+}
+
+// SetMiddleware sets the middleware configuration.
+func SetMiddleware(mc *MiddlewareConfig) error {
+	return DefaultStore().SetMiddleware(mc)
+}
+
+// --- Agent convenience functions (BETA) ---
+
+// GetAgent returns the agent configuration.
+func GetAgent() *AgentConfig {
+	return DefaultStore().GetAgent()
+}
+
+// SetAgent sets the agent configuration.
+func SetAgent(ac *AgentConfig) error {
+	return DefaultStore().SetAgent(ac)
+}
+
+// --- Bot convenience functions ---
+
+// GetBot returns the bot configuration.
+func GetBot() *BotConfig {
+	return DefaultStore().GetBot()
+}
+
+// SetBot sets the bot configuration.
+func SetBot(bc *BotConfig) error {
+	return DefaultStore().SetBot(bc)
+}

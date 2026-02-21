@@ -452,3 +452,154 @@ func TestGeneratePassword(t *testing.T) {
 		t.Error("stored hash should match generated password")
 	}
 }
+
+func TestSessionCleanupLoopAndStop(t *testing.T) {
+	am := NewAuthManager()
+
+	// Create a session
+	token := am.createSession()
+	if !am.validateSession(token) {
+		t.Fatal("session should be valid")
+	}
+
+	// Start cleanup loop in background (it won't actually clean anything in this short test)
+	go am.sessionCleanupLoop()
+
+	// Stop the cleanup loop
+	am.StopCleanup()
+
+	// Session should still be valid (we didn't wait for cleanup)
+	if !am.validateSession(token) {
+		t.Error("session should still be valid after stopping cleanup")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		xff        string
+		realIP     string
+		want       string
+	}{
+		{"remote addr only", "192.168.1.1:12345", "", "", "192.168.1.1"},
+		{"x-forwarded-for single", "127.0.0.1:12345", "10.0.0.1", "", "10.0.0.1"},
+		{"x-forwarded-for multiple", "127.0.0.1:12345", "10.0.0.1, 10.0.0.2", "", "10.0.0.1"},
+		{"x-real-ip", "127.0.0.1:12345", "", "10.0.0.5", "10.0.0.5"},
+		{"xff takes precedence", "127.0.0.1:12345", "10.0.0.1", "10.0.0.5", "10.0.0.1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.RemoteAddr = tt.remoteAddr
+			if tt.xff != "" {
+				r.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			if tt.realIP != "" {
+				r.Header.Set("X-Real-IP", tt.realIP)
+			}
+			if got := clientIP(r); got != tt.want {
+				t.Errorf("clientIP() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAuthCheckEndpointWithPassword(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// Set a password
+	hash, _ := bcrypt.GenerateFromPassword([]byte("testpass"), bcrypt.MinCost)
+	config.SetWebPasswordHash(string(hash))
+
+	// Test remote request without session - should not be authenticated
+	req := httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != false {
+		t.Error("should not be authenticated without session")
+	}
+	if resp["password_required"] != true {
+		t.Error("password should be required for remote request")
+	}
+
+	// Test with valid session
+	token := s.auth.createSession()
+	req = httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	w = httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != true {
+		t.Error("should be authenticated with valid session")
+	}
+
+	// Test local request - should be authenticated regardless
+	req = httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != true {
+		t.Error("local request should be authenticated")
+	}
+	if resp["is_local"] != true {
+		t.Error("should report is_local=true for local request")
+	}
+}
+
+func TestPubKeyEndpointNoKeys(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// Remove keys
+	s.keys = nil
+
+	req := httptest.NewRequest("GET", "/api/v1/auth/pubkey", nil)
+	w := httptest.NewRecorder()
+	s.handlePubKey(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("GET pubkey without keys got %d, want 503", w.Code)
+	}
+}
+
+func TestPasswordChangeEmptyNew(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	body := `{"old_password":"","new_password":""}`
+	req := httptest.NewRequest("PUT", "/api/v1/settings/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handlePasswordChange(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty new password got %d, want 400", w.Code)
+	}
+}
+
+func TestLoginNoPasswordConfigured(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// No password set - login should return 403 (no password configured)
+	body := `{"password":"anything"}`
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.handleLogin(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("login without password set got %d, want 403", w.Code)
+	}
+}

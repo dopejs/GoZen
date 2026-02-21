@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
@@ -156,6 +157,57 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract client type for logging (set by ProfileProxy)
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
+
+	// [BETA] Apply context compression if enabled
+	if compressor := GetGlobalCompressor(); compressor != nil && compressor.IsEnabled() {
+		compressedBody, compressed, err := compressor.CompressRequestBody(bodyBytes)
+		if err != nil {
+			s.Logger.Printf("[compression] error: %v", err)
+		} else if compressed {
+			s.Logger.Printf("[compression] compressed request body from %d to %d bytes", len(bodyBytes), len(compressedBody))
+			bodyBytes = compressedBody
+		}
+	}
+
+	// [BETA] Apply middleware pipeline if enabled
+	if pipeline := middleware.GetGlobalPipeline(); pipeline != nil && pipeline.IsEnabled() {
+		reqCtx := &middleware.RequestContext{
+			SessionID:  sessionID,
+			ClientType: clientType,
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			Headers:    r.Header.Clone(),
+			Body:       bodyBytes,
+			Metadata:   make(map[string]interface{}),
+		}
+
+		// Parse model and messages for middleware
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			if model, ok := bodyMap["model"].(string); ok {
+				reqCtx.Model = model
+			}
+			if msgs, ok := bodyMap["messages"].([]interface{}); ok {
+				for _, m := range msgs {
+					if msgMap, ok := m.(map[string]interface{}); ok {
+						role, _ := msgMap["role"].(string)
+						reqCtx.Messages = append(reqCtx.Messages, middleware.Message{
+							Role:    role,
+							Content: msgMap["content"],
+						})
+					}
+				}
+			}
+		}
+
+		processedCtx, err := pipeline.ProcessRequest(reqCtx)
+		if err != nil {
+			s.Logger.Printf("[middleware] request processing error: %v", err)
+			http.Error(w, fmt.Sprintf("middleware error: %v", err), http.StatusBadRequest)
+			return
+		}
+		bodyBytes = processedCtx.Body
+	}
 
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers
@@ -315,6 +367,9 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 
 		// Update session cache with token usage from response
 		s.updateSessionCache(sessionID, resp)
+
+		// Record usage and metrics
+		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp)
 
 		s.copyResponse(w, resp, p)
 		return true
@@ -622,6 +677,69 @@ func (s *ProxyServer) updateSessionCache(sessionID string, resp *http.Response) 
 		s.Logger.Printf("[session] updated cache for %s: input=%d, output=%d",
 			sessionID, int(inputTokens), int(outputTokens))
 	}
+}
+
+// recordUsageAndMetrics records usage data and provider metrics after a successful request.
+func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType string, requestBody []byte, resp *http.Response) {
+	// Extract model from request
+	var reqData map[string]interface{}
+	model := ""
+	if err := json.Unmarshal(requestBody, &reqData); err == nil {
+		model, _ = reqData["model"].(string)
+	}
+
+	// We need to peek at the response body for usage info
+	// Note: For non-streaming responses, the body was already read by updateSessionCache
+	// and restored. For streaming, we skip usage tracking.
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		// Streaming response - record metric without usage details
+		if db := GetGlobalLogDB(); db != nil {
+			db.RecordMetric(providerName, 0, resp.StatusCode, false, false)
+		}
+		return
+	}
+
+	// Get usage from session cache (was just updated by updateSessionCache)
+	usage := GetSessionUsage(sessionID)
+	if usage == nil {
+		return
+	}
+
+	// Calculate cost
+	tracker := GetGlobalUsageTracker()
+	if tracker == nil {
+		return
+	}
+
+	cost := tracker.CalculateCost(model, usage.InputTokens, usage.OutputTokens)
+
+	// Record usage entry
+	entry := UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    sessionID,
+		Provider:     providerName,
+		Model:        model,
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		CostUSD:      cost,
+		ClientType:   clientType,
+	}
+	tracker.Record(entry)
+
+	// Record provider metric
+	if db := GetGlobalLogDB(); db != nil {
+		db.RecordMetric(providerName, 0, resp.StatusCode, false, false)
+	}
+
+	// Update session with turn info
+	AddTurnToSession(sessionID, TurnUsage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		Cost:         cost,
+		Model:        model,
+		Provider:     providerName,
+		Timestamp:    time.Now(),
+	})
 }
 
 func singleJoiningSlash(a, b string) string {

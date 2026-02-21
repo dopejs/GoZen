@@ -69,7 +69,8 @@ func (c *Checker) check() string {
 	// Try to read cached result
 	var cached cache
 	if data, err := os.ReadFile(cachePath); err == nil {
-		json.Unmarshal(data, &cached)
+		// Ignore unmarshal errors - treat as empty cache
+		_ = json.Unmarshal(data, &cached)
 	}
 
 	latest := cached.LatestVersion
@@ -153,8 +154,9 @@ func writeCache(path string, c *cache) {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(path), 0755)
-	os.WriteFile(path, data, 0600)
+	// Ignore errors - cache is best-effort
+	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	_ = os.WriteFile(path, data, 0600)
 }
 
 // compareVersions returns -1, 0, or 1.

@@ -56,6 +56,24 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **No example files**: Do NOT create example config files (*.json, *.yaml, etc.) in the repository root. Examples belong in README.md or `docs/`.
 - **Minimal test files**: Only add tests for new public APIs or complex logic. Do not create excessive test files for simple functions. Prefer table-driven tests in existing *_test.go files.
 - **No unnecessary files**: Before committing, review `git status` and remove any generated, temporary, or example files that should not be in the repository.
+- **TDD for new features**: Use Test-Driven Development (TDD) for new feature development to ensure code quality. Write tests first, then implement the feature to make tests pass.
+
+## Release Checklist
+
+Before tagging a release, complete the following checklist:
+
+1. **Bug check**: Review all code for unresolved bugs. Run `go test ./...` and ensure all tests pass.
+2. **Version number**: Verify `Version` in `cmd/root.go` matches the release tag.
+3. **Website documentation**:
+   - Ensure website contains documentation for the release version
+   - Verify documentation is accurate and complete
+   - Confirm all new features are documented
+   - Remove or update documentation for changed/removed features
+4. **README files**: Update all README files to reflect the latest version:
+   - `README.md` (English)
+   - `docs/README.zh-CN.md` (简体中文)
+   - `docs/README.zh-TW.md` (繁體中文)
+   - `docs/README.es.md` (Español)
 
 ## Config Migration Rules
 
@@ -108,3 +126,4 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - v1.5.2: Allow reinstalling same version in upgrade command
 - v1.5.3: Per-binary PID files to avoid multi-binary conflicts
 - v2.0.0: Rename to GoZen (opencc → zen), config migration from ~/.opencc/ to ~/.zen/, non-blocking version update check
+- v3.0.0: Usage tracking & budget control, provider health monitoring, smart load balancing, webhooks, context compression, middleware pipeline, agent infrastructure

@@ -12,6 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Web UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Test Web UI
+        working-directory: web
+        run: npm run test:coverage
+
       - name: Read Go version
         id: goversion
         run: echo "version=$(grep '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -28,6 +42,9 @@ jobs:
 
       - name: Test
         run: go test -race -count=1 ./...
+
+      - name: Integration Tests
+        run: go test -tags=integration -race -count=1 -timeout 180s ./test/integration/...
 
       - name: Check coverage thresholds
         run: |
@@ -53,7 +70,8 @@ jobs:
           check_pkg "internal/proxy" 80 || failed=1
           check_pkg "internal/proxy/transform" 80 || failed=1
           check_pkg "internal/web" 80 || failed=1
-          check_pkg "internal/daemon" 40 || failed=1
+          check_pkg "internal/bot" 80 || failed=1
+          check_pkg "internal/daemon" 50 || failed=1
           check_pkg "internal/update" 50 || failed=1
           check_pkg "internal/sync" 50 || failed=1
 

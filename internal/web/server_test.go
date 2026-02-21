@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -56,6 +57,20 @@ func doRequest(s *Server, method, path string, body interface{}) *httptest.Respo
 	if body != nil {
 		data, _ := json.Marshal(body)
 		reqBody = bytes.NewReader(data)
+	}
+	req := httptest.NewRequest(method, path, reqBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	return w
+}
+
+func doRequestRaw(s *Server, method, path string, body []byte) *httptest.ResponseRecorder {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, reqBody)
 	if body != nil {
@@ -1467,6 +1482,57 @@ func TestSyncCreateGistWithToken(t *testing.T) {
 	// Will get 502 because GitHub rejects the token
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestServerHandleFunc(t *testing.T) {
+	s := setupTestServer(t)
+
+	called := false
+	s.HandleFunc("/test-custom", func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/test-custom", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	if !called {
+		t.Error("custom handler should be called")
+	}
+}
+
+func TestServerSetSyncManager(t *testing.T) {
+	s := setupTestServer(t)
+
+	// SetSyncManager should not panic with nil
+	s.SetSyncManager(nil)
+
+	s.syncMu.RLock()
+	if s.syncMgr != nil {
+		t.Error("syncMgr should be nil")
+	}
+	s.syncMu.RUnlock()
+}
+
+func TestSPAFallback(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Request a non-existent path that looks like a SPA route
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	// Should return 200 with index.html content (SPA fallback)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
 	}
 }
 

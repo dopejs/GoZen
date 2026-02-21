@@ -26,6 +26,18 @@ Conmutador de entornos multi-CLI para Claude Code, Codex y OpenCode con conmutac
 - **Autoactualización** — Actualización con un solo comando vía `zen upgrade` con coincidencia de versiones semver (compatible con versiones preliminares)
 - **Autocompletado de Shell** — Compatible con zsh / bash / fish
 
+### Nuevas funciones en v3.0
+
+- **Seguimiento de uso** — Rastrea el uso de tokens y costos por proveedor, modelo y proyecto
+- **Control de presupuesto** — Establece límites de gasto diarios/semanales/mensuales con acciones de advertencia/degradación/bloqueo
+- **Monitoreo de salud de proveedores** — Verificaciones de salud en tiempo real con seguimiento de latencia y tasa de errores
+- **Balanceo de carga inteligente** — Múltiples estrategias: conmutación por fallos, round-robin, menor latencia, menor costo
+- **Webhooks** — Notificaciones para alertas de presupuesto, cambios de estado de proveedores y resúmenes diarios (Slack/Discord/Genérico)
+- **Compresión de contexto** — Compresión automática del contexto cuando el conteo de tokens excede el umbral
+- **Pipeline de middleware** — Middleware enchufable para transformación de solicitudes/respuestas
+- **Infraestructura de agentes** — Soporte integrado para flujos de trabajo basados en agentes con gestión de sesiones
+- **Bot Gateway** — Monitorea y controla sesiones de Claude Code remotamente vía Telegram, Discord, Slack, Lark o Facebook Messenger
+
 ## Instalación
 
 ```sh
@@ -89,7 +101,7 @@ zen --cli codex
 
 ## Arquitectura del daemon
 
-En v2.1, GoZen utiliza un proceso daemon unificado (`zend`) que aloja tanto el proxy HTTP como la interfaz web:
+En v3.0, GoZen utiliza un proceso daemon unificado (`zend`) que aloja tanto el proxy HTTP como la interfaz web:
 
 - **Servidor proxy** ejecutándose en el puerto `19841` (configurable vía `proxy_port`)
 - **Interfaz web** ejecutándose en el puerto `19840` (configurable vía `web_port`)
@@ -330,6 +342,176 @@ Ejemplo de configuración:
 }
 ```
 
+## Seguimiento de uso y control de presupuesto
+
+Rastrea el uso de API y establece límites de gasto:
+
+```json
+{
+  "pricing": {
+    "claude-sonnet-4-20250514": {"input_per_million": 3.0, "output_per_million": 15.0},
+    "claude-opus-4-20250514": {"input_per_million": 15.0, "output_per_million": 75.0}
+  },
+  "budgets": {
+    "daily": {"amount": 10.0, "action": "warn"},
+    "monthly": {"amount": 100.0, "action": "block"},
+    "per_project": true
+  }
+}
+```
+
+Acciones de presupuesto: `warn` (registrar advertencia), `downgrade` (cambiar a modelo más barato), `block` (rechazar solicitudes).
+
+## Monitoreo de salud de proveedores
+
+Verificaciones de salud automáticas con seguimiento de métricas:
+
+```json
+{
+  "health_check": {
+    "enabled": true,
+    "interval_secs": 60,
+    "timeout_secs": 10
+  }
+}
+```
+
+Ver salud de proveedores vía Web UI o API: `GET /api/v1/health/providers`
+
+## Balanceo de carga inteligente
+
+Configura la estrategia de balanceo de carga por perfil:
+
+```json
+{
+  "profiles": {
+    "balanced": {
+      "providers": ["provider-a", "provider-b", "provider-c"],
+      "strategy": "least-latency"
+    }
+  }
+}
+```
+
+Estrategias:
+- `failover` — Probar proveedores en orden (predeterminado)
+- `round-robin` — Distribuir solicitudes uniformemente
+- `least-latency` — Enrutar al proveedor más rápido
+- `least-cost` — Enrutar al proveedor más barato para el modelo
+
+## Webhooks
+
+Recibe notificaciones sobre eventos importantes:
+
+```json
+{
+  "webhooks": [
+    {
+      "name": "slack-alerts",
+      "url": "https://hooks.slack.com/services/xxx",
+      "events": ["budget_warning", "budget_exceeded", "provider_down", "provider_up"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+Eventos: `budget_warning`, `budget_exceeded`, `provider_down`, `provider_up`, `failover`, `daily_summary`
+
+## Compresión de contexto
+
+Comprime automáticamente el contexto cuando excede un umbral:
+
+```json
+{
+  "compression": {
+    "enabled": true,
+    "threshold_tokens": 100000,
+    "target_ratio": 0.5
+  }
+}
+```
+
+## Pipeline de middleware
+
+Transforma solicitudes y respuestas con middleware enchufable:
+
+```json
+{
+  "middleware": {
+    "enabled": true,
+    "middlewares": [
+      {"name": "context-injection", "enabled": true, "config": {"inject_cursorrules": true}},
+      {"name": "rate-limiter", "enabled": true, "config": {"requests_per_minute": 60}}
+    ]
+  }
+}
+```
+
+Middleware integrado: `context-injection`, `request-logger`, `rate-limiter`, `compression`
+
+## Bot Gateway
+
+Monitorea y controla tus sesiones de Claude Code remotamente a través de plataformas de chat. El bot se conecta a los procesos `zen` en ejecución vía IPC y te permite:
+
+- Ver procesos conectados y su estado
+- Enviar tareas a procesos específicos
+- Recibir notificaciones de aprobaciones, errores y finalizaciones
+- Controlar tareas (pausar/reanudar/cancelar)
+
+### Plataformas soportadas
+
+| Plataforma | Configuración requerida |
+|------------|------------------------|
+| Telegram | Token de BotFather |
+| Discord | Token de aplicación Bot |
+| Slack | Tokens de Bot + App (Socket Mode) |
+| Lark/Feishu | App ID + Secret |
+| Facebook Messenger | Token de página + Token de verificación |
+
+### Comandos del Bot
+
+| Comando | Descripción |
+|---------|-------------|
+| `list` | Listar todos los procesos conectados |
+| `status [nombre]` | Mostrar estado del proceso |
+| `bind <nombre>` | Vincular a un proceso para comandos subsiguientes |
+| `pause/resume/cancel [nombre]` | Controlar tareas |
+| `<nombre> <tarea>` | Enviar una tarea a un proceso |
+| `help` | Mostrar comandos disponibles |
+
+El bot también entiende consultas en lenguaje natural como "muéstrame el estado de gozen".
+
+### Configuración
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["tu_usuario"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/ruta/al/proyecto-api",
+      "web": "/ruta/al/proyecto-web"
+    }
+  }
+}
+```
+
+Consulta la [documentación de Bot Gateway](https://gozen.dev/docs/bot) para guías detalladas de configuración de plataformas.
+
 ## Archivos de configuración
 
 | Archivo | Descripción |
@@ -343,7 +525,7 @@ Ejemplo de configuración:
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "default_profile": "default",
   "default_client": "claude",
   "proxy_port": 19841,
@@ -379,11 +561,11 @@ Ejemplo de configuración:
 zen upgrade
 
 # Versión específica
-zen upgrade 2.1
-zen upgrade 2.1.0
+zen upgrade 3.0
+zen upgrade 3.0.0
 
 # Versión preliminar
-zen upgrade 2.1.0-alpha.1
+zen upgrade 3.0.0-alpha.1
 ```
 
 ## Migración desde versiones anteriores
@@ -405,8 +587,8 @@ go test ./...
 Publicación: Empuja un tag y GitHub Actions compilará automáticamente.
 
 ```sh
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ## License

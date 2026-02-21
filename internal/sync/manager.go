@@ -227,14 +227,6 @@ func (m *SyncManager) buildLocalPayload() (*SyncPayload, error) {
 	}
 	payload.DefaultProfile = &SyncScalar{ModifiedAt: dpTime, Value: dp}
 
-	dc := store.GetDefaultClient()
-	dcTime := m.meta.DefaultClient
-	if dcTime.IsZero() {
-		dcTime = time.Now().UTC()
-		m.meta.DefaultClient = dcTime
-	}
-	payload.DefaultClient = &SyncScalar{ModifiedAt: dcTime, Value: dc}
-
 	// Tombstones
 	for k, ts := range m.meta.Tombstones {
 		payload.Tombstones[k] = ts
@@ -288,9 +280,6 @@ func (m *SyncManager) applyToLocal(payload *SyncPayload) error {
 	if payload.DefaultProfile != nil {
 		store.SetDefaultProfile(payload.DefaultProfile.Value)
 	}
-	if payload.DefaultClient != nil {
-		store.SetDefaultClient(payload.DefaultClient.Value)
-	}
 
 	return nil
 }
@@ -316,9 +305,6 @@ func (m *SyncManager) updateMetaTimestamps(payload *SyncPayload) {
 	}
 	if payload.DefaultProfile != nil {
 		m.meta.DefaultProfile = payload.DefaultProfile.ModifiedAt
-	}
-	if payload.DefaultClient != nil {
-		m.meta.DefaultClient = payload.DefaultClient.ModifiedAt
 	}
 	m.meta.Tombstones = payload.Tombstones
 }
@@ -446,8 +432,6 @@ func (m *SyncManager) MarkModified(prefix, name string) {
 		m.meta.Profiles[name] = now
 	case "default_profile":
 		m.meta.DefaultProfile = now
-	case "default_client":
-		m.meta.DefaultClient = now
 	}
 	m.meta.Save()
 }

@@ -26,6 +26,18 @@
 - **自更新** — `zen upgrade` 一键升级，支持 semver 版本匹配（支持预发布版本）
 - **Shell 补全** — 支持 zsh / bash / fish
 
+### v3.0 新功能
+
+- **使用量追踪** — 按 provider、模型、项目追踪 token 使用量和成本
+- **预算控制** — 设置每日/每周/每月支出限制，支持警告/降级/阻止动作
+- **Provider 健康监控** — 实时健康检查，追踪延迟和错误率
+- **智能负载均衡** — 多种策略：故障转移、轮询、最低延迟、最低成本
+- **Webhook 通知** — 预算警报、provider 状态变化、每日摘要通知（Slack/Discord/通用）
+- **上下文压缩** — token 数量超过阈值时自动压缩上下文
+- **中间件管道** — 可插拔中间件，用于请求/响应转换
+- **Agent 基础设施** — 内置 agent 工作流支持，带会话管理
+- **Bot 网关** — 通过 Telegram、Discord、Slack、飞书或 Facebook Messenger 远程监控和控制 Claude Code 会话
+
 ## 安装
 
 ```sh
@@ -89,7 +101,7 @@ zen --cli codex
 
 ## 守护进程架构
 
-v2.1 中，GoZen 使用统一的守护进程（`zend`）同时托管 HTTP 代理和 Web 管理界面：
+v3.0 中，GoZen 使用统一的守护进程（`zend`）同时托管 HTTP 代理和 Web 管理界面：
 
 - **代理服务** 运行在端口 `19841`（可通过 `proxy_port` 配置）
 - **Web UI** 运行在端口 `19840`（可通过 `web_port` 配置）
@@ -330,6 +342,176 @@ zen config sync
 }
 ```
 
+## 使用量追踪与预算控制
+
+追踪 API 使用量并设置支出限制：
+
+```json
+{
+  "pricing": {
+    "claude-sonnet-4-20250514": {"input_per_million": 3.0, "output_per_million": 15.0},
+    "claude-opus-4-20250514": {"input_per_million": 15.0, "output_per_million": 75.0}
+  },
+  "budgets": {
+    "daily": {"amount": 10.0, "action": "warn"},
+    "monthly": {"amount": 100.0, "action": "block"},
+    "per_project": true
+  }
+}
+```
+
+预算动作：`warn`（记录警告）、`downgrade`（切换到更便宜的模型）、`block`（拒绝请求）。
+
+## Provider 健康监控
+
+自动健康检查与指标追踪：
+
+```json
+{
+  "health_check": {
+    "enabled": true,
+    "interval_secs": 60,
+    "timeout_secs": 10
+  }
+}
+```
+
+通过 Web UI 或 API 查看 provider 健康状态：`GET /api/v1/health/providers`
+
+## 智能负载均衡
+
+为每个 profile 配置负载均衡策略：
+
+```json
+{
+  "profiles": {
+    "balanced": {
+      "providers": ["provider-a", "provider-b", "provider-c"],
+      "strategy": "least-latency"
+    }
+  }
+}
+```
+
+策略：
+- `failover` — 按顺序尝试 provider（默认）
+- `round-robin` — 均匀分配请求
+- `least-latency` — 路由到最快的 provider
+- `least-cost` — 路由到该模型最便宜的 provider
+
+## Webhook 通知
+
+获取重要事件通知：
+
+```json
+{
+  "webhooks": [
+    {
+      "name": "slack-alerts",
+      "url": "https://hooks.slack.com/services/xxx",
+      "events": ["budget_warning", "budget_exceeded", "provider_down", "provider_up"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+事件：`budget_warning`、`budget_exceeded`、`provider_down`、`provider_up`、`failover`、`daily_summary`
+
+## 上下文压缩
+
+当上下文超过阈值时自动压缩：
+
+```json
+{
+  "compression": {
+    "enabled": true,
+    "threshold_tokens": 100000,
+    "target_ratio": 0.5
+  }
+}
+```
+
+## 中间件管道
+
+使用可插拔中间件转换请求和响应：
+
+```json
+{
+  "middleware": {
+    "enabled": true,
+    "middlewares": [
+      {"name": "context-injection", "enabled": true, "config": {"inject_cursorrules": true}},
+      {"name": "rate-limiter", "enabled": true, "config": {"requests_per_minute": 60}}
+    ]
+  }
+}
+```
+
+内置中间件：`context-injection`、`request-logger`、`rate-limiter`、`compression`
+
+## Bot 网关
+
+通过聊天平台远程监控和控制你的 Claude Code 会话。Bot 通过 IPC 连接到运行中的 `zen` 进程，让你可以：
+
+- 查看已连接的进程及其状态
+- 向指定进程发送任务
+- 接收审批请求、错误和完成通知
+- 控制任务（暂停/恢复/取消）
+
+### 支持的平台
+
+| 平台 | 所需配置 |
+|------|---------|
+| Telegram | BotFather 令牌 |
+| Discord | Bot 应用令牌 |
+| Slack | Bot + App 令牌（Socket Mode） |
+| 飞书/Lark | App ID + Secret |
+| Facebook Messenger | Page 令牌 + Verify 令牌 |
+
+### Bot 命令
+
+| 命令 | 说明 |
+|------|------|
+| `list` | 列出所有已连接的进程 |
+| `status [名称]` | 显示进程状态 |
+| `bind <名称>` | 绑定到某个进程，后续命令将针对该进程 |
+| `pause/resume/cancel [名称]` | 控制任务 |
+| `<名称> <任务>` | 向进程发送任务 |
+| `help` | 显示可用命令 |
+
+Bot 也支持自然语言查询，如"帮我看看 gozen 的状态"。
+
+### 配置示例
+
+```json
+{
+  "bot": {
+    "enabled": true,
+    "socket_path": "/tmp/zen-bot.sock",
+    "platforms": {
+      "telegram": {
+        "enabled": true,
+        "token": "123456:ABC-DEF...",
+        "allowed_users": ["your_username"]
+      }
+    },
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"],
+      "direct_message_mode": "always",
+      "channel_mode": "mention"
+    },
+    "aliases": {
+      "api": "/path/to/api-project",
+      "web": "/path/to/web-project"
+    }
+  }
+}
+```
+
+详细的平台配置指南请参阅 [Bot 网关文档](https://gozen.dev/docs/bot)。
+
 ## 配置文件
 
 | 文件 | 说明 |
@@ -343,7 +525,7 @@ zen config sync
 
 ```json
 {
-  "version": 7,
+  "version": 8,
   "default_profile": "default",
   "default_client": "claude",
   "proxy_port": 19841,
@@ -379,11 +561,11 @@ zen config sync
 zen upgrade
 
 # 指定版本
-zen upgrade 2.1
-zen upgrade 2.1.0
+zen upgrade 3.0
+zen upgrade 3.0.0
 
 # 预发布版本
-zen upgrade 2.1.0-alpha.1
+zen upgrade 3.0.0-alpha.1
 ```
 
 ## 从旧版迁移
@@ -405,8 +587,8 @@ go test ./...
 发布：打 tag 后 GitHub Actions 自动构建。
 
 ```sh
-git tag v2.1.0
-git push origin v2.1.0
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 ## License

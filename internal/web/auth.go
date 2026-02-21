@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,8 @@ type AuthManager struct {
 
 	failMu   sync.Mutex
 	failures map[string]*loginFailure // IP -> failure info
+
+	stopCh chan struct{} // for graceful shutdown of cleanup loop
 }
 
 type loginFailure struct {
@@ -38,6 +41,7 @@ func NewAuthManager() *AuthManager {
 	return &AuthManager{
 		sessions: make(map[string]time.Time),
 		failures: make(map[string]*loginFailure),
+		stopCh:   make(chan struct{}),
 	}
 }
 
@@ -70,7 +74,10 @@ func HasPassword() bool {
 // createSession generates a new session token and stores it.
 func (am *AuthManager) createSession() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based token if crypto/rand fails
+		b = []byte(time.Now().Format(time.RFC3339Nano) + "-fallback")
+	}
 	token := hex.EncodeToString(b)
 
 	am.mu.Lock()
@@ -135,12 +142,23 @@ func (am *AuthManager) CleanExpired() {
 }
 
 // sessionCleanupLoop runs CleanExpired periodically.
+// Stops when stopCh is closed.
 func (am *AuthManager) sessionCleanupLoop() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
-		am.CleanExpired()
+	for {
+		select {
+		case <-ticker.C:
+			am.CleanExpired()
+		case <-am.stopCh:
+			return
+		}
 	}
+}
+
+// StopCleanup stops the session cleanup loop.
+func (am *AuthManager) StopCleanup() {
+	close(am.stopCh)
 }
 
 // checkBruteForce returns the delay (in seconds) the client should wait before
@@ -205,12 +223,21 @@ func isLocalRequest(r *http.Request) bool {
 }
 
 // clientIP extracts the client IP from the request.
+// For X-Forwarded-For, only the first (leftmost) IP is used as it represents
+// the original client. Note: This can still be spoofed if there's no trusted
+// proxy in front. For production use behind a reverse proxy, consider using
+// the rightmost IP or a trusted proxy configuration.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+		// X-Forwarded-For can contain multiple IPs: "client, proxy1, proxy2"
+		// Use the first IP (original client), but trim whitespace
+		if idx := strings.Index(xff, ","); idx != -1 {
+			xff = xff[:idx]
+		}
+		return strings.TrimSpace(xff)
 	}
 	if rip := r.Header.Get("X-Real-IP"); rip != "" {
-		return rip
+		return strings.TrimSpace(rip)
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host

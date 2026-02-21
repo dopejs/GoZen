@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
@@ -24,6 +27,7 @@ type Server struct {
 	port       int
 	auth       *AuthManager
 	keys       *KeyPair
+	syncMu     sync.RWMutex
 	syncMgr    *gosync.SyncManager
 }
 
@@ -79,10 +83,60 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/sync/test", s.handleSyncTest)
 	s.mux.HandleFunc("/api/v1/sync/create-gist", s.handleSyncCreateGist)
 
-	// Static files
-	staticSub, _ := fs.Sub(staticFS, "static")
-	fileServer := http.FileServer(http.FS(staticSub))
-	s.mux.Handle("/", fileServer)
+	// Usage & Budget routes
+	s.mux.HandleFunc("/api/v1/usage", s.handleUsage)
+	s.mux.HandleFunc("/api/v1/usage/summary", s.handleUsageSummary)
+	s.mux.HandleFunc("/api/v1/usage/hourly", s.handleUsageHourly)
+	s.mux.HandleFunc("/api/v1/budget", s.handleBudget)
+	s.mux.HandleFunc("/api/v1/budget/status", s.handleBudgetStatus)
+
+	// Health monitoring routes
+	s.mux.HandleFunc("/api/v1/health/providers", s.handleHealthProviders)
+	s.mux.HandleFunc("/api/v1/health/providers/", s.handleHealthProvider)
+
+	// Session routes
+	s.mux.HandleFunc("/api/v1/sessions", s.handleSessions)
+	s.mux.HandleFunc("/api/v1/sessions/", s.handleSession)
+
+	// Webhook routes
+	s.mux.HandleFunc("/api/v1/webhooks", s.handleWebhooks)
+	s.mux.HandleFunc("/api/v1/webhooks/test", s.handleWebhookTest)
+	s.mux.HandleFunc("/api/v1/webhooks/", s.handleWebhook)
+
+	// Pricing routes
+	s.mux.HandleFunc("/api/v1/pricing", s.handlePricing)
+	s.mux.HandleFunc("/api/v1/pricing/reset", s.handlePricingReset)
+
+	// Compression routes (BETA)
+	s.mux.HandleFunc("/api/v1/compression", s.handleCompression)
+	s.mux.HandleFunc("/api/v1/compression/stats", s.handleGetCompressionStats)
+
+	// Middleware routes (BETA)
+	s.mux.HandleFunc("/api/v1/middleware", s.handleMiddleware)
+	s.mux.HandleFunc("/api/v1/middleware/", s.handleMiddleware)
+	s.mux.HandleFunc("/api/v1/middleware/reload", s.handleMiddlewareReload)
+
+	// Bot routes
+	s.mux.HandleFunc("/api/v1/bot", s.handleBot)
+
+	// Agent routes (BETA)
+	s.mux.HandleFunc("/api/v1/agent/config", s.handleAgentConfig)
+	s.mux.HandleFunc("/api/v1/agent/stats", s.handleAgentStats)
+	s.mux.HandleFunc("/api/v1/agent/sessions", s.handleAgentSessions)
+	s.mux.HandleFunc("/api/v1/agent/sessions/", s.handleAgentSessions)
+	s.mux.HandleFunc("/api/v1/agent/locks", s.handleAgentLocks)
+	s.mux.HandleFunc("/api/v1/agent/locks/", s.handleAgentLocks)
+	s.mux.HandleFunc("/api/v1/agent/changes", s.handleAgentChanges)
+	s.mux.HandleFunc("/api/v1/agent/tasks", s.handleAgentTasks)
+	s.mux.HandleFunc("/api/v1/agent/tasks/", s.handleAgentTasks)
+	s.mux.HandleFunc("/api/v1/agent/runtime", s.handleAgentRuntime)
+	s.mux.HandleFunc("/api/v1/agent/runtime/", s.handleAgentRuntime)
+	s.mux.HandleFunc("/api/v1/agent/guardrails", s.handleAgentGuardrails)
+	s.mux.HandleFunc("/api/v1/agent/guardrails/", s.handleAgentGuardrails)
+
+	// Static files with SPA fallback
+	staticSub, _ := fs.Sub(staticFS, "dist")
+	s.mux.Handle("/", spaHandler{fs: staticSub})
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -100,7 +154,9 @@ func (s *Server) HandleFunc(pattern string, handler http.HandlerFunc) {
 
 // SetSyncManager sets the sync manager for the web server.
 func (s *Server) SetSyncManager(mgr *gosync.SyncManager) {
+	s.syncMu.Lock()
 	s.syncMgr = mgr
+	s.syncMu.Unlock()
 }
 
 // Start begins listening. Returns an error if the port is already in use.
@@ -123,6 +179,8 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop the session cleanup loop
+	s.auth.StopCleanup()
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -133,6 +191,57 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- SPA handler ---
+
+// spaHandler serves static files with SPA fallback.
+// If the requested file doesn't exist, it serves index.html.
+type spaHandler struct {
+	fs fs.FS
+}
+
+func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Don't apply SPA fallback to API routes - return 404 for unknown API paths
+	if strings.HasPrefix(path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	if path == "/" {
+		path = "index.html"
+	} else {
+		path = path[1:] // remove leading slash
+	}
+
+	// Try to open the file
+	f, err := h.fs.Open(path)
+	if err == nil {
+		f.Close()
+		// File exists, serve it
+		http.FileServer(http.FS(h.fs)).ServeHTTP(w, r)
+		return
+	}
+
+	// File doesn't exist - serve index.html for SPA routing
+	indexFile, err := h.fs.Open("index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer indexFile.Close()
+
+	stat, err := indexFile.Stat()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Serve index.html
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "index.html", stat.ModTime(), indexFile.(io.ReadSeeker))
 }
 
 // --- health & reload ---
@@ -166,13 +275,13 @@ func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 func readJSON(r *http.Request, v interface{}) error {

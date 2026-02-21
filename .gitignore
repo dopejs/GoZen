@@ -5,3 +5,8 @@
 /dist/
 /temp-docs/
 /.dev/
+web/node_modules/
+web/dist/
+internal/web/dist/
+bin/
+web/coverage/

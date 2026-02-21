@@ -166,8 +166,17 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "Warning: failed to stop zend: %v\n", err)
 		} else {
 			time.Sleep(300 * time.Millisecond)
-			// The daemon will be auto-started on next zen invocation
-			fmt.Println("zend stopped. It will restart automatically on next use.")
+			// Start the new daemon
+			if err := startDaemonBackground(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to start zend: %v\n", err)
+				fmt.Println("Run 'zen daemon start' to start manually.")
+			}
+		}
+	} else {
+		// Daemon was not running, start it for convenience
+		fmt.Println("Starting zend daemon...")
+		if err := startDaemonBackground(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to start zend: %v\n", err)
 		}
 	}
 

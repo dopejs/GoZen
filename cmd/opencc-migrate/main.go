@@ -57,7 +57,11 @@ func main() {
 
 	// Step 5: Remove self
 	removeSelf()
-	// Step 6: Final message
+
+	// Step 6: Start zen daemon
+	startZenDaemon()
+
+	// Step 7: Final message
 	fmt.Println()
 	fmt.Println("╭──────────────────────────────────────────────────────────╮")
 	fmt.Println("│  Migration complete!                                     │")
@@ -85,7 +89,7 @@ func step(n int, total int, msg string) {
 // --- Step 1: Migrate config ---
 
 func migrateConfig(oldDir, newDir string) {
-	step(1, 5, "Migrating config ~/.opencc/ → ~/.zen/ ... ")
+	step(1, 6, "Migrating config ~/.opencc/ → ~/.zen/ ... ")
 
 	// Skip if new config already exists
 	if _, err := os.Stat(filepath.Join(newDir, "zen.json")); err == nil {
@@ -145,7 +149,7 @@ func migrateDBFiles(oldDir, newDir string) {
 // --- Step 2: Download and install zen ---
 
 func downloadZen() {
-	step(2, 5, "Downloading zen ... ")
+	step(2, 6, "Downloading zen ... ")
 
 	zenPath := "/usr/local/bin/zen"
 	if runtime.GOOS == "windows" {
@@ -232,7 +236,7 @@ func downloadZen() {
 // --- Step 3: Remove service (platform-specific, before stopping daemon) ---
 
 func removeService() bool {
-	step(3, 5, "Removing legacy system services ... ")
+	step(3, 6, "Removing legacy system services ... ")
 
 	removed := false
 
@@ -285,7 +289,7 @@ func removeService() bool {
 // --- Step 4: Stop daemon ---
 
 func stopDaemon(oldDir, newDir string) {
-	step(4, 5, "Stopping legacy daemons ... ")
+	step(4, 6, "Stopping legacy daemons ... ")
 
 	stopped := false
 	for _, dir := range []string{oldDir, newDir} {
@@ -335,10 +339,31 @@ func reEnableService() {
 	}
 }
 
+func startZenDaemon() {
+	step(6, 6, "Starting zen daemon ... ")
+
+	zenPath := "/usr/local/bin/zen"
+	if runtime.GOOS == "windows" {
+		zenPath = filepath.Join(os.Getenv("LOCALAPPDATA"), "zen", "zen.exe")
+	}
+
+	if _, err := os.Stat(zenPath); err != nil {
+		fmt.Println("skipped (zen not found)")
+		return
+	}
+
+	cmd := exec.Command(zenPath, "daemon", "start")
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("warning: %v\n", err)
+		return
+	}
+	fmt.Println("done")
+}
+
 // --- Step 5: Remove self ---
 
 func removeSelf() {
-	step(5, 5, "Removing opencc binary ... ")
+	step(5, 6, "Removing opencc binary ... ")
 
 	exe, err := os.Executable()
 	if err != nil {

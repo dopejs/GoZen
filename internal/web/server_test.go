@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -1514,5 +1515,24 @@ func TestServerSetSyncManager(t *testing.T) {
 		t.Error("syncMgr should be nil")
 	}
 	s.syncMu.RUnlock()
+}
+
+func TestSPAFallback(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Request a non-existent path that looks like a SPA route
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	// Should return 200 with index.html content (SPA fallback)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
+	}
 }
 

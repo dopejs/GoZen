@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -132,10 +134,9 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/agent/guardrails", s.handleAgentGuardrails)
 	s.mux.HandleFunc("/api/v1/agent/guardrails/", s.handleAgentGuardrails)
 
-	// Static files
+	// Static files with SPA fallback
 	staticSub, _ := fs.Sub(staticFS, "dist")
-	fileServer := http.FileServer(http.FS(staticSub))
-	s.mux.Handle("/", fileServer)
+	s.mux.Handle("/", spaHandler{fs: staticSub})
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
@@ -190,6 +191,57 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// --- SPA handler ---
+
+// spaHandler serves static files with SPA fallback.
+// If the requested file doesn't exist, it serves index.html.
+type spaHandler struct {
+	fs fs.FS
+}
+
+func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Don't apply SPA fallback to API routes - return 404 for unknown API paths
+	if strings.HasPrefix(path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	if path == "/" {
+		path = "index.html"
+	} else {
+		path = path[1:] // remove leading slash
+	}
+
+	// Try to open the file
+	f, err := h.fs.Open(path)
+	if err == nil {
+		f.Close()
+		// File exists, serve it
+		http.FileServer(http.FS(h.fs)).ServeHTTP(w, r)
+		return
+	}
+
+	// File doesn't exist - serve index.html for SPA routing
+	indexFile, err := h.fs.Open("index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer indexFile.Close()
+
+	stat, err := indexFile.Stat()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Serve index.html
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "index.html", stat.ModTime(), indexFile.(io.ReadSeeker))
 }
 
 // --- health & reload ---

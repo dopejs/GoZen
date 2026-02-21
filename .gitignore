@@ -7,4 +7,5 @@
 /.dev/
 web/node_modules/
 web/dist/
+internal/web/dist/
 bin/

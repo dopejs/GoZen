@@ -22,7 +22,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: '../internal/web/dist',
     emptyOutDir: true,
   },
 })

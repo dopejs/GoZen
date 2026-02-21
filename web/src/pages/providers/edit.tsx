@@ -310,6 +310,10 @@ function EnvVarsCard({ title, description, envVars, hints, onUpdate, onRemove, o
 
   const handleHintClick = (hint: string) => {
     if (!existingKeys.has(hint)) {
+      // Check if there's an empty key row, remove it first so the new one goes to the end
+      if (existingKeys.has('')) {
+        onRemove('')
+      }
       onUpdate(hint, '')
     }
   }

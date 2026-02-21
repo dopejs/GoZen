@@ -92,7 +92,11 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 
 	// Check if already running
 	if pid, running := daemon.IsDaemonRunning(); running {
-		fmt.Printf("zend is already running (PID %d).\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is already running on port %d (PID unknown).\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is already running (PID %d).\n", pid)
+		}
 		return nil
 	}
 
@@ -174,6 +178,8 @@ func startDaemonBackground() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := waitForDaemonReady(ctx); err != nil {
+		// Daemon failed to start - clean up PID file
+		daemon.RemoveDaemonPid()
 		return fmt.Errorf("zend started but did not become ready: %w", err)
 	}
 
@@ -235,6 +241,11 @@ func runDaemonStop(cmd *cobra.Command, args []string) error {
 
 func runDaemonRestart(cmd *cobra.Command, args []string) error {
 	if pid, running := daemon.IsDaemonRunning(); running {
+		if pid == -1 {
+			fmt.Printf("zend is running on port %d but PID is unknown.\n", config.GetProxyPort())
+			fmt.Printf("Use 'lsof -i :%d' to find and kill it manually, then run 'zen daemon start'.\n", config.GetProxyPort())
+			return fmt.Errorf("cannot restart: unknown PID")
+		}
 		fmt.Printf("Stopping zend (PID %d)...\n", pid)
 		if err := daemon.StopDaemonProcess(30 * time.Second); err != nil {
 			return fmt.Errorf("failed to stop zend: %w", err)
@@ -259,7 +270,11 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 	resp, err := client.Get(url)
 	if err != nil {
 		// API not reachable, show basic info
-		fmt.Printf("zend is running (PID %d) but API is not reachable.\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is running on port %d but PID is unknown and API is not reachable.\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is running (PID %d) but API is not reachable.\n", pid)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
@@ -272,11 +287,19 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 		ActiveSessions int    `json:"active_sessions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		fmt.Printf("zend is running (PID %d).\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is running on port %d (PID unknown).\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is running (PID %d).\n", pid)
+		}
 		return nil
 	}
 
-	fmt.Printf("zend is running (PID %d)\n", pid)
+	if pid == -1 {
+		fmt.Printf("zend is running (PID unknown)\n")
+	} else {
+		fmt.Printf("zend is running (PID %d)\n", pid)
+	}
 	fmt.Printf("  Version:  %s\n", status.Version)
 	fmt.Printf("  Uptime:   %s\n", status.Uptime)
 	fmt.Printf("  Proxy:    http://127.0.0.1:%d\n", status.ProxyPort)

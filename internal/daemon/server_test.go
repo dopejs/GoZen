@@ -693,6 +693,9 @@ func TestIsDaemonRunningNoPidFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
+	// Set a random high port that won't be in use
+	config.SetProxyPort(59999)
+
 	pid, running := IsDaemonRunning()
 	if running {
 		t.Error("should not be running without PID file")
@@ -705,6 +708,9 @@ func TestIsDaemonRunningNoPidFile(t *testing.T) {
 func TestIsDaemonRunningDeadProcess(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
+
+	// Set a random high port that won't be in use
+	config.SetProxyPort(59998)
 
 	// Write a PID that doesn't exist (very high PID)
 	WriteDaemonPid(999999999)

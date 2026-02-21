@@ -19,9 +19,18 @@ func DaemonSysProcAttr() *syscall.SysProcAttr {
 // IsDaemonRunning checks if the zend daemon is running.
 // Performs PID-port validation: checks PID file, verifies process is alive,
 // and confirms the process is actually listening on the expected port.
+// Also detects orphaned daemons (port in use but no valid PID file).
 func IsDaemonRunning() (int, bool) {
+	proxyPort := config.GetProxyPort()
+
 	pid, err := ReadDaemonPid()
 	if err != nil {
+		// No PID file - check if port is in use (orphaned daemon)
+		if IsDaemonPortListening(proxyPort) {
+			// Port is in use but no PID file - orphaned daemon
+			// Return -1 to indicate unknown PID but daemon is running
+			return -1, true
+		}
 		return 0, false
 	}
 
@@ -33,6 +42,10 @@ func IsDaemonRunning() (int, bool) {
 	if proc.Signal(syscall.Signal(0)) != nil {
 		// Process is dead, clean up stale PID file
 		RemoveDaemonPid()
+		// Check if port is still in use (different process took over)
+		if IsDaemonPortListening(proxyPort) {
+			return -1, true
+		}
 		return 0, false
 	}
 
@@ -41,7 +54,6 @@ func IsDaemonRunning() (int, bool) {
 	// the process is confirmed alive. The port check might fail due to timeout
 	// or the daemon still starting up. Removing the PID file would make it
 	// impossible to stop the daemon later.
-	proxyPort := config.GetProxyPort()
 	if !IsDaemonPortListening(proxyPort) {
 		// Process is alive but not listening — could be starting up or wrong process
 		// Return the PID anyway so caller can decide what to do
@@ -60,6 +72,12 @@ func StopDaemonProcess(timeout time.Duration) error {
 		RemoveDaemonPid()
 		return fmt.Errorf("zend is not running")
 	}
+
+	// If pid == -1, daemon is running but we don't know the PID (orphaned)
+	if pid == -1 {
+		return fmt.Errorf("zend is running on port %d but PID is unknown; use 'lsof -i :%d' to find and kill it manually", config.GetProxyPort(), config.GetProxyPort())
+	}
+
 	// If pid > 0 but running == false, the process is alive but not listening
 	// on the expected port. We should still try to stop it.
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -36,8 +37,14 @@ import type { BotConfig } from '@/types/api'
 
 export function BotPage() {
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: bot, isLoading } = useBot()
   const [localConfig, setLocalConfig] = useState<Partial<BotConfig>>({})
+
+  const currentTab = searchParams.get('tab') || 'general'
+  const setCurrentTab = (tab: string) => {
+    setSearchParams({ tab })
+  }
 
   useEffect(() => {
     if (bot) {
@@ -60,7 +67,7 @@ export function BotPage() {
         <p className="text-muted-foreground">{t('bot.description')}</p>
       </div>
 
-      <Tabs defaultValue="general">
+      <Tabs value={currentTab} onValueChange={setCurrentTab}>
         <TabsList>
           <TabsTrigger value="general">{t('bot.general')}</TabsTrigger>
           <TabsTrigger value="platforms">{t('bot.platforms')}</TabsTrigger>

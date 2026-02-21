@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, ScrollText, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,23 @@ import { useLogs } from '@/hooks/use-logs'
 
 export function LogsPage() {
   const { t } = useTranslation()
-  const [autoRefresh, setAutoRefresh] = useState(false)
-  const [errorsOnly, setErrorsOnly] = useState(false)
-  const [selectedProvider, setSelectedProvider] = useState<string>('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const autoRefresh = searchParams.get('autoRefresh') === 'true'
+  const errorsOnly = searchParams.get('errorsOnly') === 'true'
+  const selectedProvider = searchParams.get('provider') || 'all'
+
+  const updateParams = (updates: Record<string, string | null>) => {
+    const newParams = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === 'false' || value === 'all') {
+        newParams.delete(key)
+      } else {
+        newParams.set(key, value)
+      }
+    }
+    setSearchParams(newParams)
+  }
 
   const { data, isLoading, refetch } = useLogs(
     {
@@ -57,7 +71,7 @@ export function LogsPage() {
         <CardContent className="flex flex-wrap items-center gap-6 pt-6">
           <div className="flex items-center gap-2">
             <Label htmlFor="provider-filter">{t('logs.provider')}</Label>
-            <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+            <Select value={selectedProvider} onValueChange={(v) => updateParams({ provider: v })}>
               <SelectTrigger id="provider-filter" className="w-40">
                 <SelectValue />
               </SelectTrigger>
@@ -73,12 +87,12 @@ export function LogsPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Switch id="errors-only" checked={errorsOnly} onCheckedChange={setErrorsOnly} />
+            <Switch id="errors-only" checked={errorsOnly} onCheckedChange={(v) => updateParams({ errorsOnly: v.toString() })} />
             <Label htmlFor="errors-only">{t('logs.errorsOnly')}</Label>
           </div>
 
           <div className="flex items-center gap-2">
-            <Switch id="auto-refresh" checked={autoRefresh} onCheckedChange={setAutoRefresh} />
+            <Switch id="auto-refresh" checked={autoRefresh} onCheckedChange={(v) => updateParams({ autoRefresh: v.toString() })} />
             <Label htmlFor="auto-refresh">{t('logs.autoRefresh')}</Label>
           </div>
         </CardContent>

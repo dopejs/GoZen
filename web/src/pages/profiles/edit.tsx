@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ArrowLeft, Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react'
@@ -32,7 +32,13 @@ export function ProfileEditPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { name } = useParams<{ name: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isNew = !name || name === 'new'
+
+  const currentTab = searchParams.get('tab') || 'basic'
+  const setCurrentTab = (tab: string) => {
+    setSearchParams({ tab })
+  }
 
   const { data: existingProfile, isLoading } = useProfile(name || '')
   const { data: providers } = useProviders()
@@ -141,7 +147,7 @@ export function ProfileEditPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="basic">
+      <Tabs value={currentTab} onValueChange={setCurrentTab}>
         <TabsList>
           <TabsTrigger value="basic">{t('profiles.basicSettings')}</TabsTrigger>
           <TabsTrigger value="providers">{t('profiles.providers')}</TabsTrigger>

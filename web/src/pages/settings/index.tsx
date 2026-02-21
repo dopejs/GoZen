@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -37,6 +38,12 @@ import { settingsApi, bindingsApi } from '@/lib/api'
 
 export function SettingsPage() {
   const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const currentTab = searchParams.get('tab') || 'general'
+  const setCurrentTab = (tab: string) => {
+    setSearchParams({ tab })
+  }
 
   return (
     <div className="space-y-6">
@@ -45,7 +52,7 @@ export function SettingsPage() {
         <p className="text-muted-foreground">{t('settings.description')}</p>
       </div>
 
-      <Tabs defaultValue="general">
+      <Tabs value={currentTab} onValueChange={setCurrentTab}>
         <TabsList>
           <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
           <TabsTrigger value="bindings">{t('settings.bindings')}</TabsTrigger>

@@ -22,7 +22,7 @@ export function useHourlyUsage(params?: {
 }) {
   return useQuery({
     queryKey: ['usage', 'hourly', params],
-    queryFn: () => usageApi.hourly(params),
+    queryFn: () => usageApi.hourly(params) as Promise<unknown>,
   })
 }
 

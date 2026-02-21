@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Plus, Pencil, Trash2, Layers, Star } from 'lucide-react'
@@ -13,66 +14,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { useProfiles, useCreateProfile, useUpdateProfile, useDeleteProfile } from '@/hooks/use-profiles'
-import { useProviders } from '@/hooks/use-providers'
-import type { Profile } from '@/types/api'
+import { useProfiles, useDeleteProfile } from '@/hooks/use-profiles'
 
 export function ProfilesPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { data: profiles, isLoading } = useProfiles()
-  const { data: providers } = useProviders()
-  const createProfile = useCreateProfile()
-  const updateProfile = useUpdateProfile()
   const deleteProfile = useDeleteProfile()
 
-  const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
   const [deletingProfile, setDeletingProfile] = useState<string | null>(null)
-  const [formData, setFormData] = useState<Partial<Profile>>({
-    name: '',
-    providers: [],
-    fallback: [],
-    is_default: false,
-  })
-
-  const handleOpenCreate = () => {
-    setEditingProfile(null)
-    setFormData({
-      name: '',
-      providers: [],
-      fallback: [],
-      is_default: false,
-    })
-    setDialogOpen(true)
-  }
-
-  const handleOpenEdit = (profile: Profile) => {
-    setEditingProfile(profile)
-    setFormData({ ...profile })
-    setDialogOpen(true)
-  }
 
   const handleOpenDelete = (name: string) => {
     setDeletingProfile(name)
     setDeleteDialogOpen(true)
-  }
-
-  const handleSubmit = async () => {
-    try {
-      if (editingProfile) {
-        await updateProfile.mutateAsync({ name: editingProfile.name, profile: formData })
-        toast.success(t('common.success'))
-      } else {
-        await createProfile.mutateAsync(formData as Profile)
-        toast.success(t('common.success'))
-      }
-      setDialogOpen(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('common.error'))
-    }
   }
 
   const handleDelete = async () => {
@@ -83,15 +38,6 @@ export function ProfilesPage() {
       setDeleteDialogOpen(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error'))
-    }
-  }
-
-  const toggleProvider = (providerName: string) => {
-    const current = formData.providers || []
-    if (current.includes(providerName)) {
-      setFormData({ ...formData, providers: current.filter((p) => p !== providerName) })
-    } else {
-      setFormData({ ...formData, providers: [...current, providerName] })
     }
   }
 
@@ -106,7 +52,7 @@ export function ProfilesPage() {
           <h1 className="text-3xl font-bold">{t('profiles.title')}</h1>
           <p className="text-muted-foreground">{t('profiles.description')}</p>
         </div>
-        <Button onClick={handleOpenCreate}>
+        <Button onClick={() => navigate('/profiles/new')}>
           <Plus className="mr-2 h-4 w-4" />
           {t('profiles.addProfile')}
         </Button>
@@ -132,13 +78,13 @@ export function ProfilesPage() {
                 <CardDescription>
                   {t('profiles.providers')}: {profile.providers?.join(', ') || '-'}
                 </CardDescription>
-                {profile.fallback && profile.fallback.length > 0 && (
+                {profile.strategy && (
                   <p className="text-sm text-muted-foreground">
-                    {t('profiles.fallback')}: {profile.fallback.join(', ')}
+                    {t('profiles.strategy')}: {profile.strategy}
                   </p>
                 )}
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" size="sm" onClick={() => handleOpenEdit(profile)}>
+                  <Button variant="outline" size="sm" onClick={() => navigate(`/profiles/${profile.name}`)}>
                     <Pencil className="mr-1 h-3 w-3" />
                     {t('common.edit')}
                   </Button>
@@ -159,54 +105,6 @@ export function ProfilesPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingProfile ? t('profiles.editProfile') : t('profiles.addProfile')}
-            </DialogTitle>
-            <DialogDescription>
-              {editingProfile ? t('profiles.editProfile') : t('profiles.addProfile')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">{t('profiles.name')}</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                disabled={!!editingProfile}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>{t('profiles.providers')}</Label>
-              <div className="flex flex-wrap gap-2">
-                {providers?.map((provider) => (
-                  <Badge
-                    key={provider.name}
-                    variant={formData.providers?.includes(provider.name) ? 'default' : 'outline'}
-                    className="cursor-pointer"
-                    onClick={() => toggleProvider(provider.name)}
-                  >
-                    {provider.name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={handleSubmit} disabled={createProfile.isPending || updateProfile.isPending}>
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

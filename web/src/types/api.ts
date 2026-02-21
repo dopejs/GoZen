@@ -1,28 +1,74 @@
 // Provider types
 export interface Provider {
   name: string
+  type?: 'anthropic' | 'openai'
   base_url: string
-  api_key: string
-  api_key_env?: string
+  auth_token: string
   model?: string
-  priority?: number
-  weight?: number
-  enabled?: boolean
+  reasoning_model?: string
+  haiku_model?: string
+  opus_model?: string
+  sonnet_model?: string
+  env_vars?: Record<string, string>
+  claude_env_vars?: Record<string, string>
+  codex_env_vars?: Record<string, string>
+  opencode_env_vars?: Record<string, string>
 }
+
+// Available clients
+export const AVAILABLE_CLIENTS = ['claude', 'codex', 'opencode'] as const
+export type ClientType = (typeof AVAILABLE_CLIENTS)[number]
+
+// Common environment variables per client
+export const CLIENT_ENV_HINTS: Record<ClientType, string[]> = {
+  claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_MAX_TOKENS'],
+  codex: ['OPENAI_API_KEY', 'OPENAI_MODEL', 'CODEX_MAX_TOKENS'],
+  opencode: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENCODE_MODEL'],
+}
+
+// Scenarios
+export type Scenario = 'think' | 'image' | 'longContext' | 'webSearch' | 'background' | 'default'
+
+export const SCENARIOS: Scenario[] = ['default', 'think', 'image', 'longContext', 'webSearch', 'background']
+
+export const SCENARIO_LABELS: Record<Scenario, string> = {
+  default: 'Default',
+  think: 'Extended Thinking',
+  image: 'Image Processing',
+  longContext: 'Long Context',
+  webSearch: 'Web Search',
+  background: 'Background Tasks',
+}
+
+// Provider route for scenario
+export interface ProviderRoute {
+  name: string
+  model?: string
+}
+
+// Scenario route
+export interface ScenarioRoute {
+  providers: ProviderRoute[]
+}
+
+// Load balance strategy
+export type LoadBalanceStrategy = 'failover' | 'round-robin' | 'least-latency' | 'least-cost'
+
+export const LOAD_BALANCE_STRATEGIES: LoadBalanceStrategy[] = [
+  'failover',
+  'round-robin',
+  'least-latency',
+  'least-cost',
+]
 
 // Profile types
 export interface Profile {
   name: string
   providers: string[]
-  fallback?: string[]
-  routing?: RoutingConfig
+  routing?: Partial<Record<Scenario, ScenarioRoute>>
+  long_context_threshold?: number
+  strategy?: LoadBalanceStrategy
   is_default?: boolean
-}
-
-export interface RoutingConfig {
-  strategy?: 'priority' | 'round-robin' | 'weighted' | 'least-latency'
-  health_check?: boolean
-  retry_count?: number
 }
 
 // Log types
@@ -48,17 +94,24 @@ export interface LogsResponse {
 
 // Usage types
 export interface UsageSummary {
-  request_count: number
+  total_requests: number
   total_input_tokens: number
   total_output_tokens: number
   total_cost: number
-  by_provider: Record<string, UsageStats>
-  by_model: Record<string, UsageStats>
-  by_project?: Record<string, UsageStats>
+  request_count: number
+  by_provider: Record<string, ProviderUsage>
+  by_model: Record<string, ModelUsage>
 }
 
-export interface UsageStats {
-  request_count: number
+export interface ProviderUsage {
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cost: number
+}
+
+export interface ModelUsage {
+  requests: number
   input_tokens: number
   output_tokens: number
   cost: number
@@ -66,7 +119,7 @@ export interface UsageStats {
 
 export interface HourlyUsage {
   hour: string
-  request_count: number
+  requests: number
   input_tokens: number
   output_tokens: number
   cost: number
@@ -75,10 +128,10 @@ export interface HourlyUsage {
 export interface HourlyUsageByDimension {
   hour: string
   dimension: string
-  request_count: number
   input_tokens: number
   output_tokens: number
   cost: number
+  request_count: number
 }
 
 // Budget types

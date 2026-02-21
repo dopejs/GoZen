@@ -5,7 +5,9 @@ import { AppShell } from '@/components/layout/app-shell'
 import { LoginPage } from '@/pages/login'
 import { DashboardPage } from '@/pages/dashboard'
 import { ProvidersPage } from '@/pages/providers'
+import { ProviderEditPage } from '@/pages/providers/edit'
 import { ProfilesPage } from '@/pages/profiles'
+import { ProfileEditPage } from '@/pages/profiles/edit'
 import { BotPage } from '@/pages/bot'
 import { LogsPage } from '@/pages/logs'
 import { UsagePage } from '@/pages/usage'
@@ -44,7 +46,9 @@ function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/providers/:name" element={<ProviderEditPage />} />
           <Route path="/profiles" element={<ProfilesPage />} />
+          <Route path="/profiles/:name" element={<ProfileEditPage />} />
           <Route path="/bot" element={<BotPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/usage" element={<UsagePage />} />

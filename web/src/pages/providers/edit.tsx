@@ -306,6 +306,13 @@ interface EnvVarsCardProps {
 function EnvVarsCard({ title, description, envVars, hints, onUpdate, onRemove, onAdd }: EnvVarsCardProps) {
   const { t } = useTranslation()
   const entries = Object.entries(envVars)
+  const existingKeys = new Set(Object.keys(envVars))
+
+  const handleHintClick = (hint: string) => {
+    if (!existingKeys.has(hint)) {
+      onUpdate(hint, '')
+    }
+  }
 
   return (
     <Card>
@@ -318,7 +325,17 @@ function EnvVarsCard({ title, description, envVars, hints, onUpdate, onRemove, o
           <div className="flex flex-wrap gap-1 mb-2">
             <span className="text-xs text-muted-foreground">{t('providers.commonVars')}:</span>
             {hints.map((hint) => (
-              <code key={hint} className="text-xs bg-muted px-1 rounded">{hint}</code>
+              <code
+                key={hint}
+                className={`text-xs px-1 rounded ${
+                  existingKeys.has(hint)
+                    ? 'bg-muted text-muted-foreground line-through'
+                    : 'bg-muted hover:bg-primary/20 cursor-pointer'
+                }`}
+                onClick={() => handleHintClick(hint)}
+              >
+                {hint}
+              </code>
             ))}
           </div>
         )}

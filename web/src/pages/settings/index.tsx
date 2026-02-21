@@ -40,9 +40,9 @@ export function SettingsPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const currentTab = searchParams.get('tab') || 'general'
+  const currentTab = searchParams.get('s') || 'general'
   const setCurrentTab = (tab: string) => {
-    setSearchParams({ tab })
+    setSearchParams({ s: tab })
   }
 
   return (

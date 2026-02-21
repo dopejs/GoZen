@@ -25,9 +25,9 @@ export function ProviderEditPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const isNew = !name || name === 'new'
 
-  const currentTab = searchParams.get('tab') || 'basic'
+  const currentTab = searchParams.get('s') || 'basic'
   const setCurrentTab = (tab: string) => {
-    setSearchParams({ tab })
+    setSearchParams({ s: tab })
   }
 
   const { data: existingProvider, isLoading } = useProvider(name || '')

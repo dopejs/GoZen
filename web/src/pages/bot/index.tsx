@@ -41,9 +41,9 @@ export function BotPage() {
   const { data: bot, isLoading } = useBot()
   const [localConfig, setLocalConfig] = useState<Partial<BotConfig>>({})
 
-  const currentTab = searchParams.get('tab') || 'general'
+  const currentTab = searchParams.get('s') || 'general'
   const setCurrentTab = (tab: string) => {
-    setSearchParams({ tab })
+    setSearchParams({ s: tab })
   }
 
   useEffect(() => {

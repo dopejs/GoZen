@@ -504,3 +504,102 @@ func TestClientIP(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthCheckEndpointWithPassword(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// Set a password
+	hash, _ := bcrypt.GenerateFromPassword([]byte("testpass"), bcrypt.MinCost)
+	config.SetWebPasswordHash(string(hash))
+
+	// Test remote request without session - should not be authenticated
+	req := httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != false {
+		t.Error("should not be authenticated without session")
+	}
+	if resp["password_required"] != true {
+		t.Error("password should be required for remote request")
+	}
+
+	// Test with valid session
+	token := s.auth.createSession()
+	req = httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	w = httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != true {
+		t.Error("should be authenticated with valid session")
+	}
+
+	// Test local request - should be authenticated regardless
+	req = httptest.NewRequest("GET", "/api/v1/auth/check", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w = httptest.NewRecorder()
+	s.handleAuthCheck(w, req)
+
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authenticated"] != true {
+		t.Error("local request should be authenticated")
+	}
+	if resp["is_local"] != true {
+		t.Error("should report is_local=true for local request")
+	}
+}
+
+func TestPubKeyEndpointNoKeys(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// Remove keys
+	s.keys = nil
+
+	req := httptest.NewRequest("GET", "/api/v1/auth/pubkey", nil)
+	w := httptest.NewRecorder()
+	s.handlePubKey(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("GET pubkey without keys got %d, want 503", w.Code)
+	}
+}
+
+func TestPasswordChangeEmptyNew(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	body := `{"old_password":"","new_password":""}`
+	req := httptest.NewRequest("PUT", "/api/v1/settings/password", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handlePasswordChange(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("empty new password got %d, want 400", w.Code)
+	}
+}
+
+func TestLoginNoPasswordConfigured(t *testing.T) {
+	s, cleanup := setupTestAuth(t)
+	defer cleanup()
+
+	// No password set - login should return 403 (no password configured)
+	body := `{"password":"anything"}`
+	req := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "10.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.handleLogin(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("login without password set got %d, want 403", w.Code)
+	}
+}

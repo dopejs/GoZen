@@ -499,3 +499,250 @@ func TestUsageTracker_GetCosts_WithDB(t *testing.T) {
 		t.Errorf("GetMonthlyCost() returned negative cost: %f", cost)
 	}
 }
+
+func TestUsageTracker_GetHourlySummaryByProvider_WithDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	ldb, err := OpenLogDB(filepath.Join(configDir, "logs"))
+	if err != nil {
+		t.Fatalf("OpenLogDB() error: %v", err)
+	}
+	defer ldb.Close()
+
+	tracker := &UsageTracker{db: ldb, pricing: make(map[string]*config.ModelPricing)}
+
+	// Record some usage
+	tracker.Record(UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    "test-session",
+		Provider:     "anthropic",
+		Model:        "claude-3-opus",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+	})
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now().Add(time.Hour)
+
+	result, err := tracker.GetHourlySummaryByProvider(since, until)
+	if err != nil {
+		t.Errorf("GetHourlySummaryByProvider() error: %v", err)
+	}
+	// Result may be empty or have data, both are valid
+	_ = result
+}
+
+func TestUsageTracker_GetHourlySummaryByModel_WithDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	ldb, err := OpenLogDB(filepath.Join(configDir, "logs"))
+	if err != nil {
+		t.Fatalf("OpenLogDB() error: %v", err)
+	}
+	defer ldb.Close()
+
+	tracker := &UsageTracker{db: ldb, pricing: make(map[string]*config.ModelPricing)}
+
+	// Record some usage
+	tracker.Record(UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    "test-session",
+		Provider:     "anthropic",
+		Model:        "claude-3-opus",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+	})
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now().Add(time.Hour)
+
+	result, err := tracker.GetHourlySummaryByModel(since, until)
+	if err != nil {
+		t.Errorf("GetHourlySummaryByModel() error: %v", err)
+	}
+	_ = result
+}
+
+func TestUsageTracker_GetSummaryByTimeRange_WithDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	ldb, err := OpenLogDB(filepath.Join(configDir, "logs"))
+	if err != nil {
+		t.Fatalf("OpenLogDB() error: %v", err)
+	}
+	defer ldb.Close()
+
+	tracker := &UsageTracker{db: ldb, pricing: make(map[string]*config.ModelPricing)}
+
+	// Record some usage with project path
+	tracker.Record(UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    "test-session",
+		Provider:     "anthropic",
+		Model:        "claude-3-opus",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+		ProjectPath:  "/test/project",
+	})
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now().Add(time.Hour)
+
+	// Test without project filter
+	summary, err := tracker.GetSummaryByTimeRange(since, until, "")
+	if err != nil {
+		t.Errorf("GetSummaryByTimeRange() error: %v", err)
+	}
+	if summary == nil {
+		t.Error("GetSummaryByTimeRange() returned nil")
+	}
+
+	// Test with project filter
+	summary, err = tracker.GetSummaryByTimeRange(since, until, "/test/project")
+	if err != nil {
+		t.Errorf("GetSummaryByTimeRange() with project error: %v", err)
+	}
+	if summary == nil {
+		t.Error("GetSummaryByTimeRange() with project returned nil")
+	}
+}
+
+func TestUsageTracker_GetSummaryByTimeRange_NilDB(t *testing.T) {
+	tracker := &UsageTracker{db: nil}
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now()
+
+	summary, err := tracker.GetSummaryByTimeRange(since, until, "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if summary == nil {
+		t.Fatal("Expected non-nil summary")
+	}
+	if summary.ByProvider == nil {
+		t.Error("Expected ByProvider map to be initialized")
+	}
+}
+
+func TestUsageTracker_GetRecentPaths_WithDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	ldb, err := OpenLogDB(filepath.Join(configDir, "logs"))
+	if err != nil {
+		t.Fatalf("OpenLogDB() error: %v", err)
+	}
+	defer ldb.Close()
+
+	tracker := &UsageTracker{db: ldb, pricing: make(map[string]*config.ModelPricing)}
+
+	// Record usage with project paths
+	tracker.Record(UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    "test-session-1",
+		Provider:     "anthropic",
+		Model:        "claude-3-opus",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+		ProjectPath:  "/test/project1",
+	})
+	tracker.Record(UsageEntry{
+		Timestamp:    time.Now(),
+		SessionID:    "test-session-2",
+		Provider:     "anthropic",
+		Model:        "claude-3-opus",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		CostUSD:      0.05,
+		ProjectPath:  "/test/project2",
+	})
+
+	paths, err := tracker.GetRecentPaths(10)
+	if err != nil {
+		t.Errorf("GetRecentPaths() error: %v", err)
+	}
+	if len(paths) == 0 {
+		t.Error("GetRecentPaths() returned empty")
+	}
+
+	// Test with default limit
+	paths, err = tracker.GetRecentPaths(0)
+	if err != nil {
+		t.Errorf("GetRecentPaths(0) error: %v", err)
+	}
+	_ = paths
+}
+
+func TestUsageTracker_GetHourlySummaryByDimension_NilDB(t *testing.T) {
+	tracker := &UsageTracker{db: nil}
+
+	since := time.Now().Add(-24 * time.Hour)
+	until := time.Now()
+
+	result, err := tracker.GetHourlySummaryByProvider(since, until)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Error("Expected nil result for nil db")
+	}
+
+	result, err = tracker.GetHourlySummaryByModel(since, until)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Error("Expected nil result for nil db")
+	}
+}
+
+func TestHourlyUsageByDimension_Struct(t *testing.T) {
+	now := time.Now()
+	h := HourlyUsageByDimension{
+		Hour:         now,
+		Dimension:    "anthropic",
+		InputTokens:  1000,
+		OutputTokens: 500,
+		Cost:         0.10,
+		RequestCount: 10,
+	}
+
+	if h.Dimension != "anthropic" {
+		t.Errorf("Expected anthropic, got %s", h.Dimension)
+	}
+	if h.RequestCount != 10 {
+		t.Errorf("Expected 10 requests, got %d", h.RequestCount)
+	}
+}

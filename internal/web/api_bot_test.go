@@ -579,3 +579,49 @@ func TestDecryptBotTokens_NilPlatforms(t *testing.T) {
 	// Should not panic
 	decryptBotTokens(nil, bot)
 }
+
+func TestDecryptBotTokens_WithKeys(t *testing.T) {
+	keys, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+
+	bot := &config.BotConfig{
+		Platforms: &config.BotPlatformsConfig{
+			Telegram: &config.BotTelegramConfig{
+				Token: "plain-telegram-token",
+			},
+			Discord: &config.BotDiscordConfig{
+				Token: "plain-discord-token",
+			},
+			Slack: &config.BotSlackConfig{
+				BotToken: "plain-bot-token",
+				AppToken: "plain-app-token",
+			},
+			Lark: &config.BotLarkConfig{
+				AppSecret: "plain-lark-secret",
+			},
+			FBMessenger: &config.BotFBMessengerConfig{
+				PageToken: "plain-page-token",
+				AppSecret: "plain-fb-secret",
+			},
+		},
+	}
+
+	// decryptBotTokens should handle plain tokens (not encrypted)
+	decryptBotTokens(keys, bot)
+
+	// Tokens should remain unchanged since they're not encrypted
+	if bot.Platforms.Telegram.Token != "plain-telegram-token" {
+		t.Errorf("telegram token changed: %s", bot.Platforms.Telegram.Token)
+	}
+}
+
+func TestGetBot_MethodNotAllowed(t *testing.T) {
+	s := setupTestServerWithBot(t)
+	w := doRequest(s, "POST", "/api/v1/bot", nil)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}

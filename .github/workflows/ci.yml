@@ -22,6 +22,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: Test Web UI
+        working-directory: web
+        run: npm run test:coverage
+
       - name: Read Go version
         id: goversion
         run: echo "version=$(grep '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"

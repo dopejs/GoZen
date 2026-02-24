@@ -284,8 +284,6 @@
     "profile": "Profile",
     "profileHint": "Profile used when the bot accesses LLM APIs",
     "selectProfile": "Select a profile",
-    "socketPath": "Socket Path",
-    "socketPathHint": "Change with caution. Leave empty to use default.",
     "token": "Token",
     "botToken": "Bot Token",
     "appToken": "App Token",

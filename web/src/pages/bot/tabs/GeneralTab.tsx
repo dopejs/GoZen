@@ -3,7 +3,6 @@ import { toast } from 'sonner'
 import { Bot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -25,7 +24,6 @@ export function GeneralTab({ config, setConfig }: TabProps) {
       await updateBot.mutateAsync({
         enabled: config.enabled,
         profile: effectiveProfile,
-        socket_path: config.socket_path,
       })
       toast.success(t('common.success'))
     } catch (err) {
@@ -68,17 +66,6 @@ export function GeneralTab({ config, setConfig }: TabProps) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{t('bot.profileHint')}</p>
-        </div>
-
-        <div className="grid gap-2">
-          <Label htmlFor="socket-path">{t('bot.socketPath')}</Label>
-          <Input
-            id="socket-path"
-            value={config.socket_path || ''}
-            onChange={(e) => setConfig((c) => ({ ...c, socket_path: e.target.value }))}
-            placeholder="/tmp/zen-gateway.sock"
-          />
-          <p className="text-xs text-muted-foreground">{t('bot.socketPathHint')}</p>
         </div>
 
         <Button onClick={handleSave} disabled={updateBot.isPending}>

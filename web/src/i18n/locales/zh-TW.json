@@ -269,8 +269,6 @@
     "profile": "Profile",
     "profileHint": "Bot 存取大型語言模型 API 時使用的 Profile",
     "selectProfile": "選擇 Profile",
-    "socketPath": "Socket 路徑",
-    "socketPathHint": "請謹慎修改，留空使用預設值",
     "token": "權杖",
     "botToken": "Bot 權杖",
     "appToken": "App 權杖",

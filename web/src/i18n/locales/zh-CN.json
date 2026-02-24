@@ -269,8 +269,6 @@
     "profile": "Profile",
     "profileHint": "Bot 访问大模型 API 时使用的 Profile",
     "selectProfile": "选择 Profile",
-    "socketPath": "Socket 路径",
-    "socketPathHint": "请谨慎修改，留空使用默认值",
     "token": "令牌",
     "botToken": "Bot 令牌",
     "appToken": "App 令牌",

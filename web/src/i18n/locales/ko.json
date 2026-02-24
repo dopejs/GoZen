@@ -247,8 +247,6 @@
     "profile": "Profile",
     "profileHint": "봇이 LLM API에 접근할 때 사용하는 Profile",
     "selectProfile": "Profile 선택",
-    "socketPath": "소켓 경로",
-    "socketPathHint": "신중하게 변경하세요. 비워두면 기본값 사용",
     "token": "토큰",
     "botToken": "봇 토큰",
     "appToken": "앱 토큰",

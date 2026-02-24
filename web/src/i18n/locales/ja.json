@@ -247,8 +247,6 @@
     "profile": "Profile",
     "profileHint": "ボットがLLM APIにアクセスする際に使用するProfile",
     "selectProfile": "Profileを選択",
-    "socketPath": "ソケットパス",
-    "socketPathHint": "変更は慎重に。空欄でデフォルト値を使用",
     "token": "トークン",
     "botToken": "ボットトークン",
     "appToken": "アプリトークン",

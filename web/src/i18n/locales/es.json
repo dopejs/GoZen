@@ -205,8 +205,6 @@
     "profile": "Profile",
     "profileHint": "Profile utilizado cuando el bot accede a las APIs de LLM",
     "selectProfile": "Seleccionar un profile",
-    "socketPath": "Ruta del Socket",
-    "socketPathHint": "Modificar con precaución. Dejar vacío para usar el valor predeterminado.",
     "token": "Token",
     "botToken": "Token del Bot",
     "appToken": "Token de App",

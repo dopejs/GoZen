@@ -19,11 +19,24 @@ export interface Provider {
 export const AVAILABLE_CLIENTS = ['claude', 'codex', 'opencode'] as const
 export type ClientType = (typeof AVAILABLE_CLIENTS)[number]
 
-// Common environment variables per client
+// Common environment variables per client (excluding API keys and models which are set by provider)
 export const CLIENT_ENV_HINTS: Record<ClientType, string[]> = {
-  claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_MAX_TOKENS'],
-  codex: ['OPENAI_API_KEY', 'OPENAI_MODEL', 'CODEX_MAX_TOKENS'],
-  opencode: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'OPENCODE_MODEL'],
+  claude: [
+    'CLAUDE_CODE_MAX_TOKENS',
+    'CLAUDE_CODE_USE_BEDROCK',
+    'CLAUDE_CODE_USE_VERTEX',
+    'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+    'BASH_MAX_TIMEOUT_MS',
+    'BASH_DEFAULT_TIMEOUT_MS',
+  ],
+  codex: [
+    'CODEX_SANDBOX_TYPE',
+    'CODEX_UNSAFE_ALLOW_NO_SANDBOX',
+  ],
+  opencode: [
+    'OPENCODE_PROVIDER',
+    'OPENCODE_AUTO_COMPACT',
+  ],
 }
 
 // Scenarios

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Bell } from 'lucide-react'
@@ -10,13 +11,56 @@ import { useUpdateBot } from '@/hooks/use-bot'
 import type { BotConfig } from '@/types/api'
 import type { TabProps } from './types'
 
+const COMMON_TIMEZONES = [
+  'Pacific/Honolulu', 'America/Anchorage', 'America/Los_Angeles', 'America/Denver',
+  'America/Chicago', 'America/New_York', 'America/Sao_Paulo',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+  'Asia/Dubai', 'Asia/Kolkata', 'Asia/Bangkok', 'Asia/Singapore',
+  'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul',
+  'Australia/Sydney', 'Pacific/Auckland',
+]
+
+function getLocalTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return 'UTC'
+  }
+}
+
+function formatUtcOffset(tz: string): string {
+  try {
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+    const parts = formatter.formatToParts(now)
+    const offsetPart = parts.find((p) => p.type === 'timeZoneName')
+    return offsetPart?.value?.replace('GMT', 'UTC') || ''
+  } catch {
+    return ''
+  }
+}
+
+function formatTzLabel(tz: string): string {
+  const offset = formatUtcOffset(tz)
+  return offset ? `${tz} (${offset})` : tz
+}
+
 export function NotifyTab({ config, setConfig }: TabProps) {
   const { t } = useTranslation()
   const updateBot = useUpdateBot()
+  const localTz = useMemo(() => getLocalTimezone(), [])
+
+  // Build timezone list: local tz first (if not already in list), then common ones
+  const timezones = useMemo(() => {
+    const list = COMMON_TIMEZONES.includes(localTz)
+      ? COMMON_TIMEZONES
+      : [localTz, ...COMMON_TIMEZONES]
+    return list
+  }, [localTz])
 
   const handleSave = async () => {
     try {
-      await updateBot.mutateAsync({ notify: config.notify })
+      await updateBot.mutateAsync(config)
       toast.success(t('common.success'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error'))
@@ -89,11 +133,19 @@ export function NotifyTab({ config, setConfig }: TabProps) {
 
         <div className="grid gap-2">
           <Label>{t('bot.quietHoursZone')}</Label>
-          <Input
-            value={config.notify?.quiet_hours_zone || ''}
-            onChange={(e) => updateNotify({ quiet_hours_zone: e.target.value })}
-            placeholder="Asia/Shanghai"
-          />
+          <Select
+            value={config.notify?.quiet_hours_zone || localTz}
+            onValueChange={(value) => updateNotify({ quiet_hours_zone: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {timezones.map((tz) => (
+                <SelectItem key={tz} value={tz}>{formatTzLabel(tz)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Button onClick={handleSave} disabled={updateBot.isPending}>

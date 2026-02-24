@@ -113,11 +113,20 @@ func (s *Server) handleGetMiddleware(w http.ResponseWriter, r *http.Request) {
 	// Add available but not configured builtins
 	for name := range availableBuiltins {
 		if !configuredNames[name] {
-			resp.Middlewares = append(resp.Middlewares, &MiddlewareEntryResponse{
+			entryResp := &MiddlewareEntryResponse{
 				Name:    name,
 				Enabled: false,
 				Source:  "builtin",
-			})
+			}
+			// Get metadata from registry without loading into pipeline
+			if registry != nil {
+				if meta := registry.GetBuiltinMetadata(name); meta != nil {
+					entryResp.Version = meta.Version
+					entryResp.Description = meta.Description
+					entryResp.Priority = meta.Priority
+				}
+			}
+			resp.Middlewares = append(resp.Middlewares, entryResp)
 		}
 	}
 

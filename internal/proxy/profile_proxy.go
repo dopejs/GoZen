@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -47,8 +48,11 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
 
-	pp.Logger.Printf("[route] profile=%s session=%s client=%s path=%s",
-		route.Profile, route.SessionID, clientType, route.Remainder)
+	// Auto-detect client format from request path if not explicitly set
+	clientFormat := detectClientFormat(route.Remainder, clientType)
+
+	pp.Logger.Printf("[route] profile=%s session=%s client=%s format=%s path=%s",
+		route.Profile, route.SessionID, clientType, clientFormat, route.Remainder)
 
 	// Resolve provider names for this profile
 	providerNames, err := pp.resolveProviderNames(route)
@@ -64,14 +68,8 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine client format from the client type header
-	clientFormat := config.ProviderTypeAnthropic
-	if clientType == "codex" {
-		clientFormat = config.ProviderTypeOpenAI
-	}
-
-	// Get or create a proxy server for this profile
-	srv := pp.getOrCreateProxy(route.Profile, providers, clientFormat)
+	// Get or create a proxy server for this profile (no longer tied to clientFormat)
+	srv := pp.getOrCreateProxy(route.Profile, providers)
 
 	// Rewrite the request URL to strip profile/session prefix
 	r.URL.Path = route.Remainder
@@ -80,8 +78,10 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Override session ID extraction: use the route's cache key instead of body parsing
-	// We do this by setting a context value or header that ServeHTTP can pick up
 	r.Header.Set("X-Zen-Session", route.CacheKey())
+
+	// Pass request format to ProxyServer (detected per-request, not cached)
+	r.Header.Set("X-Zen-Request-Format", clientFormat)
 
 	// Pass client type to ProxyServer for logging
 	if clientType != "" {
@@ -162,7 +162,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 }
 
 // getOrCreateProxy returns a cached ProxyServer for the profile, or creates one.
-func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, clientFormat string) *ProxyServer {
+func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider) *ProxyServer {
 	pp.mu.RLock()
 	if srv, ok := pp.cache[profile]; ok {
 		pp.mu.RUnlock()
@@ -178,7 +178,7 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 		return srv
 	}
 
-	srv := NewProxyServerWithClientFormat(providers, clientFormat, pp.Logger)
+	srv := NewProxyServer(providers, pp.Logger)
 	pp.cache[profile] = srv
 	return srv
 }
@@ -200,4 +200,27 @@ func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, m
 			"message": message,
 		},
 	})
+}
+
+// detectClientFormat determines the client API format based on request path and client type.
+// OpenAI clients use /responses or /v1/chat/completions endpoints.
+// Anthropic clients use /v1/messages endpoint.
+func detectClientFormat(path, clientType string) string {
+	// If client type is explicitly set, use it
+	if clientType == "codex" {
+		return config.ProviderTypeOpenAI
+	}
+
+	// Auto-detect from path
+	// OpenAI Responses API: /responses
+	if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
+		return config.ProviderTypeOpenAI
+	}
+	// OpenAI Chat Completions API: /v1/chat/completions
+	if strings.HasSuffix(path, "/chat/completions") {
+		return config.ProviderTypeOpenAI
+	}
+
+	// Default to Anthropic
+	return config.ProviderTypeAnthropic
 }

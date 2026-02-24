@@ -7,6 +7,7 @@
 #   ./scripts/dev.sh status       # Check dev daemon status
 #   ./scripts/dev.sh web          # Start frontend dev server
 #   ./scripts/dev.sh all          # Start both daemon and frontend
+#   ./scripts/dev.sh zen [args]   # Run zen command with dev config (e.g., zen daemon start)
 
 set -e
 
@@ -106,6 +107,44 @@ start_web() {
     VITE_API_PORT=$DEV_WEB_PORT npm run dev
 }
 
+# Start a client with dev proxy
+start_client() {
+    local client="${1:-claude}"
+    local extra_args="${@:2}"
+
+    echo -e "${YELLOW}Starting $client with dev proxy...${NC}"
+    echo -e "  Proxy: http://127.0.0.1:$DEV_PROXY_PORT"
+    echo ""
+
+    case "$client" in
+        claude)
+            ANTHROPIC_BASE_URL="http://127.0.0.1:$DEV_PROXY_PORT" claude $extra_args
+            ;;
+        codex)
+            OPENAI_BASE_URL="http://127.0.0.1:$DEV_PROXY_PORT" codex $extra_args
+            ;;
+        opencode)
+            OPENCODE_API_BASE="http://127.0.0.1:$DEV_PROXY_PORT" opencode $extra_args
+            ;;
+        *)
+            echo -e "${RED}Unknown client: $client${NC}"
+            echo "Supported clients: claude, codex, opencode"
+            exit 1
+            ;;
+    esac
+}
+
+# Run zen command with dev config
+run_zen() {
+    # Build if binary doesn't exist
+    if [ ! -f "$PROJECT_ROOT/bin/zen-dev" ]; then
+        build_daemon
+    fi
+    init_config
+
+    GOZEN_CONFIG_DIR="$DEV_CONFIG_DIR" "$PROJECT_ROOT/bin/zen-dev" "$@"
+}
+
 # Main
 case "${1:-start}" in
     start)
@@ -133,8 +172,37 @@ case "${1:-start}" in
     build)
         build_daemon
         ;;
+    zen)
+        run_zen "${@:2}"
+        ;;
+    client)
+        start_client "${@:2}"
+        ;;
+    claude)
+        start_client claude "${@:2}"
+        ;;
+    codex)
+        start_client codex "${@:2}"
+        ;;
+    opencode)
+        start_client opencode "${@:2}"
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|web|all|build}"
+        echo "Usage: $0 {start|stop|restart|status|web|all|build|zen|client|claude|codex|opencode}"
+        echo ""
+        echo "Commands:"
+        echo "  start     Start dev daemon (ports $DEV_WEB_PORT/$DEV_PROXY_PORT)"
+        echo "  stop      Stop dev daemon"
+        echo "  restart   Restart dev daemon"
+        echo "  status    Check dev daemon status"
+        echo "  web       Start frontend dev server"
+        echo "  all       Start both daemon and frontend"
+        echo "  build     Build dev binary only"
+        echo "  zen       Run zen command with dev config (e.g., zen daemon start)"
+        echo "  client    Start a client with dev proxy (e.g., client claude)"
+        echo "  claude    Shortcut for 'client claude'"
+        echo "  codex     Shortcut for 'client codex'"
+        echo "  opencode  Shortcut for 'client opencode'"
         exit 1
         ;;
 esac

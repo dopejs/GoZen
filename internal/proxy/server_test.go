@@ -1762,42 +1762,14 @@ func TestEnvVarsNilMapNoHeaders(t *testing.T) {
 	}
 }
 
-// TestNewProxyServerWithClientFormat tests creating a proxy with specific client format.
-func TestNewProxyServerWithClientFormat(t *testing.T) {
+// TestStartProxyBasic tests that StartProxy starts a server.
+func TestStartProxyBasic(t *testing.T) {
 	u, _ := url.Parse("https://api.example.com")
 	providers := []*Provider{
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	tests := []struct {
-		name         string
-		clientFormat string
-		wantFormat   string
-	}{
-		{"anthropic", "anthropic", "anthropic"},
-		{"openai", "openai", "openai"},
-		{"empty defaults to anthropic", "", "anthropic"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := NewProxyServerWithClientFormat(providers, tt.clientFormat, discardLogger())
-			if srv.ClientFormat != tt.wantFormat {
-				t.Errorf("ClientFormat = %q, want %q", srv.ClientFormat, tt.wantFormat)
-			}
-		})
-	}
-}
-
-// TestStartProxyWithClientFormat tests that StartProxy respects client format.
-func TestStartProxyWithClientFormat(t *testing.T) {
-	u, _ := url.Parse("https://api.example.com")
-	providers := []*Provider{
-		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
-	}
-
-	// Test with openai client format
-	port, err := StartProxy(providers, "openai", "127.0.0.1:0", discardLogger())
+	port, err := StartProxy(providers, "", "127.0.0.1:0", discardLogger())
 	if err != nil {
 		t.Fatalf("StartProxy() error: %v", err)
 	}
@@ -1806,8 +1778,8 @@ func TestStartProxyWithClientFormat(t *testing.T) {
 	}
 }
 
-// TestStartProxyWithRoutingClientFormat tests that StartProxyWithRouting respects client format.
-func TestStartProxyWithRoutingClientFormat(t *testing.T) {
+// TestStartProxyWithRoutingBasic tests that StartProxyWithRouting starts a server.
+func TestStartProxyWithRoutingBasic(t *testing.T) {
 	u, _ := url.Parse("https://api.example.com")
 	providers := []*Provider{
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
@@ -1817,7 +1789,7 @@ func TestStartProxyWithRoutingClientFormat(t *testing.T) {
 		DefaultProviders: providers,
 	}
 
-	port, err := StartProxyWithRouting(routing, "openai", "127.0.0.1:0", discardLogger())
+	port, err := StartProxyWithRouting(routing, "", "127.0.0.1:0", discardLogger())
 	if err != nil {
 		t.Fatalf("StartProxyWithRouting() error: %v", err)
 	}

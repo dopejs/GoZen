@@ -77,11 +77,13 @@ export const healthApi = {
 export const providersApi = {
   list: () => request<Provider[]>('/providers'),
   get: (name: string) => request<Provider>(`/providers/${encodeURIComponent(name)}`),
-  create: (provider: Provider) =>
-    request<Provider>('/providers', {
+  create: (provider: Provider, addToProfiles?: string[]) => {
+    const { name, ...config } = provider
+    return request<Provider>('/providers', {
       method: 'POST',
-      body: JSON.stringify(provider),
-    }),
+      body: JSON.stringify({ name, config, add_to_profiles: addToProfiles }),
+    })
+  },
   update: (name: string, provider: Partial<Provider>) =>
     request<Provider>(`/providers/${encodeURIComponent(name)}`, {
       method: 'PUT',

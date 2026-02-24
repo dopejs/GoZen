@@ -3,6 +3,7 @@ package transform
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // Transformer defines the interface for API format transformation.
@@ -41,6 +42,48 @@ func NeedsTransform(clientFormat, providerFormat string) bool {
 		providerFormat = "anthropic"
 	}
 	return clientFormat != providerFormat
+}
+
+// TransformPath converts API endpoint paths between OpenAI and Anthropic formats.
+// clientFormat: the format the client is using ("openai" or "anthropic")
+// providerFormat: the format the provider expects ("openai" or "anthropic")
+// path: the original request path
+// Returns the transformed path.
+func TransformPath(clientFormat, providerFormat, path string) string {
+	// Normalize empty to anthropic (default)
+	if clientFormat == "" {
+		clientFormat = "anthropic"
+	}
+	if providerFormat == "" {
+		providerFormat = "anthropic"
+	}
+
+	// No transformation needed if formats match
+	if clientFormat == providerFormat {
+		return path
+	}
+
+	// OpenAI client → Anthropic provider
+	if clientFormat == "openai" && providerFormat == "anthropic" {
+		// OpenAI Responses API: /v1/responses or /responses
+		if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
+			return "/v1/messages"
+		}
+		// OpenAI Chat Completions API: /v1/chat/completions
+		if strings.HasSuffix(path, "/chat/completions") {
+			return "/v1/messages"
+		}
+	}
+
+	// Anthropic client → OpenAI provider
+	if clientFormat == "anthropic" && providerFormat == "openai" {
+		// Anthropic Messages API: /v1/messages
+		if strings.HasSuffix(path, "/messages") {
+			return "/v1/chat/completions"
+		}
+	}
+
+	return path
 }
 
 // parseJSON is a helper to parse JSON body into a map.

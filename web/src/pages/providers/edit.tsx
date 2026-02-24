@@ -220,6 +220,7 @@ export function ProviderEditPage() {
                   onChange={(e) => setFormData({ ...formData, sonnet_model: e.target.value })}
                   placeholder="claude-sonnet-4-20250514"
                 />
+                <p className="text-xs text-muted-foreground">{t('providers.sonnetModelHint')}</p>
               </div>
 
               <div className="grid gap-2">
@@ -230,6 +231,7 @@ export function ProviderEditPage() {
                   onChange={(e) => setFormData({ ...formData, opus_model: e.target.value })}
                   placeholder="claude-opus-4-20250514"
                 />
+                <p className="text-xs text-muted-foreground">{t('providers.opusModelHint')}</p>
               </div>
 
               <div className="grid gap-2">
@@ -240,6 +242,7 @@ export function ProviderEditPage() {
                   onChange={(e) => setFormData({ ...formData, haiku_model: e.target.value })}
                   placeholder="claude-haiku-3-5-20241022"
                 />
+                <p className="text-xs text-muted-foreground">{t('providers.haikuModelHint')}</p>
               </div>
 
               <div className="grid gap-2">

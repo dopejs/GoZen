@@ -93,6 +93,33 @@ func (r *Registry) AvailableBuiltins() []string {
 	return names
 }
 
+// BuiltinMetadata contains metadata about a built-in middleware.
+type BuiltinMetadata struct {
+	Name        string
+	Version     string
+	Description string
+	Priority    int
+}
+
+// GetBuiltinMetadata returns metadata for a built-in middleware without loading it into the pipeline.
+func (r *Registry) GetBuiltinMetadata(name string) *BuiltinMetadata {
+	r.mu.RLock()
+	factory, ok := r.builtins[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+
+	// Create a temporary instance to get metadata
+	m := factory()
+	return &BuiltinMetadata{
+		Name:        m.Name(),
+		Version:     m.Version(),
+		Description: m.Description(),
+		Priority:    m.Priority(),
+	}
+}
+
 // LoadFromConfig loads middlewares from the configuration.
 func (r *Registry) LoadFromConfig() error {
 	cfg := config.GetMiddleware()

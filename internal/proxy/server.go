@@ -86,7 +86,6 @@ type providerFailure struct {
 type ProxyServer struct {
 	Providers        []*Provider
 	Routing          *RoutingConfig // optional; nil means use Providers as-is
-	ClientFormat     string         // API format the client uses ("anthropic" or "openai")
 	Logger           *log.Logger
 	StructuredLogger *StructuredLogger
 	Client           *http.Client
@@ -95,7 +94,6 @@ type ProxyServer struct {
 func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 	return &ProxyServer{
 		Providers:        providers,
-		ClientFormat:     config.ProviderTypeAnthropic, // Default: Claude Code uses Anthropic format
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
 		Client: &http.Client{
@@ -109,23 +107,6 @@ func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *Prox
 	return &ProxyServer{
 		Providers:        routing.DefaultProviders,
 		Routing:          routing,
-		ClientFormat:     config.ProviderTypeAnthropic, // Default: Claude Code uses Anthropic format
-		Logger:           logger,
-		StructuredLogger: GetGlobalLogger(),
-		Client: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
-	}
-}
-
-// NewProxyServerWithClientFormat creates a proxy server with a specific client format.
-func NewProxyServerWithClientFormat(providers []*Provider, clientFormat string, logger *log.Logger) *ProxyServer {
-	if clientFormat == "" {
-		clientFormat = config.ProviderTypeAnthropic
-	}
-	return &ProxyServer{
-		Providers:        providers,
-		ClientFormat:     clientFormat,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
 		Client: &http.Client{
@@ -157,6 +138,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract client type for logging (set by ProfileProxy)
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
+
+	// Extract request format (detected per-request by ProfileProxy)
+	requestFormat := r.Header.Get("X-Zen-Request-Format")
+	r.Header.Del("X-Zen-Request-Format")
+	if requestFormat == "" {
+		requestFormat = config.ProviderTypeAnthropic // Default
+	}
 
 	// [BETA] Apply context compression if enabled
 	if compressor := GetGlobalCompressor(); compressor != nil && compressor.IsEnabled() {
@@ -236,7 +224,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var failures []providerFailure
 
 	// Try scenario providers first, then fallback to default if all fail
-	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, &failures)
+	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures)
 	if success {
 		return
 	}
@@ -245,7 +233,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if usingScenarioRoute && len(s.Providers) > 0 {
 		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", detectedScenario)
 		// Clear model overrides for default providers
-		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, &failures)
+		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures)
 		if success {
 			return
 		}
@@ -272,7 +260,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // tryProviders attempts to forward the request to each provider in order.
 // Returns true if a provider successfully handled the request.
-func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType string, failures *[]providerFailure) bool {
+func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure) bool {
 	for i, p := range providers {
 		isLast := i == len(providers)-1
 
@@ -294,7 +282,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		}
 
 		s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
-		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride)
+		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride, requestFormat)
 		if err != nil {
 			// Check if client canceled the request - don't mark provider unhealthy
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -371,7 +359,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		// Record usage and metrics
 		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp)
 
-		s.copyResponse(w, resp, p)
+		s.copyResponse(w, resp, p, requestFormat)
 		return true
 	}
 
@@ -434,7 +422,7 @@ func (s *ProxyServer) logStructuredWithResponse(provider, method, path string, s
 	})
 }
 
-func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, modelOverride string) (*http.Response, error) {
+func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, modelOverride string, requestFormat string) (*http.Response, error) {
 	var modifiedBody []byte
 	if modelOverride != "" {
 		// Scenario routing: skip model mapping, use the override model directly
@@ -446,18 +434,27 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 
 	// Apply request transformation if needed
 	providerFormat := p.GetType()
-	if transform.NeedsTransform(s.ClientFormat, providerFormat) {
+	if transform.NeedsTransform(requestFormat, providerFormat) {
 		transformer := transform.GetTransformer(providerFormat)
-		transformed, err := transformer.TransformRequest(modifiedBody, s.ClientFormat)
+		transformed, err := transformer.TransformRequest(modifiedBody, requestFormat)
 		if err != nil {
 			s.Logger.Printf("[%s] transform request error: %v", p.Name, err)
 		} else {
-			s.Logger.Printf("[%s] transformed request: %s → %s", p.Name, s.ClientFormat, providerFormat)
+			s.Logger.Printf("[%s] transformed request: %s → %s", p.Name, requestFormat, providerFormat)
 			modifiedBody = transformed
 		}
 	}
 
-	targetURL := singleJoiningSlash(p.BaseURL.String(), r.URL.Path)
+	// Transform path if needed (e.g., /responses → /v1/messages)
+	targetPath := r.URL.Path
+	if transform.NeedsTransform(requestFormat, providerFormat) {
+		targetPath = transform.TransformPath(requestFormat, providerFormat, r.URL.Path)
+		if targetPath != r.URL.Path {
+			s.Logger.Printf("[%s] path transform: %s → %s", p.Name, r.URL.Path, targetPath)
+		}
+	}
+
+	targetURL := singleJoiningSlash(p.BaseURL.String(), targetPath)
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery
 	}
@@ -485,14 +482,14 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 	return s.Client.Do(req)
 }
 
-func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p *Provider) {
+func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p *Provider, requestFormat string) {
 	defer resp.Body.Close()
 
 	// Check if response transformation is needed
 	providerFormat := p.GetType()
-	needsTransform := transform.NeedsTransform(s.ClientFormat, providerFormat)
+	needsTransform := transform.NeedsTransform(requestFormat, providerFormat)
 
-	// Stream SSE responses (no transformation for streaming)
+	// Stream SSE responses
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		for k, vv := range resp.Header {
 			for _, v := range vv {
@@ -502,9 +499,21 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		w.WriteHeader(resp.StatusCode)
 
 		flusher, ok := w.(http.Flusher)
+
+		// Apply stream transformation if needed
+		var reader io.Reader = resp.Body
+		if needsTransform {
+			st := &transform.StreamTransformer{
+				ClientFormat:   requestFormat,
+				ProviderFormat: providerFormat,
+			}
+			reader = st.TransformSSEStream(resp.Body)
+			s.Logger.Printf("[%s] transforming SSE stream: %s → %s", p.Name, providerFormat, requestFormat)
+		}
+
 		buf := make([]byte, 4096)
 		for {
-			n, err := resp.Body.Read(buf)
+			n, err := reader.Read(buf)
 			if n > 0 {
 				w.Write(buf[:n])
 				if ok {
@@ -528,11 +537,11 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 	// Apply response transformation if needed
 	if needsTransform && len(body) > 0 {
 		transformer := transform.GetTransformer(providerFormat)
-		transformed, err := transformer.TransformResponse(body, s.ClientFormat)
+		transformed, err := transformer.TransformResponse(body, requestFormat)
 		if err != nil {
 			s.Logger.Printf("[%s] transform response error: %v", p.Name, err)
 		} else {
-			s.Logger.Printf("[%s] transformed response: %s → %s", p.Name, providerFormat, s.ClientFormat)
+			s.Logger.Printf("[%s] transformed response: %s → %s", p.Name, providerFormat, requestFormat)
 			body = transformed
 		}
 	}
@@ -616,13 +625,24 @@ func (s *ProxyServer) mapModel(original string, body map[string]interface{}, p *
 
 	// 2. Match by model type (case-insensitive)
 	lower := strings.ToLower(original)
-	if strings.Contains(lower, "haiku") && p.HaikuModel != "" {
+
+	// OpenAI reasoning models (o1, o1-mini, o1-pro, o3, o3-mini, o4-mini)
+	if isOpenAIReasoningModel(lower) && p.ReasoningModel != "" {
+		return p.ReasoningModel
+	}
+
+	// Anthropic haiku or OpenAI mini models
+	if (strings.Contains(lower, "haiku") || isOpenAIMiniModel(lower)) && p.HaikuModel != "" {
 		return p.HaikuModel
 	}
+
+	// Anthropic opus
 	if strings.Contains(lower, "opus") && p.OpusModel != "" {
 		return p.OpusModel
 	}
-	if strings.Contains(lower, "sonnet") && p.SonnetModel != "" {
+
+	// Anthropic sonnet or OpenAI standard models (gpt-4o, gpt-4.1, etc.)
+	if (strings.Contains(lower, "sonnet") || isOpenAIStandardModel(lower)) && p.SonnetModel != "" {
 		return p.SonnetModel
 	}
 
@@ -633,6 +653,40 @@ func (s *ProxyServer) mapModel(original string, body map[string]interface{}, p *
 
 	// 4. No mapping — keep original
 	return original
+}
+
+// isOpenAIReasoningModel checks if the model is an OpenAI reasoning model.
+func isOpenAIReasoningModel(model string) bool {
+	// o1, o1-mini, o1-pro, o3, o3-mini, o4-mini, etc.
+	// Match: starts with "o" followed by a digit
+	if len(model) >= 2 && model[0] == 'o' && model[1] >= '0' && model[1] <= '9' {
+		return true
+	}
+	return false
+}
+
+// isOpenAIMiniModel checks if the model is an OpenAI mini model (small/fast).
+func isOpenAIMiniModel(model string) bool {
+	// Known OpenAI mini models: gpt-4o-mini, gpt-4.1-mini, gpt-4.1-nano
+	knownMiniModels := []string{"gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4-mini"}
+	for _, m := range knownMiniModels {
+		if strings.HasPrefix(model, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// isOpenAIStandardModel checks if the model is a known OpenAI standard model.
+func isOpenAIStandardModel(model string) bool {
+	// Known OpenAI standard models (not mini/nano, not reasoning)
+	knownStandardModels := []string{"gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4.5"}
+	for _, m := range knownStandardModels {
+		if strings.HasPrefix(model, m) && !strings.Contains(model, "-mini") && !strings.Contains(model, "-nano") {
+			return true
+		}
+	}
+	return false
 }
 
 // updateSessionCache extracts token usage from the response and updates the session cache.
@@ -811,8 +865,10 @@ func (s *ProxyServer) applyEnvVarsHeaders(req *http.Request, envVars map[string]
 }
 
 // StartProxy starts the proxy server and returns the port.
+// Note: clientFormat parameter is kept for backward compatibility but is now ignored.
+// Request format is detected per-request from the X-Zen-Request-Format header.
 func StartProxy(providers []*Provider, clientFormat string, listenAddr string, logger *log.Logger) (int, error) {
-	srv := NewProxyServerWithClientFormat(providers, clientFormat, logger)
+	srv := NewProxyServer(providers, logger)
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -827,12 +883,10 @@ func StartProxy(providers []*Provider, clientFormat string, listenAddr string, l
 }
 
 // StartProxyWithRouting starts the proxy server with scenario-based routing.
+// Note: clientFormat parameter is kept for backward compatibility but is now ignored.
+// Request format is detected per-request from the X-Zen-Request-Format header.
 func StartProxyWithRouting(routing *RoutingConfig, clientFormat string, listenAddr string, logger *log.Logger) (int, error) {
 	srv := NewProxyServerWithRouting(routing, logger)
-	srv.ClientFormat = clientFormat
-	if srv.ClientFormat == "" {
-		srv.ClientFormat = config.ProviderTypeAnthropic
-	}
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {

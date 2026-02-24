@@ -159,19 +159,19 @@ func TestProfileProxyGetOrCreateProxy(t *testing.T) {
 	}
 
 	// First call creates
-	srv1 := pp.getOrCreateProxy("prof1", providers, "anthropic")
+	srv1 := pp.getOrCreateProxy("prof1", providers)
 	if srv1 == nil {
 		t.Fatal("expected non-nil proxy server")
 	}
 
 	// Second call returns cached
-	srv2 := pp.getOrCreateProxy("prof1", providers, "anthropic")
+	srv2 := pp.getOrCreateProxy("prof1", providers)
 	if srv1 != srv2 {
 		t.Error("expected same cached proxy server")
 	}
 
 	// Different profile creates new
-	srv3 := pp.getOrCreateProxy("prof2", providers, "openai")
+	srv3 := pp.getOrCreateProxy("prof2", providers)
 	if srv3 == srv1 {
 		t.Error("expected different proxy server for different profile")
 	}

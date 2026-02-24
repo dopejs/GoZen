@@ -22,7 +22,7 @@ export function GeneralTab({ config, setConfig }: TabProps) {
   const handleSave = async () => {
     try {
       await updateBot.mutateAsync({
-        enabled: config.enabled,
+        ...config,
         profile: effectiveProfile,
       })
       toast.success(t('common.success'))

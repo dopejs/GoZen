@@ -18,7 +18,7 @@ export function AliasesTab({ config, setConfig }: TabProps) {
 
   const handleSave = async () => {
     try {
-      await updateBot.mutateAsync({ aliases: config.aliases })
+      await updateBot.mutateAsync(config)
       toast.success(t('common.success'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error'))

@@ -17,7 +17,7 @@ export function InteractionTab({ config, setConfig }: TabProps) {
 
   const handleSave = async () => {
     try {
-      await updateBot.mutateAsync({ interaction: config.interaction })
+      await updateBot.mutateAsync(config)
       toast.success(t('common.success'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error'))

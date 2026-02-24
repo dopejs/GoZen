@@ -23,7 +23,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
 
   const handleSave = async () => {
     try {
-      await updateBot.mutateAsync({ platforms: config.platforms })
+      await updateBot.mutateAsync(config)
       toast.success(t('common.success'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common.error'))

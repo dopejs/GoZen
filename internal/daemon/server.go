@@ -326,6 +326,8 @@ func (d *Daemon) onConfigReload() {
 	}
 	// Reinitialize sync if config changed
 	d.initSync()
+	// Reinitialize bot gateway if config changed
+	d.reinitBot()
 	d.logger.Println("config reloaded successfully")
 }
 
@@ -467,6 +469,16 @@ func randomID() string {
 	b[2] = byte(t >> 8)
 	b[3] = byte(t)
 	return fmt.Sprintf("%x", b)
+}
+
+// reinitBot stops the existing bot gateway (if any) and starts a new one if configured.
+func (d *Daemon) reinitBot() {
+	if d.botGateway != nil {
+		d.botGateway.Stop()
+		d.botGateway = nil
+		d.logger.Println("Bot gateway stopped for reload")
+	}
+	d.initBot()
 }
 
 // initBot initializes the bot gateway if configured.

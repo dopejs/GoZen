@@ -104,7 +104,7 @@ func (s *Server) getProvider(w http.ResponseWriter, r *http.Request, name string
 		writeError(w, http.StatusNotFound, "provider not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toProviderResponse(name, p, true))
+	writeJSON(w, http.StatusOK, toProviderResponse(name, p, false))
 }
 
 func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {

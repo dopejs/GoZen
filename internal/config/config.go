@@ -91,6 +91,48 @@ func (p *ProviderConfig) GetEnvVarsForClient(client string) map[string]string {
 	return p.EnvVars
 }
 
+// Clone returns a deep copy of the ProviderConfig.
+func (p *ProviderConfig) Clone() *ProviderConfig {
+	if p == nil {
+		return nil
+	}
+	clone := &ProviderConfig{
+		Type:           p.Type,
+		BaseURL:        p.BaseURL,
+		AuthToken:      p.AuthToken,
+		Model:          p.Model,
+		ReasoningModel: p.ReasoningModel,
+		HaikuModel:     p.HaikuModel,
+		OpusModel:      p.OpusModel,
+		SonnetModel:    p.SonnetModel,
+	}
+	if p.EnvVars != nil {
+		clone.EnvVars = make(map[string]string, len(p.EnvVars))
+		for k, v := range p.EnvVars {
+			clone.EnvVars[k] = v
+		}
+	}
+	if p.ClaudeEnvVars != nil {
+		clone.ClaudeEnvVars = make(map[string]string, len(p.ClaudeEnvVars))
+		for k, v := range p.ClaudeEnvVars {
+			clone.ClaudeEnvVars[k] = v
+		}
+	}
+	if p.CodexEnvVars != nil {
+		clone.CodexEnvVars = make(map[string]string, len(p.CodexEnvVars))
+		for k, v := range p.CodexEnvVars {
+			clone.CodexEnvVars[k] = v
+		}
+	}
+	if p.OpenCodeEnvVars != nil {
+		clone.OpenCodeEnvVars = make(map[string]string, len(p.OpenCodeEnvVars))
+		for k, v := range p.OpenCodeEnvVars {
+			clone.OpenCodeEnvVars[k] = v
+		}
+	}
+	return clone
+}
+
 // ExportToEnv sets all ANTHROPIC_* environment variables from this provider config.
 func (p *ProviderConfig) ExportToEnv() {
 	os.Setenv("ANTHROPIC_BASE_URL", p.BaseURL)
@@ -213,6 +255,42 @@ type ProfileConfig struct {
 	Routing              map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
 	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
 	Strategy             LoadBalanceStrategy         `json:"strategy,omitempty"`               // load balancing strategy
+}
+
+// Clone returns a deep copy of the ProfileConfig.
+func (pc *ProfileConfig) Clone() *ProfileConfig {
+	if pc == nil {
+		return nil
+	}
+	clone := &ProfileConfig{
+		LongContextThreshold: pc.LongContextThreshold,
+		Strategy:             pc.Strategy,
+	}
+	if pc.Providers != nil {
+		clone.Providers = make([]string, len(pc.Providers))
+		copy(clone.Providers, pc.Providers)
+	}
+	if pc.Routing != nil {
+		clone.Routing = make(map[Scenario]*ScenarioRoute, len(pc.Routing))
+		for k, v := range pc.Routing {
+			if v != nil {
+				routeClone := &ScenarioRoute{}
+				if v.Providers != nil {
+					routeClone.Providers = make([]*ProviderRoute, len(v.Providers))
+					for i, pr := range v.Providers {
+						if pr != nil {
+							routeClone.Providers[i] = &ProviderRoute{
+								Name:  pr.Name,
+								Model: pr.Model,
+							}
+						}
+					}
+				}
+				clone.Routing[k] = routeClone
+			}
+		}
+	}
+	return clone
 }
 
 // UnmarshalJSON supports both old format (["p1","p2"]) and new format ({providers: [...], routing: {...}}).

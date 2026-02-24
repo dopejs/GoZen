@@ -170,9 +170,9 @@ func TestGetProvider(t *testing.T) {
 	if p.BaseURL != "https://api.test.com" {
 		t.Errorf("base_url = %q", p.BaseURL)
 	}
-	// Token should be masked in get response
-	if p.AuthToken == "sk-test-secret-token-1234" {
-		t.Errorf("token should be masked in get response, got %q", p.AuthToken)
+	// Token should NOT be masked when getting single provider (for editing)
+	if p.AuthToken != "sk-test-secret-token-1234" {
+		t.Errorf("token should be unmasked in get response, got %q", p.AuthToken)
 	}
 }
 

@@ -98,7 +98,8 @@ func ResetDefaultStore() {
 
 // --- Provider operations ---
 
-// GetProvider returns the config for a named provider, or nil.
+// GetProvider returns a copy of the config for a named provider, or nil.
+// The returned value is a deep copy; modifications do not affect the store.
 func (s *Store) GetProvider(name string) *ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,7 +107,7 @@ func (s *Store) GetProvider(name string) *ProviderConfig {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Providers[name]
+	return s.config.Providers[name].Clone()
 }
 
 // SetProvider creates or updates a provider and saves.
@@ -155,7 +156,8 @@ func (s *Store) ProviderNames() []string {
 	return names
 }
 
-// ProviderMap returns a copy of all providers.
+// ProviderMap returns a deep copy of all providers.
+// Modifications to the returned map or its values do not affect the store.
 func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -163,10 +165,10 @@ func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	if s.config == nil {
 		return nil
 	}
-	// Return a copy to avoid concurrent modification
+	// Return a deep copy to avoid concurrent modification
 	copy := make(map[string]*ProviderConfig, len(s.config.Providers))
 	for k, v := range s.config.Providers {
-		copy[k] = v
+		copy[k] = v.Clone()
 	}
 	return copy
 }
@@ -220,7 +222,8 @@ func (s *Store) SetProfileOrder(profile string, names []string) error {
 	return s.saveLocked()
 }
 
-// GetProfileConfig returns the full profile configuration.
+// GetProfileConfig returns a deep copy of the full profile configuration.
+// The returned value is a deep copy; modifications do not affect the store.
 func (s *Store) GetProfileConfig(profile string) *ProfileConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -228,7 +231,7 @@ func (s *Store) GetProfileConfig(profile string) *ProfileConfig {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Profiles[profile]
+	return s.config.Profiles[profile].Clone()
 }
 
 // SetProfileConfig sets the full profile configuration and saves.
@@ -713,7 +716,7 @@ func (s *Store) UnbindProject(path string) error {
 	return s.saveLocked()
 }
 
-// GetProjectBinding returns the binding for a directory path.
+// GetProjectBinding returns a copy of the binding for a directory path.
 // Returns nil if no binding exists.
 func (s *Store) GetProjectBinding(path string) *ProjectBinding {
 	path = resolveProjectPath(path)
@@ -723,10 +726,18 @@ func (s *Store) GetProjectBinding(path string) *ProjectBinding {
 	if s.config == nil || s.config.ProjectBindings == nil {
 		return nil
 	}
-	return s.config.ProjectBindings[path]
+	pb := s.config.ProjectBindings[path]
+	if pb == nil {
+		return nil
+	}
+	// Return a copy
+	return &ProjectBinding{
+		Profile: pb.Profile,
+		Client:  pb.Client,
+	}
 }
 
-// GetAllProjectBindings returns all project bindings.
+// GetAllProjectBindings returns a deep copy of all project bindings.
 func (s *Store) GetAllProjectBindings() map[string]*ProjectBinding {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -734,10 +745,15 @@ func (s *Store) GetAllProjectBindings() map[string]*ProjectBinding {
 	if s.config == nil || s.config.ProjectBindings == nil {
 		return make(map[string]*ProjectBinding)
 	}
-	// Return a copy to avoid concurrent modification
+	// Return a deep copy to avoid concurrent modification
 	bindings := make(map[string]*ProjectBinding, len(s.config.ProjectBindings))
 	for k, v := range s.config.ProjectBindings {
-		bindings[k] = v
+		if v != nil {
+			bindings[k] = &ProjectBinding{
+				Profile: v.Profile,
+				Client:  v.Client,
+			}
+		}
 	}
 	return bindings
 }

@@ -28,7 +28,8 @@ type AuthManager struct {
 	failMu   sync.Mutex
 	failures map[string]*loginFailure // IP -> failure info
 
-	stopCh chan struct{} // for graceful shutdown of cleanup loop
+	stopCh   chan struct{} // for graceful shutdown of cleanup loop
+	stopOnce sync.Once     // ensures StopCleanup is idempotent
 }
 
 type loginFailure struct {
@@ -157,8 +158,11 @@ func (am *AuthManager) sessionCleanupLoop() {
 }
 
 // StopCleanup stops the session cleanup loop.
+// Safe to call multiple times (idempotent).
 func (am *AuthManager) StopCleanup() {
-	close(am.stopCh)
+	am.stopOnce.Do(func() {
+		close(am.stopCh)
+	})
 }
 
 // checkBruteForce returns the delay (in seconds) the client should wait before

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { providersApi, profilesApi, settingsApi, bindingsApi, logsApi, usageApi, botApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi } from './api'
+import { providersApi, profilesApi, settingsApi, logsApi, usageApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi } from './api'
 
 describe('API utilities', () => {
   beforeEach(() => {

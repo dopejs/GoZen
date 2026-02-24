@@ -153,7 +153,97 @@ export const handlers = [
   }),
 
   http.post('/api/v1/settings/password', () => {
-    return HttpResponse.json({ status: 'password updated' })
+    return HttpResponse.json({ success: true })
+  }),
+
+  // Auth operations
+  http.post('/api/v1/auth/login', () => {
+    return HttpResponse.json({ status: 'ok' })
+  }),
+
+  http.post('/api/v1/auth/logout', () => {
+    return HttpResponse.json({ success: true })
+  }),
+
+  http.get('/api/v1/auth/pubkey', () => {
+    return HttpResponse.json({ public_key: 'test-pubkey' })
+  }),
+
+  // Sessions
+  http.get('/api/v1/sessions', () => {
+    return HttpResponse.json([
+      { id: 'sess-1', provider: 'anthropic', created_at: new Date().toISOString() },
+    ])
+  }),
+
+  http.get('/api/v1/sessions/:id', ({ params }) => {
+    return HttpResponse.json({ id: params.id, provider: 'anthropic' })
+  }),
+
+  http.delete('/api/v1/sessions/:id', () => {
+    return HttpResponse.json({ success: true })
+  }),
+
+  // Webhooks
+  http.get('/api/v1/webhooks', () => {
+    return HttpResponse.json([
+      { id: 'wh-1', name: 'test', url: 'https://example.com/hook', events: ['failover'], enabled: true },
+    ])
+  }),
+
+  http.post('/api/v1/webhooks', () => {
+    return HttpResponse.json({ id: 'wh-2', name: 'new', url: 'https://example.com', events: [], enabled: true }, { status: 201 })
+  }),
+
+  http.put('/api/v1/webhooks/:id', ({ params }) => {
+    return HttpResponse.json({ id: params.id, name: 'updated', url: 'https://example.com', events: [], enabled: true })
+  }),
+
+  http.delete('/api/v1/webhooks/:id', () => {
+    return HttpResponse.json({ success: true })
+  }),
+
+  http.post('/api/v1/webhooks/test', () => {
+    return HttpResponse.json({ success: true })
+  }),
+
+  // Middleware
+  http.get('/api/v1/middleware', () => {
+    return HttpResponse.json({ enabled: false, middlewares: [] })
+  }),
+
+  http.put('/api/v1/middleware', () => {
+    return HttpResponse.json({ status: 'updated' })
+  }),
+
+  http.post('/api/v1/middleware/:name/enable', () => {
+    return HttpResponse.json({ status: 'enabled' })
+  }),
+
+  http.post('/api/v1/middleware/:name/disable', () => {
+    return HttpResponse.json({ status: 'disabled' })
+  }),
+
+  http.post('/api/v1/middleware/reload', () => {
+    return HttpResponse.json({ status: 'reloaded' })
+  }),
+
+  http.post('/api/v1/middleware/upload', () => {
+    return HttpResponse.json({ status: 'uploaded', name: 'test', path: '/tmp/test.so', checksum: 'abc123' })
+  }),
+
+  // Reload
+  http.post('/api/v1/reload', () => {
+    return HttpResponse.json({ status: 'ok' })
+  }),
+
+  // Sync test & create-gist
+  http.post('/api/v1/sync/test', () => {
+    return HttpResponse.json({ success: true })
+  }),
+
+  http.post('/api/v1/sync/create-gist', () => {
+    return HttpResponse.json({ gist_id: 'abc123', gist_url: 'https://gist.github.com/abc123' })
   }),
 
   // Budget

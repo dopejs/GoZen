@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -49,15 +50,6 @@ func (g *Gateway) handleMessage(msg *Message) {
 // processIntent handles a parsed intent.
 func (g *Gateway) processIntent(intent *ParsedIntent, session *Session, replyTo ReplyContext, msg *Message) {
 	switch intent.Intent {
-	case IntentHelp:
-		g.sendHelp(replyTo)
-
-	case IntentQueryList:
-		g.sendProcessList(replyTo)
-
-	case IntentQueryStatus:
-		g.handleStatusQuery(intent, session, replyTo)
-
 	case IntentControl:
 		g.handleControl(intent, session, replyTo)
 
@@ -70,128 +62,84 @@ func (g *Gateway) processIntent(intent *ParsedIntent, session *Session, replyTo 
 	case IntentSendTask:
 		g.handleSendTask(intent, session, replyTo)
 
+	case IntentPersona:
+		g.handlePersona(intent, replyTo)
+
+	case IntentForget:
+		g.handleForget(session, replyTo)
+
 	default:
-		g.sendMessage(replyTo, &OutgoingMessage{
-			Text: "I didn't understand that. Type `help` for available commands.",
-		})
+		// All other intents (including Help, Chat, QueryStatus, QueryList, Unknown)
+		// go through the LLM with full process context
+		g.handleChat(intent, session, replyTo)
 	}
 }
 
-// sendHelp sends help message.
-func (g *Gateway) sendHelp(replyTo ReplyContext) {
-	help := `**GoZen Bot Commands**
+// handleChat handles chat intent using LLM with conversation history.
+func (g *Gateway) handleChat(intent *ParsedIntent, session *Session, replyTo ReplyContext) {
+	// If no LLM client configured, send a friendly fallback
+	if g.llm == nil {
+		g.sendMessage(replyTo, &OutgoingMessage{
+			Text: "Hi! I'm Zen, the GoZen assistant. I can help you with:\n\n" +
+				"• `bind <name>` - Bind to a process\n" +
+				"• `pause/resume/cancel [name]` - Control tasks\n" +
+				"• `send <name> <task>` or `<name>: <task>` - Send a task\n" +
+				"• `persona <text>` - Set bot persona\n" +
+				"• `forget` - Clear conversation history\n\n" +
+				"What would you like to do?",
+			Format: "markdown",
+		})
+		return
+	}
 
-• ` + "`list`" + ` - List all connected processes
-• ` + "`status [name]`" + ` - Show process status
-• ` + "`bind <name>`" + ` - Bind to a process for subsequent commands
-• ` + "`pause/resume/cancel [name]`" + ` - Control tasks
-• ` + "`<name> <task>`" + ` - Send a task to a process
-
-**Examples:**
-• ` + "`status gozen`" + `
-• ` + "`bind api`" + `
-• ` + "`gozen run tests`" + `
-• "帮我看看 gozen 的状态"`
-
-	g.sendMessage(replyTo, &OutgoingMessage{
-		Text:   help,
-		Format: "markdown",
-	})
-}
-
-// sendProcessList sends the list of connected processes.
-func (g *Gateway) sendProcessList(replyTo ReplyContext) {
+	// Build system prompt with full process state
 	processes := g.registry.List()
+	memory, _ := LoadMemory(g.config.MemoryDir)
+	systemPrompt := BuildSystemPrompt(processes, g.config.Profile, memory)
 
-	if len(processes) == 0 {
+	// Get user message
+	userMessage := intent.Raw
+	if intent.Task != "" {
+		userMessage = intent.Task
+	}
+	if userMessage == "" {
+		userMessage = "Hello"
+	}
+
+	// Add user message to history
+	if session.History != nil {
+		session.History.Add(ChatMessage{Role: "user", Content: userMessage})
+	}
+
+	// Get conversation history
+	var history []ChatMessage
+	if session.History != nil {
+		history = session.History.Messages()
+	} else {
+		history = []ChatMessage{{Role: "user", Content: userMessage}}
+	}
+
+	// Call LLM with full history
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	response, err := g.llm.Chat(ctx, systemPrompt, history)
+	if err != nil {
+		g.logger.Printf("LLM chat error: %v", err)
+		// Fallback to simple response
 		g.sendMessage(replyTo, &OutgoingMessage{
-			Text: "No processes connected.",
+			Text: "Hi! I'm Zen. How can I help you today? Try asking about connected processes or their status.",
 		})
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString("**Connected Processes**\n\n")
-
-	for _, p := range processes {
-		status := "🟢"
-		if p.Status == "busy" {
-			status = "🟡"
-		} else if p.Status == "error" {
-			status = "🔴"
-		}
-
-		name := p.Name
-		if p.Alias != "" {
-			name = fmt.Sprintf("%s (%s)", p.Alias, p.Name)
-		}
-
-		sb.WriteString(fmt.Sprintf("%s **%s**\n", status, name))
-		sb.WriteString(fmt.Sprintf("   Path: `%s`\n", p.Path))
-		if p.CurrentTask != "" {
-			sb.WriteString(fmt.Sprintf("   Task: %s\n", p.CurrentTask))
-		}
-		sb.WriteString("\n")
+	// Add assistant response to history
+	if session.History != nil {
+		session.History.Add(ChatMessage{Role: "assistant", Content: response})
 	}
 
 	g.sendMessage(replyTo, &OutgoingMessage{
-		Text:   sb.String(),
-		Format: "markdown",
-	})
-}
-
-// handleStatusQuery handles status query intent.
-func (g *Gateway) handleStatusQuery(intent *ParsedIntent, session *Session, replyTo ReplyContext) {
-	target := intent.Target
-	if target == "" {
-		target = session.BoundProcess
-	}
-
-	// If still no target and only one process, use it
-	if target == "" {
-		processes := g.registry.List()
-		if len(processes) == 1 {
-			target = processes[0].Name
-		} else if len(processes) == 0 {
-			g.sendMessage(replyTo, &OutgoingMessage{Text: "No processes connected."})
-			return
-		} else {
-			g.sendMessage(replyTo, &OutgoingMessage{
-				Text: "Multiple processes available. Please specify which one or use `bind <name>` first.",
-			})
-			return
-		}
-	}
-
-	process := g.registry.Find(target)
-	if process == nil {
-		g.sendMessage(replyTo, &OutgoingMessage{
-			Text: fmt.Sprintf("Process `%s` not found.", target),
-		})
-		return
-	}
-
-	// Build status message
-	status := "🟢 Idle"
-	if process.Status == "busy" {
-		status = "🟡 Busy"
-	} else if process.Status == "error" {
-		status = "🔴 Error"
-	}
-
-	uptime := time.Since(process.StartTime).Round(time.Second)
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("**%s** Status\n\n", process.Name))
-	sb.WriteString(fmt.Sprintf("• Status: %s\n", status))
-	sb.WriteString(fmt.Sprintf("• Path: `%s`\n", process.Path))
-	sb.WriteString(fmt.Sprintf("• Uptime: %s\n", uptime))
-	if process.CurrentTask != "" {
-		sb.WriteString(fmt.Sprintf("• Task: %s\n", process.CurrentTask))
-	}
-
-	g.sendMessage(replyTo, &OutgoingMessage{
-		Text:   sb.String(),
+		Text:   response,
 		Format: "markdown",
 	})
 }
@@ -269,11 +217,12 @@ func (g *Gateway) handleSendTask(intent *ParsedIntent, session *Session, replyTo
 		if len(processes) == 1 {
 			target = processes[0].Name
 		} else if len(processes) == 0 {
-			g.sendMessage(replyTo, &OutgoingMessage{Text: "No processes connected."})
+			// No processes - fall back to chat
+			g.handleChat(intent, session, replyTo)
 			return
 		} else {
 			g.sendMessage(replyTo, &OutgoingMessage{
-				Text: "Multiple processes available. Please specify which one (e.g., `gozen run tests`).",
+				Text: "Multiple processes available. Please specify which one (e.g., `send api run tests` or `api: run tests`).",
 			})
 			return
 		}
@@ -291,6 +240,50 @@ func (g *Gateway) handleSendTask(intent *ParsedIntent, session *Session, replyTo
 	g.sendMessage(replyTo, &OutgoingMessage{
 		Text: fmt.Sprintf("Task sent to `%s`.", process.Name),
 	})
+}
+
+// handlePersona handles persona set/show/clear commands.
+func (g *Gateway) handlePersona(intent *ParsedIntent, replyTo ReplyContext) {
+	memDir := g.config.MemoryDir
+
+	switch intent.Action {
+	case "show":
+		content, err := LoadMemory(memDir)
+		if err != nil {
+			g.sendMessage(replyTo, &OutgoingMessage{Text: fmt.Sprintf("Failed to read memory: %v", err)})
+			return
+		}
+		if content == "" {
+			g.sendMessage(replyTo, &OutgoingMessage{Text: "No persona set. Use `persona <text>` to set one."})
+			return
+		}
+		g.sendMessage(replyTo, &OutgoingMessage{
+			Text:   fmt.Sprintf("**Current Persona**\n\n%s", content),
+			Format: "markdown",
+		})
+
+	case "set":
+		if err := SaveMemory(memDir, intent.Task); err != nil {
+			g.sendMessage(replyTo, &OutgoingMessage{Text: fmt.Sprintf("Failed to save persona: %v", err)})
+			return
+		}
+		g.sendMessage(replyTo, &OutgoingMessage{Text: "Persona updated."})
+
+	case "clear":
+		if err := ClearMemory(memDir); err != nil {
+			g.sendMessage(replyTo, &OutgoingMessage{Text: fmt.Sprintf("Failed to clear persona: %v", err)})
+			return
+		}
+		g.sendMessage(replyTo, &OutgoingMessage{Text: "Persona cleared."})
+	}
+}
+
+// handleForget clears the session's conversation history.
+func (g *Gateway) handleForget(session *Session, replyTo ReplyContext) {
+	if session.History != nil {
+		session.History.Clear()
+	}
+	g.sendMessage(replyTo, &OutgoingMessage{Text: "Conversation history cleared."})
 }
 
 // handleApprovalResponse handles approval/rejection responses.

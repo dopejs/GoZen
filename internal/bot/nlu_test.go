@@ -19,60 +19,44 @@ func TestNewNLUParser(t *testing.T) {
 func TestNLUParser_Parse_Help(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	tests := []struct {
-		content string
-		intent  Intent
-	}{
-		{"help", IntentHelp},
+	// "help" now falls through to chat intent (no longer a command)
+	msg := &Message{Content: "help", IsMention: true}
+	result := parser.Parse(msg, false)
+	if result == nil {
+		t.Error("Parse(help) returned nil")
+		return
 	}
-
-	for _, tt := range tests {
-		msg := &Message{Content: tt.content, IsMention: true}
-		result := parser.Parse(msg, false)
-		if result == nil {
-			t.Errorf("Parse(%q) returned nil", tt.content)
-			continue
-		}
-		if result.Intent != tt.intent {
-			t.Errorf("Parse(%q) = %v, want %v", tt.content, result.Intent, tt.intent)
-		}
+	// "help" is now treated as chat since the help pattern was removed
+	if result.Intent != IntentChat {
+		t.Errorf("Parse(help) = %v, want %v", result.Intent, IntentChat)
 	}
 }
 
 func TestNLUParser_Parse_List(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	tests := []struct {
-		content string
-		intent  Intent
-	}{
-		{"list", IntentQueryList},
+	// "list" now falls through to chat intent (handled by LLM)
+	msg := &Message{Content: "list", IsMention: true}
+	result := parser.Parse(msg, false)
+	if result == nil {
+		t.Error("Parse(list) returned nil")
+		return
 	}
-
-	for _, tt := range tests {
-		msg := &Message{Content: tt.content, IsMention: true}
-		result := parser.Parse(msg, false)
-		if result == nil {
-			t.Errorf("Parse(%q) returned nil", tt.content)
-			continue
-		}
-		if result.Intent != tt.intent {
-			t.Errorf("Parse(%q) = %v, want %v", tt.content, result.Intent, tt.intent)
-		}
+	if result.Intent != IntentChat {
+		t.Errorf("Parse(list) = %v, want %v", result.Intent, IntentChat)
 	}
 }
 
 func TestNLUParser_Parse_Status(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
+	// "status" now falls through to chat intent (handled by LLM)
 	tests := []struct {
 		content string
-		intent  Intent
-		target  string
 	}{
-		{"status", IntentQueryStatus, ""},
-		{"status api", IntentQueryStatus, "api"},
-		{"status myproject", IntentQueryStatus, "myproject"},
+		{"status"},
+		{"status api"},
+		{"status myproject"},
 	}
 
 	for _, tt := range tests {
@@ -82,11 +66,8 @@ func TestNLUParser_Parse_Status(t *testing.T) {
 			t.Errorf("Parse(%q) returned nil", tt.content)
 			continue
 		}
-		if result.Intent != tt.intent {
-			t.Errorf("Parse(%q) intent = %v, want %v", tt.content, result.Intent, tt.intent)
-		}
-		if result.Target != tt.target {
-			t.Errorf("Parse(%q) target = %q, want %q", tt.content, result.Target, tt.target)
+		if result.Intent != IntentChat {
+			t.Errorf("Parse(%q) intent = %v, want %v", tt.content, result.Intent, IntentChat)
 		}
 	}
 }
@@ -194,8 +175,12 @@ func TestNLUParser_Parse_SendTask(t *testing.T) {
 		target  string
 		task    string
 	}{
-		{"api run tests", IntentSendTask, "api", "run tests"},
-		{"myproject build", IntentSendTask, "myproject", "build"},
+		// Explicit "send <target> <task>" syntax
+		{"send api run tests", IntentSendTask, "api", "run tests"},
+		{"send myproject build", IntentSendTask, "myproject", "build"},
+		// Colon syntax "<target>: <task>"
+		{"api: run tests", IntentSendTask, "api", "run tests"},
+		{"myproject: build and deploy", IntentSendTask, "myproject", "build and deploy"},
 	}
 
 	for _, tt := range tests {
@@ -246,10 +231,14 @@ func TestNLUParser_Parse_DirectMessage(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
 	// Direct messages should not require mention
+	// "help" now returns IntentChat since help pattern was removed
 	msg := &Message{Content: "help", IsMention: false, IsDirectMsg: true}
 	result := parser.Parse(msg, true)
 	if result == nil {
 		t.Error("Parse should not return nil for direct messages even when mention required")
+	}
+	if result.Intent != IntentChat {
+		t.Errorf("Parse(help) = %v, want %v", result.Intent, IntentChat)
 	}
 }
 
@@ -274,91 +263,79 @@ func TestNLUParser_Parse_MentionOnly(t *testing.T) {
 
 	// When content is just "@zen", stripped becomes "", but content stays "@zen"
 	// because the code only updates content when stripped != ""
-	// This is current behavior - "@zen" gets treated as a task target
+	// Now this falls through to IntentChat
 	msg := &Message{Content: "@zen", IsMention: false}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil for mention-only")
 	}
-	// Current behavior: "@zen" matches the send_task pattern with target "@zen"
-	if result.Intent != IntentSendTask {
-		t.Errorf("Parse(@zen) intent = %v, want %v", result.Intent, IntentSendTask)
+	// Current behavior: "@zen" now falls through to chat intent
+	if result.Intent != IntentChat {
+		t.Errorf("Parse(@zen) intent = %v, want %v", result.Intent, IntentChat)
 	}
 }
 
 func TestNLUParser_Parse_MentionWithCommand(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	// Mention followed by command
+	// Mention followed by command - "help" now returns IntentChat
 	msg := &Message{Content: "@zen help", IsMention: false}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Intent != IntentHelp {
-		t.Errorf("Parse('@zen help') intent = %v, want %v", result.Intent, IntentHelp)
-	}
-}
-
-func TestNLUParser_ParseNaturalLanguage(t *testing.T) {
-	parser := NewNLUParser([]string{"@zen"})
-	processes := []string{"api", "backend", "frontend"}
-
-	tests := []struct {
-		content string
-		intent  Intent
-	}{
-		{"api 状态怎么样", IntentQueryStatus},
-		{"看看 backend 在干嘛", IntentQueryStatus},
-		{"有哪些项目", IntentQueryList},
-		{"列出所有进程", IntentQueryList},
-		{"暂停 api", IntentControl},
-		{"继续 backend", IntentControl},
-	}
-
-	for _, tt := range tests {
-		result := parser.ParseNaturalLanguage(tt.content, processes)
-		if result == nil {
-			t.Errorf("ParseNaturalLanguage(%q) returned nil", tt.content)
-			continue
-		}
-		if result.Intent != tt.intent {
-			t.Errorf("ParseNaturalLanguage(%q) = %v, want %v", tt.content, result.Intent, tt.intent)
-		}
-	}
-}
-
-func TestNLUParser_extractTarget(t *testing.T) {
-	parser := NewNLUParser([]string{"@zen"})
-	processes := []string{"api", "backend", "frontend"}
-
-	tests := []struct {
-		content  string
-		expected string
-	}{
-		{"check api status", "api"},
-		{"看看 backend 怎么样", "backend"},
-		{"hello world", ""},
-	}
-
-	for _, tt := range tests {
-		result := parser.extractTarget(tt.content, processes)
-		if result != tt.expected {
-			t.Errorf("extractTarget(%q) = %q, want %q", tt.content, result, tt.expected)
-		}
+	if result.Intent != IntentChat {
+		t.Errorf("Parse('@zen help') intent = %v, want %v", result.Intent, IntentChat)
 	}
 }
 
 func TestNLUParser_Parse_Logs(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
+	// "logs" now falls through to chat intent (handled by LLM)
+	tests := []string{"logs", "log", "logs 10"}
+
+	for _, content := range tests {
+		msg := &Message{Content: content, IsMention: true}
+		result := parser.Parse(msg, false)
+		if result == nil {
+			t.Errorf("Parse(%q) returned nil", content)
+			continue
+		}
+		if result.Intent != IntentChat {
+			t.Errorf("Parse(%q) intent = %v, want %v", content, result.Intent, IntentChat)
+		}
+	}
+}
+
+func TestNLUParser_Parse_Errors(t *testing.T) {
+	parser := NewNLUParser([]string{"@zen"})
+
+	// "errors" now falls through to chat intent (handled by LLM)
+	msg := &Message{Content: "errors", IsMention: true}
+	result := parser.Parse(msg, false)
+	if result == nil {
+		t.Fatal("Parse(errors) returned nil")
+	}
+	if result.Intent != IntentChat {
+		t.Errorf("Parse(errors) intent = %v, want %v", result.Intent, IntentChat)
+	}
+}
+
+func TestNLUParser_Parse_Persona(t *testing.T) {
+	parser := NewNLUParser([]string{"@zen"})
+
 	tests := []struct {
 		content string
 		action  string
+		task    string
 	}{
-		{"logs", "logs"},
-		{"log", "logs"},
-		{"logs 10", "logs"},
+		{"persona", "show", ""},
+		{"人设", "show", ""},
+		{"persona 你是一个猫娘", "set", "你是一个猫娘"},
+		{"人设 活泼可爱的助手", "set", "活泼可爱的助手"},
+		{"persona clear", "clear", ""},
+		{"人设 清除", "clear", ""},
 	}
 
 	for _, tt := range tests {
@@ -368,21 +345,32 @@ func TestNLUParser_Parse_Logs(t *testing.T) {
 			t.Errorf("Parse(%q) returned nil", tt.content)
 			continue
 		}
+		if result.Intent != IntentPersona {
+			t.Errorf("Parse(%q) intent = %v, want %v", tt.content, result.Intent, IntentPersona)
+		}
 		if result.Action != tt.action {
 			t.Errorf("Parse(%q) action = %q, want %q", tt.content, result.Action, tt.action)
+		}
+		if result.Task != tt.task {
+			t.Errorf("Parse(%q) task = %q, want %q", tt.content, result.Task, tt.task)
 		}
 	}
 }
 
-func TestNLUParser_Parse_Errors(t *testing.T) {
+func TestNLUParser_Parse_Forget(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	msg := &Message{Content: "errors", IsMention: true}
-	result := parser.Parse(msg, false)
-	if result == nil {
-		t.Fatal("Parse(errors) returned nil")
-	}
-	if result.Action != "errors" {
-		t.Errorf("Parse(errors) action = %q, want 'errors'", result.Action)
+	tests := []string{"forget", "忘记", "清除记忆"}
+
+	for _, content := range tests {
+		msg := &Message{Content: content, IsMention: true}
+		result := parser.Parse(msg, false)
+		if result == nil {
+			t.Errorf("Parse(%q) returned nil", content)
+			continue
+		}
+		if result.Intent != IntentForget {
+			t.Errorf("Parse(%q) intent = %v, want %v", content, result.Intent, IntentForget)
+		}
 	}
 }

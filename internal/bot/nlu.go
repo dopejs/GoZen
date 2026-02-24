@@ -32,38 +32,6 @@ func NewNLUParser(mentionKeywords []string) *NLUParser {
 
 func (p *NLUParser) initPatterns() {
 	p.commandPatterns = []*commandPattern{
-		// list command
-		{
-			pattern: regexp.MustCompile(`(?i)^list$`),
-			intent:  IntentQueryList,
-			extract: func(m []string) *ParsedIntent {
-				return &ParsedIntent{Intent: IntentQueryList}
-			},
-		},
-		// status [target]
-		{
-			pattern: regexp.MustCompile(`(?i)^status(?:\s+(\S+))?$`),
-			intent:  IntentQueryStatus,
-			extract: func(m []string) *ParsedIntent {
-				return &ParsedIntent{Intent: IntentQueryStatus, Target: m[1]}
-			},
-		},
-		// logs [n]
-		{
-			pattern: regexp.MustCompile(`(?i)^logs?(?:\s+(\d+))?$`),
-			intent:  IntentQueryStatus,
-			extract: func(m []string) *ParsedIntent {
-				return &ParsedIntent{Intent: IntentQueryStatus, Action: "logs", Params: map[string]string{"limit": m[1]}}
-			},
-		},
-		// errors
-		{
-			pattern: regexp.MustCompile(`(?i)^errors?$`),
-			intent:  IntentQueryStatus,
-			extract: func(m []string) *ParsedIntent {
-				return &ParsedIntent{Intent: IntentQueryStatus, Action: "errors"}
-			},
-		},
 		// pause/resume/cancel/stop [target]
 		{
 			pattern: regexp.MustCompile(`(?i)^(pause|resume|cancel|stop)(?:\s+(\S+))?$`),
@@ -78,14 +46,6 @@ func (p *NLUParser) initPatterns() {
 			intent:  IntentBind,
 			extract: func(m []string) *ParsedIntent {
 				return &ParsedIntent{Intent: IntentBind, Target: m[1]}
-			},
-		},
-		// help
-		{
-			pattern: regexp.MustCompile(`(?i)^help$`),
-			intent:  IntentHelp,
-			extract: func(m []string) *ParsedIntent {
-				return &ParsedIntent{Intent: IntentHelp}
 			},
 		},
 		// approve/reject (for button clicks or replies)
@@ -105,9 +65,47 @@ func (p *NLUParser) initPatterns() {
 				return &ParsedIntent{Intent: IntentApprove, Approved: &approved}
 			},
 		},
-		// [target] <task> - send task to specific target
+		// persona set/show/clear
 		{
-			pattern: regexp.MustCompile(`(?i)^(\S+)\s+(.+)$`),
+			pattern: regexp.MustCompile(`(?i)^(?:persona|人设)\s+(?:clear|清除)$`),
+			intent:  IntentPersona,
+			extract: func(m []string) *ParsedIntent {
+				return &ParsedIntent{Intent: IntentPersona, Action: "clear"}
+			},
+		},
+		{
+			pattern: regexp.MustCompile(`(?i)^(?:persona|人设)\s+(.+)$`),
+			intent:  IntentPersona,
+			extract: func(m []string) *ParsedIntent {
+				return &ParsedIntent{Intent: IntentPersona, Action: "set", Task: strings.TrimSpace(m[1])}
+			},
+		},
+		{
+			pattern: regexp.MustCompile(`(?i)^(?:persona|人设)$`),
+			intent:  IntentPersona,
+			extract: func(m []string) *ParsedIntent {
+				return &ParsedIntent{Intent: IntentPersona, Action: "show"}
+			},
+		},
+		// forget / clear history
+		{
+			pattern: regexp.MustCompile(`(?i)^(?:forget|忘记|清除记忆)$`),
+			intent:  IntentForget,
+			extract: func(m []string) *ParsedIntent {
+				return &ParsedIntent{Intent: IntentForget}
+			},
+		},
+		// send <target> <task> - explicit send task syntax
+		{
+			pattern: regexp.MustCompile(`(?i)^send\s+(\S+)\s+(.+)$`),
+			intent:  IntentSendTask,
+			extract: func(m []string) *ParsedIntent {
+				return &ParsedIntent{Intent: IntentSendTask, Target: m[1], Task: m[2]}
+			},
+		},
+		// <target>: <task> - colon syntax for send task
+		{
+			pattern: regexp.MustCompile(`(?i)^(\S+):\s+(.+)$`),
 			intent:  IntentSendTask,
 			extract: func(m []string) *ParsedIntent {
 				return &ParsedIntent{Intent: IntentSendTask, Target: m[1], Task: m[2]}
@@ -150,7 +148,7 @@ func (p *NLUParser) Parse(msg *Message, requireMention bool) *ParsedIntent {
 
 	// Empty after stripping prefix means just a mention
 	if content == "" {
-		return &ParsedIntent{Intent: IntentHelp, Raw: msg.Content}
+		return &ParsedIntent{Intent: IntentChat, Raw: msg.Content}
 	}
 
 	// Try command patterns first (no LLM cost)
@@ -162,66 +160,10 @@ func (p *NLUParser) Parse(msg *Message, requireMention bool) *ParsedIntent {
 		}
 	}
 
-	// If no pattern matched, treat as task for bound/default process
+	// If no pattern matched, treat as chat (conversational fallback)
 	return &ParsedIntent{
-		Intent: IntentSendTask,
+		Intent: IntentChat,
 		Task:   content,
 		Raw:    msg.Content,
 	}
-}
-
-// ParseNaturalLanguage uses LLM to parse natural language.
-// This is called when simple pattern matching fails and NLU is enabled.
-func (p *NLUParser) ParseNaturalLanguage(content string, processes []string) *ParsedIntent {
-	// Natural language patterns (no LLM, just heuristics)
-	lower := strings.ToLower(content)
-
-	// Status queries
-	statusPatterns := []string{
-		"状态", "怎么样", "在干嘛", "在做什么", "status", "what's",
-		"看看", "查看", "检查",
-	}
-	for _, pat := range statusPatterns {
-		if strings.Contains(lower, pat) {
-			target := p.extractTarget(content, processes)
-			return &ParsedIntent{Intent: IntentQueryStatus, Target: target, Raw: content}
-		}
-	}
-
-	// List queries
-	listPatterns := []string{
-		"有哪些", "列出", "所有", "list", "哪些项目", "多少个",
-	}
-	for _, pat := range listPatterns {
-		if strings.Contains(lower, pat) {
-			return &ParsedIntent{Intent: IntentQueryList, Raw: content}
-		}
-	}
-
-	// Control commands
-	controlMap := map[string]string{
-		"暂停": "pause", "停止": "stop", "继续": "resume", "取消": "cancel",
-		"pause": "pause", "stop": "stop", "resume": "resume", "cancel": "cancel",
-	}
-	for cn, action := range controlMap {
-		if strings.Contains(lower, cn) {
-			target := p.extractTarget(content, processes)
-			return &ParsedIntent{Intent: IntentControl, Action: action, Target: target, Raw: content}
-		}
-	}
-
-	// Default: treat as task
-	target := p.extractTarget(content, processes)
-	return &ParsedIntent{Intent: IntentSendTask, Target: target, Task: content, Raw: content}
-}
-
-// extractTarget tries to find a process name in the content.
-func (p *NLUParser) extractTarget(content string, processes []string) string {
-	lower := strings.ToLower(content)
-	for _, proc := range processes {
-		if strings.Contains(lower, strings.ToLower(proc)) {
-			return proc
-		}
-	}
-	return ""
 }

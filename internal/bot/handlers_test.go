@@ -167,6 +167,7 @@ func TestGateway_processIntent_Help(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
+	// Help now redirects to chat, which shows a friendly message
 	if adapter.sentMessages[0].Format != "markdown" {
 		t.Errorf("expected markdown format, got %s", adapter.sentMessages[0].Format)
 	}
@@ -188,6 +189,7 @@ func TestGateway_processIntent_QueryList_Empty(t *testing.T) {
 		ChatID:   "chat-1",
 	}
 
+	// IntentQueryList now goes through handleChat (LLM-first approach)
 	intent := &ParsedIntent{Intent: IntentQueryList}
 	msg := &Message{
 		Platform: PlatformTelegram,
@@ -201,7 +203,8 @@ func TestGateway_processIntent_QueryList_Empty(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
-	if adapter.sentMessages[0].Text != "No processes connected." {
+	// Now handled by chat fallback (no LLM configured)
+	if !strings.Contains(adapter.sentMessages[0].Text, "Zen") {
 		t.Errorf("unexpected message: %s", adapter.sentMessages[0].Text)
 	}
 }
@@ -222,6 +225,7 @@ func TestGateway_processIntent_QueryStatus_NoTarget(t *testing.T) {
 		ChatID:   "chat-1",
 	}
 
+	// IntentQueryStatus now goes through handleChat (LLM-first approach)
 	intent := &ParsedIntent{Intent: IntentQueryStatus}
 	msg := &Message{
 		Platform: PlatformTelegram,
@@ -235,8 +239,8 @@ func TestGateway_processIntent_QueryStatus_NoTarget(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
-	// Should say no processes connected
-	if adapter.sentMessages[0].Text != "No processes connected." {
+	// Now handled by chat fallback (no LLM configured)
+	if !strings.Contains(adapter.sentMessages[0].Text, "Zen") {
 		t.Errorf("unexpected message: %s", adapter.sentMessages[0].Text)
 	}
 }
@@ -412,8 +416,9 @@ func TestGateway_processIntent_SendTask_NoProcesses(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
-	if adapter.sentMessages[0].Text != "No processes connected." {
-		t.Errorf("unexpected message: %s", adapter.sentMessages[0].Text)
+	// Now falls back to chat handler when no processes connected
+	if !strings.Contains(adapter.sentMessages[0].Text, "Zen") {
+		t.Errorf("expected chat response, got: %s", adapter.sentMessages[0].Text)
 	}
 }
 
@@ -446,9 +451,9 @@ func TestGateway_processIntent_Unknown(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
-	expected := "I didn't understand that. Type `help` for available commands."
-	if adapter.sentMessages[0].Text != expected {
-		t.Errorf("expected %q, got %q", expected, adapter.sentMessages[0].Text)
+	// Unknown intent now goes to chat handler, which shows a friendly message
+	if !strings.Contains(adapter.sentMessages[0].Text, "Zen") {
+		t.Errorf("expected chat response mentioning Zen, got %q", adapter.sentMessages[0].Text)
 	}
 }
 
@@ -522,11 +527,12 @@ func TestGateway_handleMessage_DirectMessage(t *testing.T) {
 	g.adapters = append(g.adapters, adapter)
 
 	// Direct message should work without mention
+	// "help" now triggers chat handler
 	msg := &Message{
 		Platform:    PlatformTelegram,
 		ChatID:      "chat-1",
 		UserID:      "user-1",
-		Content:     "help",
+		Content:     "list",
 		IsMention:   false,
 		IsDirectMsg: true,
 	}
@@ -547,11 +553,12 @@ func TestGateway_handleMessage_ChannelAlwaysMode(t *testing.T) {
 	g.adapters = append(g.adapters, adapter)
 
 	// Channel message should work without mention when mode is "always"
+	// Use "list" command instead of "help" which now goes to chat
 	msg := &Message{
 		Platform:    PlatformTelegram,
 		ChatID:      "chat-1",
 		UserID:      "user-1",
-		Content:     "help",
+		Content:     "list",
 		IsMention:   false,
 		IsDirectMsg: false,
 	}
@@ -736,279 +743,6 @@ func TestGateway_editMessage_NoAdapter(t *testing.T) {
 	err := g.editMessage(replyTo, "msg-1", &OutgoingMessage{Text: "test"})
 	if err == nil {
 		t.Error("editMessage should return error when no adapter found")
-	}
-}
-
-func TestGateway_sendProcessList_WithProcesses(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	// Register a process
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:          "proc-1",
-		Path:        "/path/to/myproject",
-		PID:         1234,
-		Status:      "idle",
-		CurrentTask: "",
-		StartTime:   time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	replyTo := ReplyContext{
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	g.sendProcessList(replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	msg := adapter.sentMessages[0]
-	if msg.Format != "markdown" {
-		t.Errorf("expected markdown format, got %s", msg.Format)
-	}
-	if !contains(msg.Text, "myproject") {
-		t.Errorf("message should contain process name, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_sendProcessList_WithBusyProcess(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:          "proc-1",
-		Path:        "/path/to/api",
-		PID:         1234,
-		Status:      "busy",
-		CurrentTask: "running tests",
-		StartTime:   time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	replyTo := ReplyContext{
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	g.sendProcessList(replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "running tests") {
-		t.Errorf("message should contain current task, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_sendProcessList_WithAlias(t *testing.T) {
-	g := newTestGateway()
-	g.registry = NewRegistry(map[string]string{"myapi": "/path/to/api"})
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:        "proc-1",
-		Path:      "/path/to/api",
-		PID:       1234,
-		Status:    "idle",
-		StartTime: time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	replyTo := ReplyContext{
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	g.sendProcessList(replyTo)
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "myapi") {
-		t.Errorf("message should contain alias, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_SingleProcess(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:        "proc-1",
-		Path:      "/path/to/api",
-		PID:       1234,
-		Status:    "idle",
-		StartTime: time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	session := &Session{
-		UserID:   "user-1",
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	replyTo := ReplyContext{
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	// No target specified, but only one process - should auto-select
-	intent := &ParsedIntent{Intent: IntentQueryStatus}
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "api") {
-		t.Errorf("message should contain process name, got: %s", msg.Text)
-	}
-	if !contains(msg.Text, "Idle") {
-		t.Errorf("message should contain status, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_MultipleProcesses(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server1, client1 := createMockConn()
-	defer server1.Close()
-	defer client1.Close()
-
-	server2, client2 := createMockConn()
-	defer server2.Close()
-	defer client2.Close()
-
-	info1 := &ProcessInfo{ID: "proc-1", Path: "/path/to/api", PID: 1234, Status: "idle", StartTime: time.Now()}
-	info2 := &ProcessInfo{ID: "proc-2", Path: "/path/to/web", PID: 5678, Status: "idle", StartTime: time.Now()}
-	g.registry.Register(info1, client1)
-	g.registry.Register(info2, client2)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus}
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "Multiple processes") {
-		t.Errorf("should ask to specify process, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_WithTarget(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:          "proc-1",
-		Path:        "/path/to/api",
-		PID:         1234,
-		Status:      "busy",
-		CurrentTask: "deploying",
-		StartTime:   time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus, Target: "api"}
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "Busy") {
-		t.Errorf("message should show busy status, got: %s", msg.Text)
-	}
-	if !contains(msg.Text, "deploying") {
-		t.Errorf("message should show current task, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_ProcessNotFound(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{ID: "proc-1", Path: "/path/to/api", PID: 1234, Status: "idle", StartTime: time.Now()}
-	g.registry.Register(info, client)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus, Target: "nonexistent"}
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "not found") {
-		t.Errorf("should say process not found, got: %s", msg.Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_WithBoundProcess(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server1, client1 := createMockConn()
-	defer server1.Close()
-	defer client1.Close()
-
-	server2, client2 := createMockConn()
-	defer server2.Close()
-	defer client2.Close()
-
-	info1 := &ProcessInfo{ID: "proc-1", Path: "/path/to/api", PID: 1234, Status: "idle", StartTime: time.Now()}
-	info2 := &ProcessInfo{ID: "proc-2", Path: "/path/to/web", PID: 5678, Status: "idle", StartTime: time.Now()}
-	g.registry.Register(info1, client1)
-	g.registry.Register(info2, client2)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1", BoundProcess: "api"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus} // No target, should use bound
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	msg := adapter.sentMessages[0]
-	if !contains(msg.Text, "api") {
-		t.Errorf("should show bound process status, got: %s", msg.Text)
 	}
 }
 
@@ -1832,41 +1566,6 @@ func TestGateway_processIntent_Subscribe(t *testing.T) {
 	}
 }
 
-func TestGateway_handleStatusQuery_WithAlias(t *testing.T) {
-	g := newTestGateway()
-	g.registry = NewRegistry(map[string]string{"myapi": "/path/to/api"})
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:        "proc-1",
-		Path:      "/path/to/api",
-		PID:       1234,
-		Status:    "idle",
-		StartTime: time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus, Target: "myapi"} // Use alias
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	// Should find process by alias
-	if !contains(adapter.sentMessages[0].Text, "api") {
-		t.Errorf("should find process by alias, got: %s", adapter.sentMessages[0].Text)
-	}
-}
-
 func TestGateway_handleNotification_WithButtons(t *testing.T) {
 	g := newTestGateway()
 	adapter := newMockAdapter(adapters.PlatformTelegram)
@@ -1984,88 +1683,6 @@ func TestNLUParser_Parse_ControlWithTarget(t *testing.T) {
 		if result.Target != tt.target {
 			t.Errorf("Parse(%q) target = %q, want %q", tt.content, result.Target, tt.target)
 		}
-	}
-}
-
-func TestNLUParser_ParseNaturalLanguage_DefaultToTask(t *testing.T) {
-	parser := NewNLUParser([]string{"@zen"})
-	processes := []string{"api", "backend"}
-
-	// Unrecognized input defaults to SendTask
-	result := parser.ParseNaturalLanguage("hello world", processes)
-	if result == nil {
-		t.Fatal("ParseNaturalLanguage should not return nil")
-	}
-	if result.Intent != IntentSendTask {
-		t.Errorf("expected IntentSendTask for unrecognized input, got %v", result.Intent)
-	}
-}
-
-func TestGateway_sendProcessList_ErrorStatus(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:        "proc-1",
-		Path:      "/path/to/api",
-		PID:       1234,
-		Status:    "error", // Error status
-		StartTime: time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	replyTo := ReplyContext{
-		Platform: PlatformTelegram,
-		ChatID:   "chat-1",
-	}
-
-	g.sendProcessList(replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	// Should contain red indicator for error status
-	if !contains(adapter.sentMessages[0].Text, "🔴") {
-		t.Errorf("expected error indicator, got: %s", adapter.sentMessages[0].Text)
-	}
-}
-
-func TestGateway_handleStatusQuery_ErrorStatus(t *testing.T) {
-	g := newTestGateway()
-	adapter := newMockAdapter(adapters.PlatformTelegram)
-	g.adapters = append(g.adapters, adapter)
-
-	server, client := createMockConn()
-	defer server.Close()
-	defer client.Close()
-
-	info := &ProcessInfo{
-		ID:        "proc-1",
-		Path:      "/path/to/api",
-		PID:       1234,
-		Status:    "error",
-		StartTime: time.Now(),
-	}
-	g.registry.Register(info, client)
-
-	session := &Session{UserID: "user-1", Platform: PlatformTelegram, ChatID: "chat-1"}
-	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
-	intent := &ParsedIntent{Intent: IntentQueryStatus, Target: "api"}
-
-	g.handleStatusQuery(intent, session, replyTo)
-
-	if len(adapter.sentMessages) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
-	}
-
-	if !contains(adapter.sentMessages[0].Text, "Error") {
-		t.Errorf("expected Error status, got: %s", adapter.sentMessages[0].Text)
 	}
 }
 
@@ -2238,28 +1855,28 @@ func TestNLUParser_Parse_MentionStripped(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
 	// When content starts with "@zen ", the mention is stripped
+	// "help" now returns IntentChat since help pattern was removed
 	msg := &Message{Content: "@zen help", IsMention: false}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Intent != IntentHelp {
-		t.Errorf("expected IntentHelp, got %v", result.Intent)
+	if result.Intent != IntentChat {
+		t.Errorf("expected IntentChat, got %v", result.Intent)
 	}
 }
 
-func TestNLUParser_Parse_UnknownCommandAsTask(t *testing.T) {
+func TestNLUParser_Parse_UnknownCommandAsChat(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	// Unknown command should be treated as task
-	// Note: "do" is a keyword that gets parsed, so use something else
+	// Unknown command should be treated as chat (conversational fallback)
 	msg := &Message{Content: "random task here", IsMention: true}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Intent != IntentSendTask {
-		t.Errorf("expected IntentSendTask for unknown command, got %v", result.Intent)
+	if result.Intent != IntentChat {
+		t.Errorf("expected IntentChat for unknown command, got %v", result.Intent)
 	}
 }
 
@@ -2267,13 +1884,14 @@ func TestNLUParser_Parse_CaseInsensitive(t *testing.T) {
 	parser := NewNLUParser([]string{"@ZEN"})
 
 	// Should match case-insensitively
-	msg := &Message{Content: "@zen help", IsMention: false}
+	// Use "pause" command which still exists as an action command
+	msg := &Message{Content: "@zen pause", IsMention: false}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Intent != IntentHelp {
-		t.Errorf("expected IntentHelp, got %v", result.Intent)
+	if result.Intent != IntentControl {
+		t.Errorf("expected IntentControl, got %v", result.Intent)
 	}
 }
 
@@ -2563,16 +2181,14 @@ func TestRegistry_SetAlias_UpdateExisting(t *testing.T) {
 func TestNLUParser_Parse_StatusWithTarget(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
+	// "status myproject" now falls through to chat intent (handled by LLM)
 	msg := &Message{Content: "status myproject", IsMention: true}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Intent != IntentQueryStatus {
-		t.Errorf("expected IntentQueryStatus, got %v", result.Intent)
-	}
-	if result.Target != "myproject" {
-		t.Errorf("expected target 'myproject', got '%s'", result.Target)
+	if result.Intent != IntentChat {
+		t.Errorf("expected IntentChat, got %v", result.Intent)
 	}
 }
 
@@ -2742,16 +2358,14 @@ func TestNLUParser_Parse_ChineseApprove(t *testing.T) {
 func TestNLUParser_Parse_LogsWithLimit(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
+	// "logs 50" now falls through to chat intent (handled by LLM)
 	msg := &Message{Content: "logs 50", IsMention: true}
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil")
 	}
-	if result.Action != "logs" {
-		t.Errorf("expected action 'logs', got '%s'", result.Action)
-	}
-	if result.Params["limit"] != "50" {
-		t.Errorf("expected limit '50', got '%s'", result.Params["limit"])
+	if result.Intent != IntentChat {
+		t.Errorf("expected IntentChat, got %v", result.Intent)
 	}
 }
 
@@ -2796,5 +2410,137 @@ func TestNLUParser_Parse_MentionKeywordOnlyReturnsHelp(t *testing.T) {
 	result := parser.Parse(msg, false)
 	if result == nil {
 		t.Fatal("Parse should not return nil for @zen")
+	}
+}
+
+func TestGateway_handlePersona_Show_Empty(t *testing.T) {
+	g := newTestGateway()
+	g.config.MemoryDir = t.TempDir()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+	intent := &ParsedIntent{Intent: IntentPersona, Action: "show"}
+
+	g.handlePersona(intent, replyTo)
+
+	if len(adapter.sentMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
+	}
+	if !contains(adapter.sentMessages[0].Text, "No persona set") {
+		t.Errorf("expected 'No persona set', got: %s", adapter.sentMessages[0].Text)
+	}
+}
+
+func TestGateway_handlePersona_SetAndShow(t *testing.T) {
+	g := newTestGateway()
+	g.config.MemoryDir = t.TempDir()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+
+	// Set persona
+	intent := &ParsedIntent{Intent: IntentPersona, Action: "set", Task: "你是一个猫娘助手"}
+	g.handlePersona(intent, replyTo)
+
+	if !contains(adapter.sentMessages[0].Text, "Persona updated") {
+		t.Errorf("expected confirmation, got: %s", adapter.sentMessages[0].Text)
+	}
+
+	// Show persona
+	adapter.sentMessages = nil
+	intent = &ParsedIntent{Intent: IntentPersona, Action: "show"}
+	g.handlePersona(intent, replyTo)
+
+	if !contains(adapter.sentMessages[0].Text, "猫娘") {
+		t.Errorf("expected persona content, got: %s", adapter.sentMessages[0].Text)
+	}
+}
+
+func TestGateway_handlePersona_Clear(t *testing.T) {
+	g := newTestGateway()
+	g.config.MemoryDir = t.TempDir()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+
+	// Set then clear
+	SaveMemory(g.config.MemoryDir, "some persona")
+
+	intent := &ParsedIntent{Intent: IntentPersona, Action: "clear"}
+	g.handlePersona(intent, replyTo)
+
+	if !contains(adapter.sentMessages[0].Text, "Persona cleared") {
+		t.Errorf("expected clear confirmation, got: %s", adapter.sentMessages[0].Text)
+	}
+
+	// Verify cleared
+	content, _ := LoadMemory(g.config.MemoryDir)
+	if content != "" {
+		t.Errorf("expected empty memory after clear, got: %s", content)
+	}
+}
+
+func TestGateway_handleForget(t *testing.T) {
+	g := newTestGateway()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	session := g.sessions.GetOrCreate(PlatformTelegram, "user-1", "chat-1")
+	session.History.Add(ChatMessage{Role: "user", Content: "hello"})
+	session.History.Add(ChatMessage{Role: "assistant", Content: "hi"})
+
+	if session.History.Len() != 2 {
+		t.Fatalf("expected 2 messages before forget, got %d", session.History.Len())
+	}
+
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+	g.handleForget(session, replyTo)
+
+	if session.History.Len() != 0 {
+		t.Errorf("expected 0 messages after forget, got %d", session.History.Len())
+	}
+	if !contains(adapter.sentMessages[0].Text, "Conversation history cleared") {
+		t.Errorf("expected confirmation, got: %s", adapter.sentMessages[0].Text)
+	}
+}
+
+func TestGateway_processIntent_Persona(t *testing.T) {
+	g := newTestGateway()
+	g.config.MemoryDir = t.TempDir()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	session := g.sessions.GetOrCreate(PlatformTelegram, "user-1", "chat-1")
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+	intent := &ParsedIntent{Intent: IntentPersona, Action: "show"}
+	msg := &Message{Platform: PlatformTelegram, ChatID: "chat-1", UserID: "user-1"}
+
+	g.processIntent(intent, session, replyTo, msg)
+
+	if len(adapter.sentMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
+	}
+}
+
+func TestGateway_processIntent_Forget(t *testing.T) {
+	g := newTestGateway()
+	adapter := newMockAdapter(adapters.PlatformTelegram)
+	g.adapters = append(g.adapters, adapter)
+
+	session := g.sessions.GetOrCreate(PlatformTelegram, "user-1", "chat-1")
+	replyTo := ReplyContext{Platform: PlatformTelegram, ChatID: "chat-1"}
+	intent := &ParsedIntent{Intent: IntentForget}
+	msg := &Message{Platform: PlatformTelegram, ChatID: "chat-1", UserID: "user-1"}
+
+	g.processIntent(intent, session, replyTo, msg)
+
+	if len(adapter.sentMessages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
+	}
+	if !contains(adapter.sentMessages[0].Text, "Conversation history cleared") {
+		t.Errorf("expected forget confirmation, got: %s", adapter.sentMessages[0].Text)
 	}
 }

@@ -234,6 +234,22 @@ export interface Session {
   total_tokens: number
 }
 
+// Middleware types
+export interface MiddlewareEntry {
+  name: string
+  enabled: boolean
+  source: string
+  version?: string
+  description?: string
+  priority?: number
+  config?: Record<string, unknown>
+}
+
+export interface MiddlewareConfig {
+  enabled: boolean
+  middlewares: MiddlewareEntry[]
+}
+
 // Auth types
 export interface AuthCheckResponse {
   authenticated: boolean

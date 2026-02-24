@@ -9,6 +9,7 @@ import { ProviderEditPage } from '@/pages/providers/edit'
 import { ProfilesPage } from '@/pages/profiles'
 import { ProfileEditPage } from '@/pages/profiles/edit'
 import { BotPage } from '@/pages/bot'
+import { MiddlewarePage } from '@/pages/middleware'
 import { LogsPage } from '@/pages/logs'
 import { UsagePage } from '@/pages/usage'
 import { SettingsPage } from '@/pages/settings'
@@ -50,6 +51,7 @@ function App() {
           <Route path="/profiles" element={<ProfilesPage />} />
           <Route path="/profiles/:name" element={<ProfileEditPage />} />
           <Route path="/bot" element={<BotPage />} />
+          <Route path="/middleware" element={<MiddlewarePage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -30,7 +30,8 @@
     "usage": "사용량",
     "settings": "설정",
     "dashboard": "대시보드",
-    "bot": "봇"
+    "bot": "봇",
+    "middleware": "미들웨어"
   },
   "providers": {
     "title": "프로바이더",
@@ -186,6 +187,26 @@
     "forbidden": "금지됨",
     "badRequest": "잘못된 요청",
     "unknown": "알 수 없는 오류"
+  },
+  "middleware": {
+    "title": "미들웨어",
+    "description": "요청/응답 미들웨어 파이프라인 구성",
+    "globalSettings": "전역 설정",
+    "globalSettingsDesc": "미들웨어 파이프라인을 전역적으로 활성화 또는 비활성화",
+    "enablePipeline": "미들웨어 파이프라인 활성화",
+    "enablePipelineDesc": "활성화하면 요청이 구성된 미들웨어를 통과합니다",
+    "middlewares": "미들웨어 목록",
+    "middlewaresDesc": "개별 미들웨어 구성 요소 설정",
+    "noMiddlewares": "사용 가능한 미들웨어가 없습니다",
+    "reload": "다시 로드",
+    "reloaded": "미들웨어 파이프라인이 다시 로드되었습니다",
+    "enabled": "미들웨어 파이프라인 활성화됨",
+    "disabled": "미들웨어 파이프라인 비활성화됨",
+    "middlewareEnabled": "{{name}} 활성화됨",
+    "middlewareDisabled": "{{name}} 비활성화됨",
+    "priority": "우선순위",
+    "betaNotice": "베타 기능:",
+    "betaNoticeDesc": "미들웨어 파이프라인은 현재 베타 버전입니다. 구성 옵션은 향후 릴리스에서 변경될 수 있습니다."
   },
   "bot": {
     "title": "봇 게이트웨이",

@@ -18,6 +18,7 @@ import type {
   LoginResponse,
   HealthResponse,
   BotConfig,
+  MiddlewareConfig,
 } from '@/types/api'
 
 const API_BASE = '/api/v1'
@@ -273,6 +274,28 @@ export const botApi = {
     request<BotConfig>('/bot', {
       method: 'PUT',
       body: JSON.stringify(bot),
+    }),
+}
+
+// Middleware API
+export const middlewareApi = {
+  get: () => request<MiddlewareConfig>('/middleware'),
+  update: (config: MiddlewareConfig) =>
+    request<{ status: string }>('/middleware', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    }),
+  enable: (name: string) =>
+    request<{ status: string }>(`/middleware/${encodeURIComponent(name)}/enable`, {
+      method: 'POST',
+    }),
+  disable: (name: string) =>
+    request<{ status: string }>(`/middleware/${encodeURIComponent(name)}/disable`, {
+      method: 'POST',
+    }),
+  reload: () =>
+    request<{ status: string }>('/middleware/reload', {
+      method: 'POST',
     }),
 }
 

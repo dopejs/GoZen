@@ -30,7 +30,8 @@
     "usage": "Usage",
     "settings": "Settings",
     "dashboard": "Dashboard",
-    "bot": "Bot"
+    "bot": "Bot",
+    "middleware": "Middleware"
   },
   "providers": {
     "title": "Providers",
@@ -309,5 +310,25 @@
     "quietHoursEnd": "Quiet Hours End",
     "quietHoursZone": "Timezone",
     "recentPaths": "Recent Paths"
+  },
+  "middleware": {
+    "title": "Middleware",
+    "description": "Configure request/response middleware pipeline",
+    "globalSettings": "Global Settings",
+    "globalSettingsDesc": "Enable or disable the middleware pipeline globally",
+    "enablePipeline": "Enable Middleware Pipeline",
+    "enablePipelineDesc": "When enabled, requests will pass through configured middlewares",
+    "middlewares": "Middlewares",
+    "middlewaresDesc": "Configure individual middleware components",
+    "noMiddlewares": "No middlewares available",
+    "reload": "Reload",
+    "reloaded": "Middleware pipeline reloaded",
+    "enabled": "Middleware pipeline enabled",
+    "disabled": "Middleware pipeline disabled",
+    "middlewareEnabled": "{{name}} enabled",
+    "middlewareDisabled": "{{name}} disabled",
+    "priority": "Priority",
+    "betaNotice": "Beta Feature:",
+    "betaNoticeDesc": "The middleware pipeline is currently in beta. Configuration options may change in future releases."
   }
 }

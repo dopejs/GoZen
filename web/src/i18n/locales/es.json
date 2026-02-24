@@ -30,7 +30,8 @@
     "usage": "Uso",
     "settings": "Configuración",
     "dashboard": "Panel",
-    "bot": "Bot"
+    "bot": "Bot",
+    "middleware": "Middleware"
   },
   "providers": {
     "title": "Proveedores",
@@ -233,5 +234,25 @@
     "quietHoursEnd": "Fin de Horas Silenciosas",
     "quietHoursZone": "Zona Horaria",
     "recentPaths": "Rutas Recientes"
+  },
+  "middleware": {
+    "title": "Middleware",
+    "description": "Configurar pipeline de middleware de solicitud/respuesta",
+    "globalSettings": "Configuración Global",
+    "globalSettingsDesc": "Habilitar o deshabilitar el pipeline de middleware globalmente",
+    "enablePipeline": "Habilitar Pipeline de Middleware",
+    "enablePipelineDesc": "Cuando está habilitado, las solicitudes pasarán por los middlewares configurados",
+    "middlewares": "Middlewares",
+    "middlewaresDesc": "Configurar componentes de middleware individuales",
+    "noMiddlewares": "No hay middlewares disponibles",
+    "reload": "Recargar",
+    "reloaded": "Pipeline de middleware recargado",
+    "enabled": "Pipeline de middleware habilitado",
+    "disabled": "Pipeline de middleware deshabilitado",
+    "middlewareEnabled": "{{name}} habilitado",
+    "middlewareDisabled": "{{name}} deshabilitado",
+    "priority": "Prioridad",
+    "betaNotice": "Función Beta:",
+    "betaNoticeDesc": "El pipeline de middleware está actualmente en beta. Las opciones de configuración pueden cambiar en futuras versiones."
   }
 }

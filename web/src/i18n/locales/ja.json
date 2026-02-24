@@ -30,7 +30,8 @@
     "usage": "使用量",
     "settings": "設定",
     "dashboard": "ダッシュボード",
-    "bot": "ボット"
+    "bot": "ボット",
+    "middleware": "ミドルウェア"
   },
   "providers": {
     "title": "プロバイダー",
@@ -186,6 +187,26 @@
     "forbidden": "アクセス禁止",
     "badRequest": "不正なリクエスト",
     "unknown": "不明なエラー"
+  },
+  "middleware": {
+    "title": "ミドルウェア",
+    "description": "リクエスト/レスポンスミドルウェアパイプラインを設定",
+    "globalSettings": "グローバル設定",
+    "globalSettingsDesc": "ミドルウェアパイプラインをグローバルに有効化または無効化",
+    "enablePipeline": "ミドルウェアパイプラインを有効化",
+    "enablePipelineDesc": "有効にすると、リクエストは設定されたミドルウェアを通過します",
+    "middlewares": "ミドルウェア一覧",
+    "middlewaresDesc": "個々のミドルウェアコンポーネントを設定",
+    "noMiddlewares": "利用可能なミドルウェアがありません",
+    "reload": "再読み込み",
+    "reloaded": "ミドルウェアパイプラインを再読み込みしました",
+    "enabled": "ミドルウェアパイプラインが有効",
+    "disabled": "ミドルウェアパイプラインが無効",
+    "middlewareEnabled": "{{name}} が有効",
+    "middlewareDisabled": "{{name}} が無効",
+    "priority": "優先度",
+    "betaNotice": "ベータ機能：",
+    "betaNoticeDesc": "ミドルウェアパイプラインは現在ベータ版です。設定オプションは将来のリリースで変更される可能性があります。"
   },
   "bot": {
     "title": "ボットゲートウェイ",

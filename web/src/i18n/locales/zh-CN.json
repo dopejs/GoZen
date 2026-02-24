@@ -30,7 +30,8 @@
     "usage": "用量",
     "settings": "设置",
     "dashboard": "仪表盘",
-    "bot": "机器人"
+    "bot": "机器人",
+    "middleware": "中间件"
   },
   "providers": {
     "title": "服务商",
@@ -294,5 +295,25 @@
     "quietHoursEnd": "静默时段结束",
     "quietHoursZone": "时区",
     "recentPaths": "最近使用的路径"
+  },
+  "middleware": {
+    "title": "中间件",
+    "description": "配置请求/响应中间件管道",
+    "globalSettings": "全局设置",
+    "globalSettingsDesc": "全局启用或禁用中间件管道",
+    "enablePipeline": "启用中间件管道",
+    "enablePipelineDesc": "启用后，请求将通过配置的中间件处理",
+    "middlewares": "中间件列表",
+    "middlewaresDesc": "配置各个中间件组件",
+    "noMiddlewares": "暂无可用中间件",
+    "reload": "重新加载",
+    "reloaded": "中间件管道已重新加载",
+    "enabled": "中间件管道已启用",
+    "disabled": "中间件管道已禁用",
+    "middlewareEnabled": "{{name}} 已启用",
+    "middlewareDisabled": "{{name}} 已禁用",
+    "priority": "优先级",
+    "betaNotice": "Beta 功能：",
+    "betaNoticeDesc": "中间件管道目前处于 Beta 阶段，配置选项可能会在未来版本中更改。"
   }
 }

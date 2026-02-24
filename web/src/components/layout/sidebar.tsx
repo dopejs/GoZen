@@ -8,6 +8,7 @@ import {
   Settings,
   LayoutDashboard,
   Bot,
+  Puzzle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/providers', icon: Server, labelKey: 'nav.providers' },
   { to: '/profiles', icon: Layers, labelKey: 'nav.profiles' },
   { to: '/bot', icon: Bot, labelKey: 'nav.bot' },
+  { to: '/middleware', icon: Puzzle, labelKey: 'nav.middleware' },
   { to: '/usage', icon: BarChart3, labelKey: 'nav.usage' },
   { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },

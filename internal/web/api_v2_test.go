@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2454,5 +2456,215 @@ func TestAgentTasksListMethodNotAllowed(t *testing.T) {
 	w := doRequest(s, "PUT", "/api/v1/agent/tasks", nil)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+// --- sanitizePluginName Tests ---
+
+func TestSanitizePluginName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"alphanumeric", "my-plugin_v2", "my-plugin_v2"},
+		{"with spaces", "my plugin", "myplugin"},
+		{"with special chars", "my@plugin!.so", "mypluginso"},
+		{"empty", "", ""},
+		{"only special", "!@#$%", ""},
+		{"unicode", "プラグイン", ""},
+		{"mixed", "test-plugin_123", "test-plugin_123"},
+		{"uppercase", "MyPlugin", "MyPlugin"},
+		{"path traversal", "../../../etc/passwd", "etcpasswd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizePluginName(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizePluginName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// --- Middleware Upload Tests ---
+
+func TestMiddlewareUploadMethodNotAllowed(t *testing.T) {
+	s := setupTestServer(t)
+	w := doRequest(s, "GET", "/api/v1/middleware/upload", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareUploadNoFile(t *testing.T) {
+	s := setupTestServer(t)
+	req := httptest.NewRequest("POST", "/api/v1/middleware/upload", nil)
+	req.Header.Set("Content-Type", "multipart/form-data")
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMiddlewareUploadInvalidExtension(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Create multipart form with a non-.so file
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("plugin", "test.txt")
+	part.Write([]byte("not a plugin"))
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/api/v1/middleware/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMiddlewareUploadValidFile(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Create multipart form with a .so file
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("plugin", "test-plugin.so")
+	part.Write([]byte("fake plugin binary data"))
+	writer.WriteField("name", "test-plugin")
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/api/v1/middleware/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMiddlewareUploadNoName(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Create multipart form with a .so file but no name (should use filename)
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("plugin", "auto-named.so")
+	part.Write([]byte("fake plugin binary data"))
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/api/v1/middleware/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMiddlewareUploadInvalidName(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Create multipart form with a .so file but invalid name (only special chars)
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, _ := writer.CreateFormFile("plugin", "!@#$.so")
+	part.Write([]byte("fake plugin binary data"))
+	writer.WriteField("name", "!@#$%")
+	writer.Close()
+
+	req := httptest.NewRequest("POST", "/api/v1/middleware/upload", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// --- Usage Tests with Custom Time Range ---
+
+func TestUsageSummaryWithTimeRange(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/summary?since=2026-01-01T00:00:00Z&until=2026-02-01T00:00:00Z", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUsageSummaryWithInvalidSince(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/summary?since=invalid&until=2026-02-01T00:00:00Z", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUsageSummaryWithInvalidUntil(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/summary?since=2026-01-01T00:00:00Z&until=invalid", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUsageHourlyWithTimeRange(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/hourly?since=2026-01-01T00:00:00Z&until=2026-02-01T00:00:00Z", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUsageHourlyWithInvalidSince(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/hourly?since=invalid&until=2026-02-01T00:00:00Z", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUsageHourlyWithInvalidUntil(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/hourly?since=2026-01-01T00:00:00Z&until=invalid", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUsageHourlyGroupByProvider(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/hourly?group_by=provider", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUsageHourlyGroupByModel(t *testing.T) {
+	s := setupTestServer(t)
+	setupProxyInfrastructure(t)
+
+	w := doRequest(s, "GET", "/api/v1/usage/hourly?group_by=model", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }

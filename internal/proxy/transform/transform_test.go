@@ -99,3 +99,33 @@ func TestToJSON(t *testing.T) {
 		t.Errorf("num = %v, want %v", parsed["num"], float64(42))
 	}
 }
+
+func TestTransformPath(t *testing.T) {
+	tests := []struct {
+		name           string
+		clientFormat   string
+		providerFormat string
+		path           string
+		want           string
+	}{
+		{"same format", "anthropic", "anthropic", "/v1/messages", "/v1/messages"},
+		{"both empty", "", "", "/v1/messages", "/v1/messages"},
+		{"openai to anthropic responses", "openai", "anthropic", "/v1/responses", "/v1/messages"},
+		{"openai to anthropic chat", "openai", "anthropic", "/v1/chat/completions", "/v1/messages"},
+		{"anthropic to openai messages", "anthropic", "openai", "/v1/messages", "/v1/chat/completions"},
+		{"openai to anthropic responses subpath", "openai", "anthropic", "/api/v1/responses/123", "/v1/messages"},
+		{"empty client to openai", "", "openai", "/v1/messages", "/v1/chat/completions"},
+		{"openai to empty provider", "openai", "", "/v1/responses", "/v1/messages"},
+		{"unmatched path", "openai", "anthropic", "/v1/models", "/v1/models"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TransformPath(tt.clientFormat, tt.providerFormat, tt.path)
+			if got != tt.want {
+				t.Errorf("TransformPath(%q, %q, %q) = %q, want %q",
+					tt.clientFormat, tt.providerFormat, tt.path, got, tt.want)
+			}
+		})
+	}
+}

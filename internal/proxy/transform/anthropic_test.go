@@ -300,3 +300,309 @@ func TestAnthropicTransformer_InvalidJSON(t *testing.T) {
 		t.Error("TransformResponse() should return original on invalid JSON")
 	}
 }
+
+func TestConvertInputToMessages_StringInput(t *testing.T) {
+	messages := convertInputToMessages("Hello, world!")
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(messages))
+	}
+	msg := messages[0].(map[string]interface{})
+	if msg["role"] != "user" {
+		t.Errorf("role = %v, want user", msg["role"])
+	}
+	if msg["content"] != "Hello, world!" {
+		t.Errorf("content = %v, want Hello, world!", msg["content"])
+	}
+}
+
+func TestConvertInputToMessages_ArrayOfStrings(t *testing.T) {
+	input := []interface{}{"Hello", "World"}
+	messages := convertInputToMessages(input)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	msg0 := messages[0].(map[string]interface{})
+	if msg0["content"] != "Hello" {
+		t.Errorf("first content = %v, want Hello", msg0["content"])
+	}
+}
+
+func TestConvertInputToMessages_TypedMessages(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"type":    "message",
+			"role":    "user",
+			"content": "What is 2+2?",
+		},
+		map[string]interface{}{
+			"type":    "message",
+			"role":    "assistant",
+			"content": "4",
+		},
+	}
+	messages := convertInputToMessages(input)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	msg1 := messages[1].(map[string]interface{})
+	if msg1["role"] != "assistant" {
+		t.Errorf("role = %v, want assistant", msg1["role"])
+	}
+}
+
+func TestConvertInputToMessages_DeveloperRole(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"type":    "message",
+			"role":    "developer",
+			"content": "You are a helpful assistant.",
+		},
+		map[string]interface{}{
+			"type":    "message",
+			"role":    "user",
+			"content": "Hello",
+		},
+	}
+	messages := convertInputToMessages(input)
+	// Developer message should be extracted as _system marker, not included as regular message
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages (system marker + user), got %d", len(messages))
+	}
+	// First message should be the system marker
+	first := messages[0].(map[string]interface{})
+	if _, ok := first["_system"]; !ok {
+		t.Error("expected _system marker in first message")
+	}
+}
+
+func TestConvertInputToMessages_SystemRole(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"role":    "system",
+			"content": "System instructions",
+		},
+		map[string]interface{}{
+			"role":    "user",
+			"content": "Hello",
+		},
+	}
+	messages := convertInputToMessages(input)
+	// System message should be extracted as _system marker
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+	first := messages[0].(map[string]interface{})
+	if sysContent, ok := first["_system"].(string); !ok || sysContent != "System instructions" {
+		t.Errorf("expected _system='System instructions', got %v", first["_system"])
+	}
+}
+
+func TestConvertInputToMessages_ContentItems(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"type": "input_text",
+			"text": "Hello from input_text",
+		},
+		map[string]interface{}{
+			"type": "text",
+			"text": "Hello from text",
+		},
+	}
+	messages := convertInputToMessages(input)
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+}
+
+func TestConvertContent_String(t *testing.T) {
+	result := convertContent("hello")
+	if result != "hello" {
+		t.Errorf("expected hello, got %v", result)
+	}
+}
+
+func TestConvertContent_Array(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{"type": "input_text", "text": "hello"},
+		map[string]interface{}{"type": "text", "text": "world"},
+		map[string]interface{}{"type": "image", "url": "http://example.com"},
+	}
+	result := convertContent(input)
+	arr, ok := result.([]interface{})
+	if !ok {
+		t.Fatalf("expected array, got %T", result)
+	}
+	if len(arr) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(arr))
+	}
+	// input_text should be converted to text type
+	first := arr[0].(map[string]interface{})
+	if first["type"] != "text" {
+		t.Errorf("first type = %v, want text", first["type"])
+	}
+}
+
+func TestConvertContent_EmptyArray(t *testing.T) {
+	input := []interface{}{}
+	result := convertContent(input)
+	// Empty array returns original input
+	if result != nil {
+		arr, ok := result.([]interface{})
+		if ok && len(arr) != 0 {
+			t.Errorf("expected empty or nil, got %v", result)
+		}
+	}
+}
+
+func TestConvertContent_NonStringNonArray(t *testing.T) {
+	result := convertContent(42)
+	if result != 42 {
+		t.Errorf("expected 42, got %v", result)
+	}
+}
+
+func TestExtractTextFromContent_String(t *testing.T) {
+	result := extractTextFromContent("hello")
+	if result != "hello" {
+		t.Errorf("expected hello, got %v", result)
+	}
+}
+
+func TestExtractTextFromContent_Array(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{"type": "text", "text": "hello"},
+		map[string]interface{}{"type": "text", "text": "world"},
+	}
+	result := extractTextFromContent(input)
+	if result != "hello\nworld" {
+		t.Errorf("expected 'hello\\nworld', got %q", result)
+	}
+}
+
+func TestExtractTextFromContent_EmptyArray(t *testing.T) {
+	result := extractTextFromContent([]interface{}{})
+	if result != "" {
+		t.Errorf("expected empty, got %q", result)
+	}
+}
+
+func TestExtractTextFromContent_OtherType(t *testing.T) {
+	result := extractTextFromContent(42)
+	if result != "" {
+		t.Errorf("expected empty, got %q", result)
+	}
+}
+
+func TestMapRole(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"developer", "user"},
+		{"system", "user"},
+		{"assistant", "assistant"},
+		{"user", "user"},
+		{"unknown", "user"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := mapRole(tt.input)
+			if got != tt.want {
+				t.Errorf("mapRole(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAnthropicTransformer_TransformRequest_ResponsesAPI(t *testing.T) {
+	tr := &AnthropicTransformer{}
+
+	// OpenAI Responses API format with "input" and "instructions"
+	input := map[string]interface{}{
+		"model":             "gpt-4",
+		"input":             "What is the capital of France?",
+		"instructions":      "You are a geography expert.",
+		"max_output_tokens": float64(500),
+		"stream_options":    map[string]interface{}{"include_usage": true},
+		"logprobs":          true,
+		"top_logprobs":      float64(5),
+		"response_format":   map[string]interface{}{"type": "json"},
+	}
+	inputBytes, _ := json.Marshal(input)
+
+	result, err := tr.TransformRequest(inputBytes, "openai")
+	if err != nil {
+		t.Fatalf("TransformRequest() error = %v", err)
+	}
+
+	var output map[string]interface{}
+	if err := json.Unmarshal(result, &output); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// "input" should be converted to "messages"
+	if _, exists := output["input"]; exists {
+		t.Error("input should be removed")
+	}
+	if output["messages"] == nil {
+		t.Error("messages should be set")
+	}
+
+	// "instructions" should be converted to "system"
+	if _, exists := output["instructions"]; exists {
+		t.Error("instructions should be removed")
+	}
+	if output["system"] != "You are a geography expert." {
+		t.Errorf("system = %v, want 'You are a geography expert.'", output["system"])
+	}
+
+	// max_output_tokens → max_tokens
+	if output["max_tokens"] != float64(500) {
+		t.Errorf("max_tokens = %v, want 500", output["max_tokens"])
+	}
+	if _, exists := output["max_output_tokens"]; exists {
+		t.Error("max_output_tokens should be removed")
+	}
+
+	// OpenAI-specific fields should be removed
+	for _, field := range []string{"stream_options", "logprobs", "top_logprobs", "response_format"} {
+		if _, exists := output[field]; exists {
+			t.Errorf("%s should be removed", field)
+		}
+	}
+}
+
+func TestAnthropicTransformer_TransformRequest_InputWithSystemMessages(t *testing.T) {
+	tr := &AnthropicTransformer{}
+
+	// Input with developer role messages
+	input := map[string]interface{}{
+		"model": "gpt-4",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "developer",
+				"content": "Be concise.",
+			},
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "user",
+				"content": "Hello",
+			},
+		},
+	}
+	inputBytes, _ := json.Marshal(input)
+
+	result, err := tr.TransformRequest(inputBytes, "openai")
+	if err != nil {
+		t.Fatalf("TransformRequest() error = %v", err)
+	}
+
+	var output map[string]interface{}
+	json.Unmarshal(result, &output)
+
+	// System content should be extracted
+	if output["system"] != "Be concise." {
+		t.Errorf("system = %v, want 'Be concise.'", output["system"])
+	}
+}

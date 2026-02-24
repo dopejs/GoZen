@@ -297,6 +297,23 @@ export const middlewareApi = {
     request<{ status: string }>('/middleware/reload', {
       method: 'POST',
     }),
+  upload: async (file: File, name?: string): Promise<{ status: string; name: string; path: string; checksum: string }> => {
+    const formData = new FormData()
+    formData.append('plugin', file)
+    if (name) {
+      formData.append('name', name)
+    }
+    const response = await fetch(`${API_BASE}/middleware/upload`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new ApiError(response.status, text || response.statusText)
+    }
+    return response.json()
+  },
 }
 
 export { ApiError }

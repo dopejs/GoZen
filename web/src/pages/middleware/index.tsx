@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { RefreshCw, Power, PowerOff, Settings2, Puzzle, Plus, Trash2, FolderOpen, Globe } from 'lucide-react'
+import { RefreshCw, Power, PowerOff, Settings2, Puzzle, Plus, Trash2, Upload, Globe } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -30,9 +30,10 @@ import {
   useDisableMiddleware,
   useReloadMiddleware,
 } from '@/hooks/use-middleware'
+import { middlewareApi } from '@/lib/api'
 import type { MiddlewareEntry } from '@/types/api'
 
-type InstallSource = 'local' | 'remote'
+type InstallSource = 'upload' | 'remote'
 
 export function MiddlewarePage() {
   const { t } = useTranslation()
@@ -43,11 +44,12 @@ export function MiddlewarePage() {
   const reloadMiddleware = useReloadMiddleware()
 
   const [installDialogOpen, setInstallDialogOpen] = useState(false)
-  const [installSource, setInstallSource] = useState<InstallSource>('local')
+  const [installSource, setInstallSource] = useState<InstallSource>('upload')
   const [installName, setInstallName] = useState('')
-  const [installPath, setInstallPath] = useState('')
   const [installUrl, setInstallUrl] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isInstalling, setIsInstalling] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleGlobalToggle = async (enabled: boolean) => {
     if (!config) return
@@ -85,14 +87,29 @@ export function MiddlewarePage() {
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (!file.name.endsWith('.so')) {
+        toast.error(t('middleware.onlySoFiles'))
+        return
+      }
+      setSelectedFile(file)
+      // Auto-fill name from filename if empty
+      if (!installName) {
+        setInstallName(file.name.replace('.so', ''))
+      }
+    }
+  }
+
   const handleInstall = async () => {
     if (!config) return
     if (!installName.trim()) {
       toast.error(t('middleware.nameRequired'))
       return
     }
-    if (installSource === 'local' && !installPath.trim()) {
-      toast.error(t('middleware.pathRequired'))
+    if (installSource === 'upload' && !selectedFile) {
+      toast.error(t('middleware.fileRequired'))
       return
     }
     if (installSource === 'remote' && !installUrl.trim()) {
@@ -108,11 +125,19 @@ export function MiddlewarePage() {
 
     setIsInstalling(true)
     try {
+      let pluginPath = ''
+
+      if (installSource === 'upload' && selectedFile) {
+        // Upload file first
+        const uploadResult = await middlewareApi.upload(selectedFile, installName.trim())
+        pluginPath = uploadResult.path
+      }
+
       const newEntry: MiddlewareEntry = {
         name: installName.trim(),
         enabled: true,
-        source: installSource,
-        ...(installSource === 'local' ? { path: installPath.trim() } : { url: installUrl.trim() }),
+        source: installSource === 'upload' ? 'local' : 'remote',
+        ...(installSource === 'upload' ? { path: pluginPath } : { url: installUrl.trim() }),
       }
 
       await updateMiddleware.mutateAsync({
@@ -153,9 +178,12 @@ export function MiddlewarePage() {
 
   const resetInstallForm = () => {
     setInstallName('')
-    setInstallPath('')
     setInstallUrl('')
-    setInstallSource('local')
+    setSelectedFile(null)
+    setInstallSource('upload')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   if (isLoading) {
@@ -339,10 +367,10 @@ export function MiddlewarePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="local">
+                  <SelectItem value="upload">
                     <div className="flex items-center gap-2">
-                      <FolderOpen className="h-4 w-4" />
-                      {t('middleware.sourceLocal')}
+                      <Upload className="h-4 w-4" />
+                      {t('middleware.sourceUpload')}
                     </div>
                   </SelectItem>
                   <SelectItem value="remote">
@@ -354,15 +382,24 @@ export function MiddlewarePage() {
                 </SelectContent>
               </Select>
             </div>
-            {installSource === 'local' ? (
+            {installSource === 'upload' ? (
               <div className="space-y-2">
-                <Label>{t('middleware.localPath')}</Label>
-                <Input
-                  value={installPath}
-                  onChange={(e) => setInstallPath(e.target.value)}
-                  placeholder="/path/to/plugin.so"
-                />
-                <p className="text-xs text-muted-foreground">{t('middleware.localPathHint')}</p>
+                <Label>{t('middleware.uploadFile')}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="file"
+                    accept=".so"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    className="cursor-pointer"
+                  />
+                </div>
+                {selectedFile && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('middleware.selectedFile')}: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">{t('middleware.uploadHint')}</p>
               </div>
             ) : (
               <div className="space-y-2">

@@ -185,7 +185,7 @@ export function ProviderEditPage() {
                 <Label htmlFor="auth_token">{t('providers.authToken')}</Label>
                 <Input
                   id="auth_token"
-                  type="password"
+                  type="text"
                   value={formData.auth_token}
                   onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
                   placeholder={isNew ? '' : t('providers.leaveEmptyToKeep')}

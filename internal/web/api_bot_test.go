@@ -108,7 +108,7 @@ func TestGetBot(t *testing.T) {
 	}
 }
 
-func TestGetBot_TokensMasked(t *testing.T) {
+func TestGetBot_TokensVisible(t *testing.T) {
 	s := setupTestServerWithBot(t)
 	w := doRequest(s, "GET", "/api/v1/bot", nil)
 
@@ -119,38 +119,27 @@ func TestGetBot_TokensMasked(t *testing.T) {
 	var resp botResponse
 	decodeJSON(t, w, &resp)
 
-	// Telegram token should be masked
-	if resp.Platforms.Telegram.Token == "telegram-secret-token-12345678" {
-		t.Error("telegram token should be masked")
+	// Tokens should be returned as-is (no masking)
+	if resp.Platforms.Telegram.Token != "telegram-secret-token-12345678" {
+		t.Errorf("telegram token = %q, want original", resp.Platforms.Telegram.Token)
 	}
-	if resp.Platforms.Telegram.Token != "teleg...5678" {
-		t.Errorf("unexpected masked token: %s", resp.Platforms.Telegram.Token)
+	if resp.Platforms.Discord.Token != "discord-secret-token-87654321" {
+		t.Errorf("discord token = %q, want original", resp.Platforms.Discord.Token)
 	}
-
-	// Discord token should be masked
-	if resp.Platforms.Discord.Token == "discord-secret-token-87654321" {
-		t.Error("discord token should be masked")
+	if resp.Platforms.Slack.BotToken != "xoxb-slack-bot-token" {
+		t.Errorf("slack bot_token = %q, want original", resp.Platforms.Slack.BotToken)
 	}
-
-	// Slack tokens should be masked
-	if resp.Platforms.Slack.BotToken == "xoxb-slack-bot-token" {
-		t.Error("slack bot token should be masked")
+	if resp.Platforms.Slack.AppToken != "xapp-slack-app-token" {
+		t.Errorf("slack app_token = %q, want original", resp.Platforms.Slack.AppToken)
 	}
-	if resp.Platforms.Slack.AppToken == "xapp-slack-app-token" {
-		t.Error("slack app token should be masked")
+	if resp.Platforms.Lark.AppSecret != "lark-secret-12345678" {
+		t.Errorf("lark app_secret = %q, want original", resp.Platforms.Lark.AppSecret)
 	}
-
-	// Lark app secret should be masked
-	if resp.Platforms.Lark.AppSecret == "lark-secret-12345678" {
-		t.Error("lark app secret should be masked")
+	if resp.Platforms.FBMessenger.PageToken != "fb-page-token-secret" {
+		t.Errorf("fb page_token = %q, want original", resp.Platforms.FBMessenger.PageToken)
 	}
-
-	// FB Messenger tokens should be masked
-	if resp.Platforms.FBMessenger.PageToken == "fb-page-token-secret" {
-		t.Error("fb page token should be masked")
-	}
-	if resp.Platforms.FBMessenger.AppSecret == "fb-app-secret-12345" {
-		t.Error("fb app secret should be masked")
+	if resp.Platforms.FBMessenger.AppSecret != "fb-app-secret-12345" {
+		t.Errorf("fb app_secret = %q, want original", resp.Platforms.FBMessenger.AppSecret)
 	}
 }
 
@@ -331,9 +320,9 @@ func TestUpdateBot_Platforms(t *testing.T) {
 	if len(resp.Platforms.Telegram.AllowedUsers) != 1 {
 		t.Errorf("expected 1 allowed user, got %d", len(resp.Platforms.Telegram.AllowedUsers))
 	}
-	// Token should be masked in response
-	if resp.Platforms.Telegram.Token == "new-telegram-token-12345678" {
-		t.Error("new token should be masked in response")
+	// Token should be returned as-is in response
+	if resp.Platforms.Telegram.Token != "new-telegram-token-12345678" {
+		t.Errorf("token = %q, want original", resp.Platforms.Telegram.Token)
 	}
 }
 
@@ -356,7 +345,7 @@ func TestUpdateBot_PreservesExistingToken(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Verify token was preserved by checking it's still masked (not empty)
+	// Verify token was preserved (returned as original value)
 	var resp botResponse
 	decodeJSON(t, w, &resp)
 
@@ -474,7 +463,7 @@ func TestHandleBot_MethodNotAllowed(t *testing.T) {
 }
 
 func TestToBotResponse_NilBot(t *testing.T) {
-	resp := toBotResponse(nil, true)
+	resp := toBotResponse(nil)
 	if resp == nil {
 		t.Fatal("response should not be nil")
 	}
@@ -487,7 +476,7 @@ func TestToBotResponse_NilPlatforms(t *testing.T) {
 	bot := &config.BotConfig{
 		Enabled: true,
 	}
-	resp := toBotResponse(bot, true)
+	resp := toBotResponse(bot)
 	if resp.Platforms != nil {
 		t.Error("platforms should be nil when bot.Platforms is nil")
 	}

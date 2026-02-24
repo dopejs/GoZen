@@ -68,7 +68,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
           <CollapsibleContent className="mt-2 space-y-3 rounded-lg border p-4">
             <div className="grid gap-2">
               <Label>{t('bot.token')}</Label>
-              <Input type="password" value={config.platforms?.telegram?.token || ''} onChange={(e) => updatePlatform('telegram', { token: e.target.value })} placeholder="Bot Token" />
+              <Input type="text" value={config.platforms?.telegram?.token || ''} onChange={(e) => updatePlatform('telegram', { token: e.target.value })} placeholder="Bot Token" />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.allowedUsers')}</Label>
@@ -96,7 +96,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
           <CollapsibleContent className="mt-2 space-y-3 rounded-lg border p-4">
             <div className="grid gap-2">
               <Label>{t('bot.token')}</Label>
-              <Input type="password" value={config.platforms?.discord?.token || ''} onChange={(e) => updatePlatform('discord', { token: e.target.value })} placeholder="Bot Token" />
+              <Input type="text" value={config.platforms?.discord?.token || ''} onChange={(e) => updatePlatform('discord', { token: e.target.value })} placeholder="Bot Token" />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.allowedUsers')}</Label>
@@ -128,11 +128,11 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
           <CollapsibleContent className="mt-2 space-y-3 rounded-lg border p-4">
             <div className="grid gap-2">
               <Label>{t('bot.botToken')}</Label>
-              <Input type="password" value={config.platforms?.slack?.bot_token || ''} onChange={(e) => updatePlatform('slack', { bot_token: e.target.value })} placeholder="xoxb-..." />
+              <Input type="text" value={config.platforms?.slack?.bot_token || ''} onChange={(e) => updatePlatform('slack', { bot_token: e.target.value })} placeholder="xoxb-..." />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.appToken')}</Label>
-              <Input type="password" value={config.platforms?.slack?.app_token || ''} onChange={(e) => updatePlatform('slack', { app_token: e.target.value })} placeholder="xapp-..." />
+              <Input type="text" value={config.platforms?.slack?.app_token || ''} onChange={(e) => updatePlatform('slack', { app_token: e.target.value })} placeholder="xapp-..." />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.allowedUsers')}</Label>
@@ -164,7 +164,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.appSecret')}</Label>
-              <Input type="password" value={config.platforms?.lark?.app_secret || ''} onChange={(e) => updatePlatform('lark', { app_secret: e.target.value })} />
+              <Input type="text" value={config.platforms?.lark?.app_secret || ''} onChange={(e) => updatePlatform('lark', { app_secret: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.allowedUsers')}</Label>
@@ -192,7 +192,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
           <CollapsibleContent className="mt-2 space-y-3 rounded-lg border p-4">
             <div className="grid gap-2">
               <Label>{t('bot.pageToken')}</Label>
-              <Input type="password" value={config.platforms?.fbmessenger?.page_token || ''} onChange={(e) => updatePlatform('fbmessenger', { page_token: e.target.value })} />
+              <Input type="text" value={config.platforms?.fbmessenger?.page_token || ''} onChange={(e) => updatePlatform('fbmessenger', { page_token: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.verifyToken')}</Label>
@@ -200,7 +200,7 @@ export function PlatformsTab({ config, setConfig }: TabProps) {
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.appSecret')}</Label>
-              <Input type="password" value={config.platforms?.fbmessenger?.app_secret || ''} onChange={(e) => updatePlatform('fbmessenger', { app_secret: e.target.value })} />
+              <Input type="text" value={config.platforms?.fbmessenger?.app_secret || ''} onChange={(e) => updatePlatform('fbmessenger', { app_secret: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label>{t('bot.allowedUsers')}</Label>

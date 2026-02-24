@@ -82,7 +82,7 @@ func (s *Server) getBot(w http.ResponseWriter, r *http.Request) {
 	store := config.DefaultStore()
 	bot := store.GetBot()
 
-	resp := toBotResponse(bot, true)
+	resp := toBotResponse(bot)
 
 	// Add recent paths from usage tracker (excluding already aliased paths)
 	if tracker := proxy.GetGlobalUsageTracker(); tracker != nil {
@@ -130,10 +130,10 @@ func (s *Server) updateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toBotResponse(merged, true))
+	writeJSON(w, http.StatusOK, toBotResponse(merged))
 }
 
-func toBotResponse(bot *config.BotConfig, mask bool) *botResponse {
+func toBotResponse(bot *config.BotConfig) *botResponse {
 	if bot == nil {
 		return &botResponse{}
 	}
@@ -151,26 +151,18 @@ func toBotResponse(bot *config.BotConfig, mask bool) *botResponse {
 		resp.Platforms = &botPlatformsResponse{}
 
 		if bot.Platforms.Telegram != nil {
-			token := bot.Platforms.Telegram.Token
-			if mask && token != "" {
-				token = maskToken(token)
-			}
 			resp.Platforms.Telegram = &botTelegramResponse{
 				Enabled:      bot.Platforms.Telegram.Enabled,
-				Token:        token,
+				Token:        bot.Platforms.Telegram.Token,
 				AllowedUsers: bot.Platforms.Telegram.AllowedUsers,
 				AllowedChats: bot.Platforms.Telegram.AllowedChats,
 			}
 		}
 
 		if bot.Platforms.Discord != nil {
-			token := bot.Platforms.Discord.Token
-			if mask && token != "" {
-				token = maskToken(token)
-			}
 			resp.Platforms.Discord = &botDiscordResponse{
 				Enabled:         bot.Platforms.Discord.Enabled,
-				Token:           token,
+				Token:           bot.Platforms.Discord.Token,
 				AllowedUsers:    bot.Platforms.Discord.AllowedUsers,
 				AllowedChannels: bot.Platforms.Discord.AllowedChannels,
 				AllowedGuilds:   bot.Platforms.Discord.AllowedGuilds,
@@ -178,55 +170,31 @@ func toBotResponse(bot *config.BotConfig, mask bool) *botResponse {
 		}
 
 		if bot.Platforms.Slack != nil {
-			botToken := bot.Platforms.Slack.BotToken
-			appToken := bot.Platforms.Slack.AppToken
-			if mask {
-				if botToken != "" {
-					botToken = maskToken(botToken)
-				}
-				if appToken != "" {
-					appToken = maskToken(appToken)
-				}
-			}
 			resp.Platforms.Slack = &botSlackResponse{
 				Enabled:         bot.Platforms.Slack.Enabled,
-				BotToken:        botToken,
-				AppToken:        appToken,
+				BotToken:        bot.Platforms.Slack.BotToken,
+				AppToken:        bot.Platforms.Slack.AppToken,
 				AllowedUsers:    bot.Platforms.Slack.AllowedUsers,
 				AllowedChannels: bot.Platforms.Slack.AllowedChannels,
 			}
 		}
 
 		if bot.Platforms.Lark != nil {
-			appSecret := bot.Platforms.Lark.AppSecret
-			if mask && appSecret != "" {
-				appSecret = maskToken(appSecret)
-			}
 			resp.Platforms.Lark = &botLarkResponse{
 				Enabled:      bot.Platforms.Lark.Enabled,
 				AppID:        bot.Platforms.Lark.AppID,
-				AppSecret:    appSecret,
+				AppSecret:    bot.Platforms.Lark.AppSecret,
 				AllowedUsers: bot.Platforms.Lark.AllowedUsers,
 				AllowedChats: bot.Platforms.Lark.AllowedChats,
 			}
 		}
 
 		if bot.Platforms.FBMessenger != nil {
-			pageToken := bot.Platforms.FBMessenger.PageToken
-			appSecret := bot.Platforms.FBMessenger.AppSecret
-			if mask {
-				if pageToken != "" {
-					pageToken = maskToken(pageToken)
-				}
-				if appSecret != "" {
-					appSecret = maskToken(appSecret)
-				}
-			}
 			resp.Platforms.FBMessenger = &botFBMessengerResponse{
 				Enabled:      bot.Platforms.FBMessenger.Enabled,
-				PageToken:    pageToken,
+				PageToken:    bot.Platforms.FBMessenger.PageToken,
 				VerifyToken:  bot.Platforms.FBMessenger.VerifyToken,
-				AppSecret:    appSecret,
+				AppSecret:    bot.Platforms.FBMessenger.AppSecret,
 				AllowedUsers: bot.Platforms.FBMessenger.AllowedUsers,
 			}
 		}
@@ -303,7 +271,7 @@ func mergeBotConfig(existing, update *config.BotConfig) *config.BotConfig {
 		// Telegram
 		if update.Platforms.Telegram != nil {
 			result.Platforms.Telegram = update.Platforms.Telegram
-			// Keep existing token if update token is empty or masked
+			// Keep existing token if update token is empty
 			if result.Platforms.Telegram.Token == "" && existing.Platforms != nil && existing.Platforms.Telegram != nil {
 				result.Platforms.Telegram.Token = existing.Platforms.Telegram.Token
 			}

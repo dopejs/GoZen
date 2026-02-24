@@ -118,12 +118,15 @@ func runDaemonForeground() error {
 	// Write PID file
 	daemon.WriteDaemonPid(os.Getpid())
 
-	// Graceful shutdown on signals
+	// Graceful shutdown on signals or API request
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	shutdownDone := make(chan struct{})
 	go func() {
-		<-sigCh
+		select {
+		case <-sigCh:
+		case <-d.ShutdownCh():
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		d.Shutdown(ctx)
@@ -240,13 +243,8 @@ func runDaemonStop(cmd *cobra.Command, args []string) error {
 }
 
 func runDaemonRestart(cmd *cobra.Command, args []string) error {
-	if pid, running := daemon.IsDaemonRunning(); running {
-		if pid == -1 {
-			fmt.Printf("zend is running on port %d but PID is unknown.\n", config.GetProxyPort())
-			fmt.Printf("Use 'lsof -i :%d' to find and kill it manually, then run 'zen daemon start'.\n", config.GetProxyPort())
-			return fmt.Errorf("cannot restart: unknown PID")
-		}
-		fmt.Printf("Stopping zend (PID %d)...\n", pid)
+	if _, running := daemon.IsDaemonRunning(); running {
+		fmt.Println("Stopping zend...")
 		if err := daemon.StopDaemonProcess(30 * time.Second); err != nil {
 			return fmt.Errorf("failed to stop zend: %w", err)
 		}

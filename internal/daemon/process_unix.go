@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"syscall"
 	"time"
@@ -63,39 +64,40 @@ func IsDaemonRunning() (int, bool) {
 	return pid, true
 }
 
-// StopDaemonProcess sends SIGTERM to the zend daemon and waits for it to exit.
-// timeout specifies the maximum time to wait for graceful shutdown.
+// StopDaemonProcess stops the zend daemon gracefully.
+// It first tries the HTTP shutdown API (works even without a PID file),
+// then falls back to SIGTERM if the PID is known.
 func StopDaemonProcess(timeout time.Duration) error {
 	pid, running := IsDaemonRunning()
 	if !running && pid == 0 {
-		// No PID file or process is dead
 		RemoveDaemonPid()
 		return fmt.Errorf("zend is not running")
 	}
 
-	// If pid == -1, daemon is running but we don't know the PID (orphaned)
-	if pid == -1 {
-		return fmt.Errorf("zend is running on port %d but PID is unknown; use 'lsof -i :%d' to find and kill it manually", config.GetProxyPort(), config.GetProxyPort())
+	// Try HTTP shutdown first — this works regardless of PID file state
+	if shutdownViaHTTP(timeout) {
+		RemoveDaemonPid()
+		return nil
 	}
 
-	// If pid > 0 but running == false, the process is alive but not listening
-	// on the expected port. We should still try to stop it.
+	// HTTP failed. If we don't have a PID, we can't do anything else.
+	if pid <= 0 {
+		port := config.GetProxyPort()
+		return fmt.Errorf("zend is running on port %d but could not be stopped via API; use 'lsof -i :%d' to find and kill it manually", port, port)
+	}
 
+	// Fallback: SIGTERM
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
-
-	// Send SIGTERM for graceful shutdown
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		return fmt.Errorf("failed to stop zend (PID %d): %w", pid, err)
 	}
 
-	// Wait for process to exit
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if proc.Signal(syscall.Signal(0)) != nil {
-			// Process has exited
 			RemoveDaemonPid()
 			return nil
 		}
@@ -106,4 +108,44 @@ func StopDaemonProcess(timeout time.Duration) error {
 	proc.Signal(syscall.SIGKILL)
 	RemoveDaemonPid()
 	return nil
+}
+
+// shutdownViaHTTP sends a POST to the daemon shutdown API and waits for the
+// port to close. Returns true if the daemon stopped successfully.
+func shutdownViaHTTP(timeout time.Duration) bool {
+	webPort := config.GetWebPort()
+	proxyPort := config.GetProxyPort()
+
+	// Try both web port and proxy port (both register the shutdown endpoint)
+	urls := []string{
+		fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/shutdown", webPort),
+		fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/shutdown", proxyPort),
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	sent := false
+	for _, u := range urls {
+		resp, err := client.Post(u, "application/json", nil)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			sent = true
+			break
+		}
+	}
+	if !sent {
+		return false
+	}
+
+	// Wait for the proxy port to close
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsDaemonPortListening(proxyPort) {
+			return true
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return false
 }

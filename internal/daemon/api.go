@@ -39,6 +39,33 @@ func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Daemon Shutdown API ---
+
+func (d *Daemon) handleDaemonShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting down"})
+
+	// Trigger shutdown in background so the response is sent first
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-d.shutdownCh:
+			// Already closed
+		default:
+			close(d.shutdownCh)
+		}
+	}()
+}
+
+// ShutdownCh returns a channel that is closed when shutdown is requested via API.
+func (d *Daemon) ShutdownCh() <-chan struct{} {
+	return d.shutdownCh
+}
+
 // --- Daemon Reload API ---
 
 func (d *Daemon) handleDaemonReload(w http.ResponseWriter, r *http.Request) {

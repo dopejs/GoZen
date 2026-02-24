@@ -48,6 +48,9 @@ type Daemon struct {
 	startTime time.Time
 	proxyPort int
 	webPort   int
+
+	// Shutdown channel - closed when shutdown is requested via API
+	shutdownCh chan struct{}
 }
 
 // SessionInfo tracks an active client session.
@@ -83,6 +86,7 @@ func NewDaemon(version string, logger *log.Logger) *Daemon {
 		logger:      logger,
 		sessions:    make(map[string]*SessionInfo),
 		tmpProfiles: make(map[string]*TempProfile),
+		shutdownCh:  make(chan struct{}),
 	}
 }
 
@@ -144,6 +148,7 @@ func (d *Daemon) Start() error {
 
 	// Register daemon API routes on the web server
 	d.webServer.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.webServer.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.webServer.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.webServer.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
 	d.webServer.HandleFunc("/api/v1/profiles/temp", d.handleTempProfiles)
@@ -178,6 +183,7 @@ func (d *Daemon) startProxy() error {
 
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.proxyMux.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.proxyMux.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
 	d.proxyMux.HandleFunc("/api/v1/profiles/temp", d.handleTempProfiles)

@@ -709,8 +709,9 @@ func TestIsDaemonRunningDeadProcess(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	// Set a random high port that won't be in use
-	config.SetProxyPort(59998)
+	// Use a dynamically allocated free port to avoid conflicts with running daemons
+	freePort := getFreePort(t)
+	config.SetProxyPort(freePort)
 
 	// Write a PID that doesn't exist (very high PID)
 	WriteDaemonPid(999999999)
@@ -883,4 +884,16 @@ func TestInitBotWithPlatforms(t *testing.T) {
 	d.initBot()
 
 	// This test covers all platform config conversion code paths
+}
+
+// getFreePort returns a port that is currently not in use.
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to get free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	return port
 }

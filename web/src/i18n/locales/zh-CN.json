@@ -314,6 +314,26 @@
     "middlewareDisabled": "{{name}} 已禁用",
     "priority": "优先级",
     "betaNotice": "Beta 功能：",
-    "betaNoticeDesc": "中间件管道目前处于 Beta 阶段，配置选项可能会在未来版本中更改。"
+    "betaNoticeDesc": "中间件管道目前处于 Beta 阶段，配置选项可能会在未来版本中更改。",
+    "install": "安装插件",
+    "installPlugin": "安装插件",
+    "installPluginDesc": "从本地文件或远程 URL 添加新的中间件插件",
+    "pluginName": "插件名称",
+    "source": "来源",
+    "sourceLocal": "本地文件",
+    "sourceRemote": "远程 URL",
+    "localPath": "文件路径",
+    "localPathHint": "服务器上 .so 插件文件的路径",
+    "remoteUrl": "清单 URL",
+    "remoteUrlHint": "插件清单 JSON 文件的 URL",
+    "nameRequired": "插件名称不能为空",
+    "pathRequired": "文件路径不能为空",
+    "urlRequired": "清单 URL 不能为空",
+    "duplicateName": "已存在同名插件",
+    "installing": "安装中...",
+    "installSuccess": "{{name}} 安装成功",
+    "installFailed": "插件安装失败",
+    "removeSuccess": "{{name}} 已移除",
+    "cannotRemoveBuiltin": "无法移除内置中间件"
   }
 }

@@ -253,6 +253,26 @@
     "middlewareDisabled": "{{name}} deshabilitado",
     "priority": "Prioridad",
     "betaNotice": "Función Beta:",
-    "betaNoticeDesc": "El pipeline de middleware está actualmente en beta. Las opciones de configuración pueden cambiar en futuras versiones."
+    "betaNoticeDesc": "El pipeline de middleware está actualmente en beta. Las opciones de configuración pueden cambiar en futuras versiones.",
+    "install": "Instalar Plugin",
+    "installPlugin": "Instalar Plugin",
+    "installPluginDesc": "Agregar un nuevo plugin de middleware desde archivo local o URL remota",
+    "pluginName": "Nombre del Plugin",
+    "source": "Fuente",
+    "sourceLocal": "Archivo Local",
+    "sourceRemote": "URL Remota",
+    "localPath": "Ruta del Archivo",
+    "localPathHint": "Ruta al archivo .so del plugin en el servidor",
+    "remoteUrl": "URL del Manifiesto",
+    "remoteUrlHint": "URL del archivo JSON del manifiesto del plugin",
+    "nameRequired": "El nombre del plugin es requerido",
+    "pathRequired": "La ruta del archivo es requerida",
+    "urlRequired": "La URL del manifiesto es requerida",
+    "duplicateName": "Ya existe un plugin con este nombre",
+    "installing": "Instalando...",
+    "installSuccess": "{{name}} instalado exitosamente",
+    "installFailed": "Error al instalar el plugin",
+    "removeSuccess": "{{name}} eliminado exitosamente",
+    "cannotRemoveBuiltin": "No se puede eliminar middleware integrado"
   }
 }

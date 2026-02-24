@@ -1,11 +1,28 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { RefreshCw, Power, PowerOff, Settings2, Puzzle } from 'lucide-react'
+import { RefreshCw, Power, PowerOff, Settings2, Puzzle, Plus, Trash2, FolderOpen, Globe } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   useMiddleware,
   useUpdateMiddleware,
@@ -15,6 +32,8 @@ import {
 } from '@/hooks/use-middleware'
 import type { MiddlewareEntry } from '@/types/api'
 
+type InstallSource = 'local' | 'remote'
+
 export function MiddlewarePage() {
   const { t } = useTranslation()
   const { data: config, isLoading } = useMiddleware()
@@ -22,6 +41,13 @@ export function MiddlewarePage() {
   const enableMiddleware = useEnableMiddleware()
   const disableMiddleware = useDisableMiddleware()
   const reloadMiddleware = useReloadMiddleware()
+
+  const [installDialogOpen, setInstallDialogOpen] = useState(false)
+  const [installSource, setInstallSource] = useState<InstallSource>('local')
+  const [installName, setInstallName] = useState('')
+  const [installPath, setInstallPath] = useState('')
+  const [installUrl, setInstallUrl] = useState('')
+  const [isInstalling, setIsInstalling] = useState(false)
 
   const handleGlobalToggle = async (enabled: boolean) => {
     if (!config) return
@@ -59,6 +85,79 @@ export function MiddlewarePage() {
     }
   }
 
+  const handleInstall = async () => {
+    if (!config) return
+    if (!installName.trim()) {
+      toast.error(t('middleware.nameRequired'))
+      return
+    }
+    if (installSource === 'local' && !installPath.trim()) {
+      toast.error(t('middleware.pathRequired'))
+      return
+    }
+    if (installSource === 'remote' && !installUrl.trim()) {
+      toast.error(t('middleware.urlRequired'))
+      return
+    }
+
+    // Check for duplicate name
+    if (config.middlewares.some((m) => m.name === installName.trim())) {
+      toast.error(t('middleware.duplicateName'))
+      return
+    }
+
+    setIsInstalling(true)
+    try {
+      const newEntry: MiddlewareEntry = {
+        name: installName.trim(),
+        enabled: true,
+        source: installSource,
+        ...(installSource === 'local' ? { path: installPath.trim() } : { url: installUrl.trim() }),
+      }
+
+      await updateMiddleware.mutateAsync({
+        ...config,
+        middlewares: [...config.middlewares, newEntry],
+      })
+
+      // Reload to load the new plugin
+      await reloadMiddleware.mutateAsync()
+
+      toast.success(t('middleware.installSuccess', { name: installName }))
+      setInstallDialogOpen(false)
+      resetInstallForm()
+    } catch {
+      toast.error(t('middleware.installFailed'))
+    } finally {
+      setIsInstalling(false)
+    }
+  }
+
+  const handleRemove = async (middleware: MiddlewareEntry) => {
+    if (!config) return
+    if (middleware.source === 'builtin') {
+      toast.error(t('middleware.cannotRemoveBuiltin'))
+      return
+    }
+
+    try {
+      await updateMiddleware.mutateAsync({
+        ...config,
+        middlewares: config.middlewares.filter((m) => m.name !== middleware.name),
+      })
+      toast.success(t('middleware.removeSuccess', { name: middleware.name }))
+    } catch {
+      toast.error(t('errors.unknown'))
+    }
+  }
+
+  const resetInstallForm = () => {
+    setInstallName('')
+    setInstallPath('')
+    setInstallUrl('')
+    setInstallSource('local')
+  }
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -76,7 +175,15 @@ export function MiddlewarePage() {
           <h1 className="text-2xl font-bold">{t('middleware.title')}</h1>
           <p className="text-muted-foreground">{t('middleware.description')}</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setInstallDialogOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            {t('middleware.install')}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -164,13 +271,35 @@ export function MiddlewarePage() {
                           {middleware.description}
                         </p>
                       )}
+                      {middleware.path && (
+                        <p className="text-xs text-muted-foreground mt-1 font-mono">
+                          {middleware.path}
+                        </p>
+                      )}
+                      {middleware.url && (
+                        <p className="text-xs text-muted-foreground mt-1 font-mono">
+                          {middleware.url}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <Switch
-                    checked={middleware.enabled}
-                    onCheckedChange={() => handleMiddlewareToggle(middleware)}
-                    disabled={!config?.enabled || enableMiddleware.isPending || disableMiddleware.isPending}
-                  />
+                  <div className="flex items-center gap-2">
+                    {middleware.source !== 'builtin' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemove(middleware)}
+                        disabled={updateMiddleware.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                    <Switch
+                      checked={middleware.enabled}
+                      onCheckedChange={() => handleMiddlewareToggle(middleware)}
+                      disabled={!config?.enabled || enableMiddleware.isPending || disableMiddleware.isPending}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -186,6 +315,77 @@ export function MiddlewarePage() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Install Dialog */}
+      <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('middleware.installPlugin')}</DialogTitle>
+            <DialogDescription>{t('middleware.installPluginDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('middleware.pluginName')}</Label>
+              <Input
+                value={installName}
+                onChange={(e) => setInstallName(e.target.value)}
+                placeholder="my-plugin"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('middleware.source')}</Label>
+              <Select value={installSource} onValueChange={(v) => setInstallSource(v as InstallSource)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-4 w-4" />
+                      {t('middleware.sourceLocal')}
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="remote">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      {t('middleware.sourceRemote')}
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {installSource === 'local' ? (
+              <div className="space-y-2">
+                <Label>{t('middleware.localPath')}</Label>
+                <Input
+                  value={installPath}
+                  onChange={(e) => setInstallPath(e.target.value)}
+                  placeholder="/path/to/plugin.so"
+                />
+                <p className="text-xs text-muted-foreground">{t('middleware.localPathHint')}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>{t('middleware.remoteUrl')}</Label>
+                <Input
+                  value={installUrl}
+                  onChange={(e) => setInstallUrl(e.target.value)}
+                  placeholder="https://example.com/manifest.json"
+                />
+                <p className="text-xs text-muted-foreground">{t('middleware.remoteUrlHint')}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleInstall} disabled={isInstalling}>
+              {isInstalling ? t('middleware.installing') : t('middleware.install')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

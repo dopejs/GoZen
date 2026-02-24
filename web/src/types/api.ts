@@ -252,6 +252,8 @@ export interface MiddlewareEntry {
   name: string
   enabled: boolean
   source: string
+  path?: string
+  url?: string
   version?: string
   description?: string
   priority?: number

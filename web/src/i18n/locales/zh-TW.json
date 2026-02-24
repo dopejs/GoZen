@@ -314,6 +314,26 @@
     "middlewareDisabled": "{{name}} 已停用",
     "priority": "優先順序",
     "betaNotice": "Beta 功能：",
-    "betaNoticeDesc": "中介軟體管道目前處於 Beta 階段，設定選項可能會在未來版本中更改。"
+    "betaNoticeDesc": "中介軟體管道目前處於 Beta 階段，設定選項可能會在未來版本中更改。",
+    "install": "安裝外掛",
+    "installPlugin": "安裝外掛",
+    "installPluginDesc": "從本機檔案或遠端 URL 新增中介軟體外掛",
+    "pluginName": "外掛名稱",
+    "source": "來源",
+    "sourceLocal": "本機檔案",
+    "sourceRemote": "遠端 URL",
+    "localPath": "檔案路徑",
+    "localPathHint": "伺服器上 .so 外掛檔案的路徑",
+    "remoteUrl": "清單 URL",
+    "remoteUrlHint": "外掛清單 JSON 檔案的 URL",
+    "nameRequired": "外掛名稱不能為空",
+    "pathRequired": "檔案路徑不能為空",
+    "urlRequired": "清單 URL 不能為空",
+    "duplicateName": "已存在同名外掛",
+    "installing": "安裝中...",
+    "installSuccess": "{{name}} 安裝成功",
+    "installFailed": "外掛安裝失敗",
+    "removeSuccess": "{{name}} 已移除",
+    "cannotRemoveBuiltin": "無法移除內建中介軟體"
   }
 }

@@ -329,6 +329,26 @@
     "middlewareDisabled": "{{name}} disabled",
     "priority": "Priority",
     "betaNotice": "Beta Feature:",
-    "betaNoticeDesc": "The middleware pipeline is currently in beta. Configuration options may change in future releases."
+    "betaNoticeDesc": "The middleware pipeline is currently in beta. Configuration options may change in future releases.",
+    "install": "Install Plugin",
+    "installPlugin": "Install Plugin",
+    "installPluginDesc": "Add a new middleware plugin from local file or remote URL",
+    "pluginName": "Plugin Name",
+    "source": "Source",
+    "sourceLocal": "Local File",
+    "sourceRemote": "Remote URL",
+    "localPath": "File Path",
+    "localPathHint": "Path to the .so plugin file on the server",
+    "remoteUrl": "Manifest URL",
+    "remoteUrlHint": "URL to the plugin manifest JSON file",
+    "nameRequired": "Plugin name is required",
+    "pathRequired": "File path is required",
+    "urlRequired": "Manifest URL is required",
+    "duplicateName": "A plugin with this name already exists",
+    "installing": "Installing...",
+    "installSuccess": "{{name}} installed successfully",
+    "installFailed": "Failed to install plugin",
+    "removeSuccess": "{{name}} removed successfully",
+    "cannotRemoveBuiltin": "Cannot remove built-in middleware"
   }
 }

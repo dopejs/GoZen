@@ -56,7 +56,6 @@ export function ProviderEditPage() {
     if (existingProvider && !isNew) {
       setFormData({
         ...existingProvider,
-        auth_token: '', // Don't show masked token
       })
     }
   }, [existingProvider, isNew])

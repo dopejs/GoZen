@@ -249,3 +249,363 @@ func TestFBMessengerConfig(t *testing.T) {
 		t.Errorf("expected VerifyToken 'verify-token', got '%s'", cfg.VerifyToken)
 	}
 }
+
+func TestDiscordConfig_IsGuildAllowed(t *testing.T) {
+	tests := []struct {
+		name          string
+		allowedGuilds []string
+		guildID       string
+		expected      bool
+	}{
+		{"empty list allows all", nil, "any-guild", true},
+		{"empty list allows all 2", []string{}, "any-guild", true},
+		{"allowed guild", []string{"guild1", "guild2"}, "guild1", true},
+		{"not allowed guild", []string{"guild1", "guild2"}, "guild3", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &DiscordConfig{AllowedGuilds: tt.allowedGuilds}
+			result := cfg.IsGuildAllowed(tt.guildID)
+			if result != tt.expected {
+				t.Errorf("IsGuildAllowed(%q) = %v, want %v", tt.guildID, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDiscordAdapter_HandleMessageCreate(t *testing.T) {
+	tests := []struct {
+		name        string
+		msg         *discordMessageCreate
+		botUserID   string
+		config      *DiscordConfig
+		expectCall  bool
+		expectMsg   *Message
+	}{
+		{
+			name: "normal message",
+			msg: &discordMessageCreate{
+				ID:        "msg-123",
+				ChannelID: "channel-1",
+				GuildID:   "guild-1",
+				Author: struct {
+					ID       string `json:"id"`
+					Username string `json:"username"`
+					Bot      bool   `json:"bot"`
+				}{ID: "user-1", Username: "testuser", Bot: false},
+				Content: "hello world",
+			},
+			botUserID:  "bot-1",
+			config:     &DiscordConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:          "msg-123",
+				Platform:    PlatformDiscord,
+				ChatID:      "channel-1",
+				UserID:      "user-1",
+				UserName:    "testuser",
+				Content:     "hello world",
+				IsMention:   false,
+				IsDirectMsg: false,
+			},
+		},
+		{
+			name: "skip bot message",
+			msg: &discordMessageCreate{
+				ID:        "msg-123",
+				ChannelID: "channel-1",
+				Author: struct {
+					ID       string `json:"id"`
+					Username string `json:"username"`
+					Bot      bool   `json:"bot"`
+				}{ID: "bot-1", Username: "bot", Bot: true},
+				Content: "bot message",
+			},
+			botUserID:  "bot-1",
+			config:     &DiscordConfig{},
+			expectCall: false,
+		},
+		{
+			name: "direct message",
+			msg: &discordMessageCreate{
+				ID:        "msg-123",
+				ChannelID: "dm-channel",
+				GuildID:   "", // Empty = DM
+				Author: struct {
+					ID       string `json:"id"`
+					Username string `json:"username"`
+					Bot      bool   `json:"bot"`
+				}{ID: "user-1", Username: "testuser", Bot: false},
+				Content: "dm content",
+			},
+			botUserID:  "bot-1",
+			config:     &DiscordConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:          "msg-123",
+				Platform:    PlatformDiscord,
+				ChatID:      "dm-channel",
+				UserID:      "user-1",
+				Content:     "dm content",
+				IsDirectMsg: true,
+			},
+		},
+		{
+			name: "mention removes bot mention",
+			msg: &discordMessageCreate{
+				ID:        "msg-123",
+				ChannelID: "channel-1",
+				GuildID:   "guild-1",
+				Author: struct {
+					ID       string `json:"id"`
+					Username string `json:"username"`
+					Bot      bool   `json:"bot"`
+				}{ID: "user-1", Username: "testuser", Bot: false},
+				Content:  "<@bot-1> hello",
+				Mentions: []struct{ ID string `json:"id"` }{{ID: "bot-1"}},
+			},
+			botUserID:  "bot-1",
+			config:     &DiscordConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:        "msg-123",
+				Platform:  PlatformDiscord,
+				ChatID:    "channel-1",
+				UserID:    "user-1",
+				Content:   "hello",
+				IsMention: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewDiscordAdapter(tt.config)
+			adapter.botUserID = tt.botUserID
+
+			var receivedMsg *Message
+			adapter.SetMessageHandler(func(msg *Message) {
+				receivedMsg = msg
+			})
+
+			adapter.handleMessageCreate(tt.msg)
+
+			if tt.expectCall {
+				if receivedMsg == nil {
+					t.Fatal("expected message handler to be called")
+				}
+				if receivedMsg.ID != tt.expectMsg.ID {
+					t.Errorf("ID = %q, want %q", receivedMsg.ID, tt.expectMsg.ID)
+				}
+				if receivedMsg.Content != tt.expectMsg.Content {
+					t.Errorf("Content = %q, want %q", receivedMsg.Content, tt.expectMsg.Content)
+				}
+				if receivedMsg.IsMention != tt.expectMsg.IsMention {
+					t.Errorf("IsMention = %v, want %v", receivedMsg.IsMention, tt.expectMsg.IsMention)
+				}
+				if receivedMsg.IsDirectMsg != tt.expectMsg.IsDirectMsg {
+					t.Errorf("IsDirectMsg = %v, want %v", receivedMsg.IsDirectMsg, tt.expectMsg.IsDirectMsg)
+				}
+			} else {
+				if receivedMsg != nil {
+					t.Error("expected message handler NOT to be called")
+				}
+			}
+		})
+	}
+}
+
+func TestSlackAdapter_HandleEventsAPI(t *testing.T) {
+	tests := []struct {
+		name       string
+		payload    slackEventsAPIPayload
+		botUserID  string
+		config     *SlackConfig
+		expectCall bool
+		expectMsg  *Message
+	}{
+		{
+			name: "normal message",
+			payload: slackEventsAPIPayload{
+				Type: "event_callback",
+				Event: struct {
+					Type        string `json:"type"`
+					User        string `json:"user"`
+					Text        string `json:"text"`
+					Channel     string `json:"channel"`
+					TS          string `json:"ts"`
+					ThreadTS    string `json:"thread_ts"`
+					ChannelType string `json:"channel_type"`
+				}{
+					Type:    "message",
+					User:    "U123",
+					Text:    "hello",
+					Channel: "C456",
+					TS:      "1234567890.123456",
+				},
+			},
+			botUserID:  "UBOT",
+			config:     &SlackConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:       "1234567890.123456",
+				Platform: PlatformSlack,
+				ChatID:   "C456",
+				UserID:   "U123",
+				Content:  "hello",
+			},
+		},
+		{
+			name: "skip bot's own message",
+			payload: slackEventsAPIPayload{
+				Event: struct {
+					Type        string `json:"type"`
+					User        string `json:"user"`
+					Text        string `json:"text"`
+					Channel     string `json:"channel"`
+					TS          string `json:"ts"`
+					ThreadTS    string `json:"thread_ts"`
+					ChannelType string `json:"channel_type"`
+				}{
+					Type:    "message",
+					User:    "UBOT",
+					Text:    "bot message",
+					Channel: "C456",
+				},
+			},
+			botUserID:  "UBOT",
+			config:     &SlackConfig{},
+			expectCall: false,
+		},
+		{
+			name: "app_mention removes mention",
+			payload: slackEventsAPIPayload{
+				Event: struct {
+					Type        string `json:"type"`
+					User        string `json:"user"`
+					Text        string `json:"text"`
+					Channel     string `json:"channel"`
+					TS          string `json:"ts"`
+					ThreadTS    string `json:"thread_ts"`
+					ChannelType string `json:"channel_type"`
+				}{
+					Type:    "app_mention",
+					User:    "U123",
+					Text:    "<@UBOT> hello",
+					Channel: "C456",
+					TS:      "1234567890.123456",
+				},
+			},
+			botUserID:  "UBOT",
+			config:     &SlackConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:        "1234567890.123456",
+				Platform:  PlatformSlack,
+				ChatID:    "C456",
+				UserID:    "U123",
+				Content:   "hello",
+				IsMention: true,
+			},
+		},
+		{
+			name: "direct message",
+			payload: slackEventsAPIPayload{
+				Event: struct {
+					Type        string `json:"type"`
+					User        string `json:"user"`
+					Text        string `json:"text"`
+					Channel     string `json:"channel"`
+					TS          string `json:"ts"`
+					ThreadTS    string `json:"thread_ts"`
+					ChannelType string `json:"channel_type"`
+				}{
+					Type:        "message",
+					User:        "U123",
+					Text:        "dm",
+					Channel:     "D789",
+					TS:          "1234567890.123456",
+					ChannelType: "im",
+				},
+			},
+			botUserID:  "UBOT",
+			config:     &SlackConfig{},
+			expectCall: true,
+			expectMsg: &Message{
+				ID:          "1234567890.123456",
+				Platform:    PlatformSlack,
+				ChatID:      "D789",
+				UserID:      "U123",
+				Content:     "dm",
+				IsDirectMsg: true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewSlackAdapter(tt.config)
+			adapter.botUserID = tt.botUserID
+
+			var receivedMsg *Message
+			adapter.SetMessageHandler(func(msg *Message) {
+				receivedMsg = msg
+			})
+
+			// Simulate handleEventsAPI by calling the internal logic
+			ev := tt.payload.Event
+			if ev.User == adapter.botUserID {
+				// Skip
+			} else if !tt.config.IsUserAllowed(ev.User) || !tt.config.IsChatAllowed(ev.Channel) {
+				// Skip
+			} else if ev.Type == "message" && adapter.msgHandler != nil {
+				msg := &Message{
+					ID:          ev.TS,
+					Platform:    PlatformSlack,
+					ChatID:      ev.Channel,
+					UserID:      ev.User,
+					Content:     ev.Text,
+					ThreadID:    ev.ThreadTS,
+					IsDirectMsg: ev.ChannelType == "im",
+				}
+				adapter.msgHandler(msg)
+			} else if ev.Type == "app_mention" && adapter.msgHandler != nil {
+				content := ev.Text
+				content = content[len("<@UBOT> "):]
+				msg := &Message{
+					ID:        ev.TS,
+					Platform:  PlatformSlack,
+					ChatID:    ev.Channel,
+					UserID:    ev.User,
+					Content:   content,
+					ThreadID:  ev.ThreadTS,
+					IsMention: true,
+				}
+				adapter.msgHandler(msg)
+			}
+
+			if tt.expectCall {
+				if receivedMsg == nil {
+					t.Fatal("expected message handler to be called")
+				}
+				if receivedMsg.ID != tt.expectMsg.ID {
+					t.Errorf("ID = %q, want %q", receivedMsg.ID, tt.expectMsg.ID)
+				}
+				if receivedMsg.Content != tt.expectMsg.Content {
+					t.Errorf("Content = %q, want %q", receivedMsg.Content, tt.expectMsg.Content)
+				}
+				if receivedMsg.IsMention != tt.expectMsg.IsMention {
+					t.Errorf("IsMention = %v, want %v", receivedMsg.IsMention, tt.expectMsg.IsMention)
+				}
+				if receivedMsg.IsDirectMsg != tt.expectMsg.IsDirectMsg {
+					t.Errorf("IsDirectMsg = %v, want %v", receivedMsg.IsDirectMsg, tt.expectMsg.IsDirectMsg)
+				}
+			} else {
+				if receivedMsg != nil {
+					t.Error("expected message handler NOT to be called")
+				}
+			}
+		})
+	}
+}

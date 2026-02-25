@@ -7,23 +7,37 @@ import (
 
 // Session represents a user's chat session.
 type Session struct {
-	UserID       string    `json:"user_id"`
-	Platform     Platform  `json:"platform"`
-	ChatID       string    `json:"chat_id"`
-	BoundProcess string    `json:"bound_process,omitempty"`
-	LastActive   time.Time `json:"last_active"`
+	UserID       string              `json:"user_id"`
+	Platform     Platform            `json:"platform"`
+	ChatID       string              `json:"chat_id"`
+	BoundProcess string              `json:"bound_process,omitempty"`
+	LastActive   time.Time           `json:"last_active"`
+	History      *ConversationBuffer `json:"-"` // not serialized, session-scoped
 }
 
 // SessionManager manages user sessions.
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session // key: platform:user_id
+	mu          sync.RWMutex
+	sessions    map[string]*Session // key: platform:user_id
+	historySize int
 }
 
 // NewSessionManager creates a new session manager.
 func NewSessionManager() *SessionManager {
 	return &SessionManager{
-		sessions: make(map[string]*Session),
+		sessions:    make(map[string]*Session),
+		historySize: 20,
+	}
+}
+
+// NewSessionManagerWithHistory creates a session manager with custom history size.
+func NewSessionManagerWithHistory(historySize int) *SessionManager {
+	if historySize <= 0 {
+		historySize = 20
+	}
+	return &SessionManager{
+		sessions:    make(map[string]*Session),
+		historySize: historySize,
 	}
 }
 
@@ -56,6 +70,7 @@ func (m *SessionManager) GetOrCreate(platform Platform, userID, chatID string) *
 		Platform:   platform,
 		ChatID:     chatID,
 		LastActive: time.Now(),
+		History:    NewConversationBuffer(m.historySize),
 	}
 	m.sessions[key] = s
 	return s
@@ -77,6 +92,7 @@ func (m *SessionManager) Bind(platform Platform, userID, processName string) {
 			Platform:     platform,
 			BoundProcess: processName,
 			LastActive:   time.Now(),
+			History:      NewConversationBuffer(m.historySize),
 		}
 	}
 }

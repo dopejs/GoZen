@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -19,11 +20,8 @@ func (s *Server) handleSyncConfig(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]interface{}{"configured": false})
 			return
 		}
-		// Mask sensitive fields
+		// Mask sensitive fields (but not Token — shown in plain for editing)
 		resp := *cfg
-		if resp.Token != "" {
-			resp.Token = maskToken(resp.Token)
-		}
 		if resp.AccessKey != "" {
 			resp.AccessKey = maskToken(resp.AccessKey)
 		}
@@ -33,10 +31,12 @@ func (s *Server) handleSyncConfig(w http.ResponseWriter, r *http.Request) {
 		if resp.Passphrase != "" {
 			resp.Passphrase = "********"
 		}
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"configured": true,
-			"config":     resp,
-		})
+		// Flatten: marshal config then merge "configured" at top level
+		data, _ := json.Marshal(resp)
+		var flat map[string]interface{}
+		json.Unmarshal(data, &flat)
+		flat["configured"] = true
+		writeJSON(w, http.StatusOK, flat)
 
 	case http.MethodPut:
 		var cfg config.SyncConfig
@@ -47,7 +47,7 @@ func (s *Server) handleSyncConfig(w http.ResponseWriter, r *http.Request) {
 		// Preserve existing secrets if masked values are sent back
 		existing := config.GetSyncConfig()
 		if existing != nil {
-			if cfg.Token == maskToken(existing.Token) || cfg.Token == "" {
+			if cfg.Token == "" {
 				cfg.Token = existing.Token
 			}
 			if cfg.AccessKey == maskToken(existing.AccessKey) || cfg.AccessKey == "" {
@@ -145,9 +145,6 @@ func (s *Server) handleSyncTest(w http.ResponseWriter, r *http.Request) {
 		// Preserve secrets from existing config if masked
 		existing := config.GetSyncConfig()
 		if existing != nil {
-			if cfg.Token == maskToken(existing.Token) {
-				cfg.Token = existing.Token
-			}
 			if cfg.AccessKey == maskToken(existing.AccessKey) {
 				cfg.AccessKey = existing.AccessKey
 			}
@@ -200,12 +197,6 @@ func (s *Server) handleSyncCreateGist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "token is required")
 		return
 	}
-	// Preserve existing token if masked
-	existing := config.GetSyncConfig()
-	if existing != nil && req.Token == maskToken(existing.Token) {
-		req.Token = existing.Token
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	gistID, err := gosync.CreateGist(ctx, req.Token)

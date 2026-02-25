@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // SlackAdapter implements the Adapter interface for Slack.
@@ -22,6 +25,8 @@ type SlackAdapter struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
+	wsConn        *websocket.Conn
+	wsMu          sync.Mutex
 }
 
 // NewSlackAdapter creates a new Slack adapter.
@@ -58,6 +63,14 @@ func (a *SlackAdapter) Start(ctx context.Context) error {
 	}
 	a.botUserID = authResp.UserID
 
+	// Start Socket Mode if app_token is configured
+	if a.config.AppToken != "" {
+		a.wg.Add(1)
+		go a.socketModeLoop()
+	} else {
+		log.Printf("[slack] app_token not configured, Socket Mode disabled (bot can only send messages)")
+	}
+
 	return nil
 }
 
@@ -65,6 +78,11 @@ func (a *SlackAdapter) Stop() error {
 	if a.cancel != nil {
 		a.cancel()
 	}
+	a.wsMu.Lock()
+	if a.wsConn != nil {
+		a.wsConn.Close()
+	}
+	a.wsMu.Unlock()
 	a.wg.Wait()
 	return nil
 }
@@ -397,4 +415,231 @@ func (a *SlackAdapter) HandleInteraction(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// Socket Mode types
+type slackSocketEnvelope struct {
+	Type       string          `json:"type"`
+	EnvelopeID string          `json:"envelope_id"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
+type slackEventsAPIPayload struct {
+	Type  string `json:"type"`
+	Event struct {
+		Type        string `json:"type"`
+		User        string `json:"user"`
+		Text        string `json:"text"`
+		Channel     string `json:"channel"`
+		TS          string `json:"ts"`
+		ThreadTS    string `json:"thread_ts"`
+		ChannelType string `json:"channel_type"`
+	} `json:"event"`
+}
+
+type slackInteractivePayload struct {
+	Type    string `json:"type"`
+	User    struct {
+		ID string `json:"id"`
+	} `json:"user"`
+	Channel struct {
+		ID string `json:"id"`
+	} `json:"channel"`
+	Message struct {
+		TS string `json:"ts"`
+	} `json:"message"`
+	Actions []struct {
+		ActionID string `json:"action_id"`
+	} `json:"actions"`
+}
+
+func (a *SlackAdapter) socketModeLoop() {
+	defer a.wg.Done()
+
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		default:
+		}
+
+		err := a.connectSocketMode()
+		if err != nil {
+			log.Printf("[slack] socket mode error: %v", err)
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+				continue
+			}
+		}
+		backoff = time.Second
+	}
+}
+
+func (a *SlackAdapter) connectSocketMode() error {
+	// Get WebSocket URL via apps.connections.open
+	req, err := http.NewRequestWithContext(a.ctx, "POST", "https://slack.com/api/apps.connections.open", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+a.config.AppToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to open connection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var connResp struct {
+		OK    bool   `json:"ok"`
+		URL   string `json:"url"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &connResp); err != nil {
+		return err
+	}
+	if !connResp.OK {
+		return fmt.Errorf("failed to get socket URL: %s", connResp.Error)
+	}
+
+	// Connect to WebSocket
+	conn, _, err := websocket.DefaultDialer.DialContext(a.ctx, connResp.URL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	a.wsMu.Lock()
+	a.wsConn = conn
+	a.wsMu.Unlock()
+
+	defer func() {
+		a.wsMu.Lock()
+		if a.wsConn == conn {
+			a.wsConn.Close()
+			a.wsConn = nil
+		}
+		a.wsMu.Unlock()
+	}()
+
+	log.Printf("[slack] socket mode connected")
+
+	// Event loop
+	for {
+		select {
+		case <-a.ctx.Done():
+			return nil
+		default:
+		}
+
+		var envelope slackSocketEnvelope
+		if err := conn.ReadJSON(&envelope); err != nil {
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		// ACK immediately
+		if envelope.EnvelopeID != "" {
+			a.wsMu.Lock()
+			conn.WriteJSON(map[string]string{"envelope_id": envelope.EnvelopeID})
+			a.wsMu.Unlock()
+		}
+
+		switch envelope.Type {
+		case "events_api":
+			a.handleEventsAPI(envelope.Payload)
+		case "interactive":
+			a.handleInteractive(envelope.Payload)
+		case "hello":
+			// Connection established
+		case "disconnect":
+			return fmt.Errorf("server requested disconnect")
+		}
+	}
+}
+
+func (a *SlackAdapter) handleEventsAPI(data json.RawMessage) {
+	var payload slackEventsAPIPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return
+	}
+
+	ev := payload.Event
+
+	// Skip bot's own messages
+	if ev.User == a.botUserID {
+		return
+	}
+
+	if !a.config.IsUserAllowed(ev.User) || !a.config.IsChatAllowed(ev.Channel) {
+		return
+	}
+
+	if ev.Type == "message" && a.msgHandler != nil {
+		msg := &Message{
+			ID:          ev.TS,
+			Platform:    PlatformSlack,
+			ChatID:      ev.Channel,
+			UserID:      ev.User,
+			Content:     ev.Text,
+			ThreadID:    ev.ThreadTS,
+			IsDirectMsg: ev.ChannelType == "im",
+		}
+		a.msgHandler(msg)
+	}
+
+	if ev.Type == "app_mention" && a.msgHandler != nil {
+		content := strings.ReplaceAll(ev.Text, "<@"+a.botUserID+">", "")
+		content = strings.TrimSpace(content)
+
+		msg := &Message{
+			ID:        ev.TS,
+			Platform:  PlatformSlack,
+			ChatID:    ev.Channel,
+			UserID:    ev.User,
+			Content:   content,
+			ThreadID:  ev.ThreadTS,
+			IsMention: true,
+		}
+		a.msgHandler(msg)
+	}
+}
+
+func (a *SlackAdapter) handleInteractive(data json.RawMessage) {
+	var payload slackInteractivePayload
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return
+	}
+
+	if payload.Type != "block_actions" || a.buttonHandler == nil {
+		return
+	}
+
+	if !a.config.IsUserAllowed(payload.User.ID) || !a.config.IsChatAllowed(payload.Channel.ID) {
+		return
+	}
+
+	for _, action := range payload.Actions {
+		parts := strings.SplitN(action.ActionID, ":", 2)
+		buttonID := parts[0]
+		data := ""
+		if len(parts) > 1 {
+			data = parts[1]
+		}
+
+		click := &ButtonClick{
+			Platform:  PlatformSlack,
+			ChatID:    payload.Channel.ID,
+			UserID:    payload.User.ID,
+			MessageID: payload.Message.TS,
+			ButtonID:  buttonID,
+			Data:      data,
+		}
+		a.buttonHandler(click)
+	}
 }

@@ -11,13 +11,14 @@ import {
   Puzzle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { to: '/providers', icon: Server, labelKey: 'nav.providers' },
   { to: '/profiles', icon: Layers, labelKey: 'nav.profiles' },
-  { to: '/bot', icon: Bot, labelKey: 'nav.bot' },
-  { to: '/middleware', icon: Puzzle, labelKey: 'nav.middleware' },
+  { to: '/bot', icon: Bot, labelKey: 'nav.bot', beta: true },
+  { to: '/middleware', icon: Puzzle, labelKey: 'nav.middleware', beta: true },
   { to: '/usage', icon: BarChart3, labelKey: 'nav.usage' },
   { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },
@@ -48,6 +49,11 @@ export function Sidebar() {
           >
             <item.icon className="h-5 w-5" />
             {t(item.labelKey)}
+            {item.beta && (
+              <Badge variant="warning" className="ml-auto text-[10px] px-1.5 py-0">
+                Beta
+              </Badge>
+            )}
           </NavLink>
         ))}
       </nav>

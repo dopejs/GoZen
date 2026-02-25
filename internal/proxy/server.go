@@ -139,6 +139,11 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
 
+	// Mark session as busy in bot bridge
+	if bridge := GetBotBridge(); bridge != nil && sessionID != "" {
+		bridge.MarkSessionBusy(sessionID, clientType)
+	}
+
 	// Extract request format (detected per-request by ProfileProxy)
 	requestFormat := r.Header.Get("X-Zen-Request-Format")
 	r.Header.Del("X-Zen-Request-Format")
@@ -794,6 +799,11 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 		Provider:     providerName,
 		Timestamp:    time.Now(),
 	})
+
+	// Update bot bridge with session status
+	if bridge := GetBotBridge(); bridge != nil {
+		bridge.MarkSessionIdle(sessionID)
+	}
 }
 
 func singleJoiningSlash(a, b string) string {

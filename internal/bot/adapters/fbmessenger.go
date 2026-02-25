@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ func (a *FBMessengerAdapter) Platform() Platform {
 
 func (a *FBMessengerAdapter) Start(ctx context.Context) error {
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	log.Printf("[fbmessenger] receiving messages requires a webhook with a public URL; use HandleWebhook() with a tunnel or reverse proxy")
 	return nil
 }
 

@@ -36,6 +36,9 @@ func TestIntentTypes(t *testing.T) {
 		IntentSubscribe,
 		IntentBind,
 		IntentHelp,
+		IntentChat,
+		IntentPersona,
+		IntentForget,
 		IntentUnknown,
 	}
 

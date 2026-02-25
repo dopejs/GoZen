@@ -20,7 +20,14 @@ type ProcessInfo struct {
 	CurrentTask string    `json:"current_task,omitempty"`
 	StartTime   time.Time `json:"start_time"`
 	LastSeen    time.Time `json:"last_seen"`
-	conn        net.Conn
+	// Extended status fields
+	WaitingFor    string `json:"waiting_for,omitempty"`     // input, approval, tool_result, etc.
+	LastMessage   string `json:"last_message,omitempty"`    // last message from/to the process
+	MessageRole   string `json:"message_role,omitempty"`    // user, assistant, system
+	PendingAction string `json:"pending_action,omitempty"`  // description of pending action awaiting approval
+	TokensUsed    int    `json:"tokens_used,omitempty"`     // tokens used in current session
+	TurnCount     int    `json:"turn_count,omitempty"`      // number of conversation turns
+	conn          net.Conn
 }
 
 // Registry manages registered zen processes.
@@ -155,6 +162,24 @@ func (r *Registry) UpdateStatus(id, status, task string) {
 	if info, ok := r.processes[id]; ok {
 		info.Status = status
 		info.CurrentTask = task
+		info.LastSeen = time.Now()
+	}
+}
+
+// UpdateFromHeartbeat updates a process from heartbeat payload.
+func (r *Registry) UpdateFromHeartbeat(payload *HeartbeatPayload) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if info, ok := r.processes[payload.ProcessID]; ok {
+		info.Status = payload.Status
+		info.CurrentTask = payload.CurrentTask
+		info.WaitingFor = payload.WaitingFor
+		info.LastMessage = payload.LastMessage
+		info.MessageRole = payload.MessageRole
+		info.PendingAction = payload.PendingAction
+		info.TokensUsed = payload.TokensUsed
+		info.TurnCount = payload.TurnCount
 		info.LastSeen = time.Now()
 	}
 }

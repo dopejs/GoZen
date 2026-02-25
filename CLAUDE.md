@@ -33,6 +33,25 @@ go build ./...
 go test ./...
 ```
 
+## Dev Environment
+
+Dev daemon runs on separate ports to avoid interfering with production:
+
+- **Dev Web UI**: `http://localhost:29840`
+- **Dev Proxy**: `http://localhost:29841`
+- **Dev Config**: `~/.zen-dev/zen.json`
+- **Production ports (19840/19841)**: NEVER touch during development
+
+```sh
+./scripts/dev.sh              # Start dev daemon (builds + starts)
+./scripts/dev.sh stop         # Stop dev daemon
+./scripts/dev.sh restart      # Rebuild and restart dev daemon
+./scripts/dev.sh status       # Check dev daemon status
+./scripts/dev.sh web          # Start frontend dev server (Vite)
+```
+
+After modifying Go code, always run `./scripts/dev.sh restart` to rebuild and restart the dev daemon.
+
 ## Release Process
 
 Push a git tag to trigger GitHub Actions release workflow:

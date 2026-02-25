@@ -1244,16 +1244,15 @@ func TestSyncConfigPutAndGet(t *testing.T) {
 	if resp["configured"] != true {
 		t.Error("expected configured=true")
 	}
-	cfg := resp["config"].(map[string]interface{})
-	if cfg["backend"] != "webdav" {
-		t.Errorf("backend = %v", cfg["backend"])
+	if resp["backend"] != "webdav" {
+		t.Errorf("backend = %v", resp["backend"])
 	}
-	// Token should be masked
-	if cfg["token"] == "pass123456789" {
-		t.Error("token should be masked")
+	// Token should be returned in plain (not masked)
+	if resp["token"] != "pass123456789" {
+		t.Errorf("token should be in plain, got %v", resp["token"])
 	}
-	if cfg["passphrase"] != "********" {
-		t.Errorf("passphrase should be masked, got %v", cfg["passphrase"])
+	if resp["passphrase"] != "********" {
+		t.Errorf("passphrase should be masked, got %v", resp["passphrase"])
 	}
 }
 
@@ -1362,10 +1361,10 @@ func TestSyncConfigPutPreservesSecrets(t *testing.T) {
 	}
 	doRequest(s, "PUT", "/api/v1/sync/config", body1)
 
-	// Now save with masked token (simulating UI sending back masked values)
+	// Now save with same token and masked passphrase (simulating UI sending back values)
 	body2 := config.SyncConfig{
 		Backend:    "gist",
-		Token:      maskToken("ghp_realtoken12345"),
+		Token:      "ghp_realtoken12345",
 		GistID:     "abc123",
 		Passphrase: "********",
 	}

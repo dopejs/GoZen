@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // LarkAdapter implements the Adapter interface for Lark/Feishu.
@@ -26,7 +29,10 @@ type LarkAdapter struct {
 	buttonHandler func(*ButtonClick)
 	ctx           context.Context
 	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 	server        *http.Server
+	wsConn        *websocket.Conn
+	wsMu          sync.Mutex
 }
 
 // NewLarkAdapter creates a new Lark adapter.
@@ -50,7 +56,12 @@ func (a *LarkAdapter) Start(ctx context.Context) error {
 	}
 
 	// Start token refresh goroutine
+	a.wg.Add(1)
 	go a.tokenRefreshLoop()
+
+	// Start WebSocket event subscription
+	a.wg.Add(1)
+	go a.websocketLoop()
 
 	return nil
 }
@@ -59,9 +70,15 @@ func (a *LarkAdapter) Stop() error {
 	if a.cancel != nil {
 		a.cancel()
 	}
-	if a.server != nil {
-		return a.server.Shutdown(context.Background())
+	a.wsMu.Lock()
+	if a.wsConn != nil {
+		a.wsConn.Close()
 	}
+	a.wsMu.Unlock()
+	if a.server != nil {
+		a.server.Shutdown(context.Background())
+	}
+	a.wg.Wait()
 	return nil
 }
 
@@ -211,6 +228,8 @@ func (a *LarkAdapter) refreshToken() error {
 }
 
 func (a *LarkAdapter) tokenRefreshLoop() {
+	defer a.wg.Done()
+
 	for {
 		select {
 		case <-a.ctx.Done():
@@ -345,4 +364,223 @@ func (a *LarkAdapter) VerifySignature(timestamp, nonce, signature string, body [
 	content := timestamp + nonce + a.config.AppSecret + string(body)
 	hash := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(hash[:]) == signature
+}
+
+// Lark WebSocket types
+type larkWSMessage struct {
+	Type   string          `json:"type"`
+	Header *larkWSHeader   `json:"header,omitempty"`
+	Event  json.RawMessage `json:"event,omitempty"`
+}
+
+type larkWSHeader struct {
+	EventID   string `json:"event_id"`
+	EventType string `json:"event_type"`
+}
+
+type larkMessageEvent struct {
+	Message struct {
+		MessageID   string `json:"message_id"`
+		ChatID      string `json:"chat_id"`
+		Content     string `json:"content"`
+		MessageType string `json:"message_type"`
+	} `json:"message"`
+	Sender struct {
+		SenderID struct {
+			UserID string `json:"user_id"`
+		} `json:"sender_id"`
+	} `json:"sender"`
+}
+
+type larkCardActionEvent struct {
+	Action struct {
+		Value map[string]string `json:"value"`
+	} `json:"action"`
+	Context struct {
+		OpenMessageID string `json:"open_message_id"`
+		OpenChatID    string `json:"open_chat_id"`
+	} `json:"context"`
+	Operator struct {
+		UserID string `json:"user_id"`
+	} `json:"operator"`
+}
+
+func (a *LarkAdapter) websocketLoop() {
+	defer a.wg.Done()
+
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		default:
+		}
+
+		err := a.connectWebSocket()
+		if err != nil {
+			log.Printf("[lark] websocket error: %v", err)
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-time.After(backoff):
+				backoff = min(backoff*2, maxBackoff)
+				continue
+			}
+		}
+		backoff = time.Second
+	}
+}
+
+func (a *LarkAdapter) connectWebSocket() error {
+	// Get WebSocket endpoint
+	payload := map[string]string{
+		"app_id":     a.config.AppID,
+		"app_secret": a.config.AppSecret,
+	}
+	data, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(a.ctx, "POST", "https://open.feishu.cn/open-apis/callback/ws/endpoint", bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get ws endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var wsResp struct {
+		Code int `json:"code"`
+		Data struct {
+			URL string `json:"url"`
+		} `json:"data"`
+		Msg string `json:"msg"`
+	}
+	if err := json.Unmarshal(body, &wsResp); err != nil {
+		return err
+	}
+	if wsResp.Code != 0 {
+		// WebSocket not enabled for this app, fall back to webhook mode
+		log.Printf("[lark] websocket not available (code %d: %s), using webhook mode", wsResp.Code, wsResp.Msg)
+		// Block until context is cancelled
+		<-a.ctx.Done()
+		return nil
+	}
+
+	// Connect to WebSocket
+	conn, _, err := websocket.DefaultDialer.DialContext(a.ctx, wsResp.Data.URL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	a.wsMu.Lock()
+	a.wsConn = conn
+	a.wsMu.Unlock()
+
+	defer func() {
+		a.wsMu.Lock()
+		if a.wsConn == conn {
+			a.wsConn.Close()
+			a.wsConn = nil
+		}
+		a.wsMu.Unlock()
+	}()
+
+	log.Printf("[lark] websocket connected")
+
+	// Event loop
+	for {
+		select {
+		case <-a.ctx.Done():
+			return nil
+		default:
+		}
+
+		var msg larkWSMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		switch msg.Type {
+		case "event":
+			if msg.Header != nil {
+				a.handleLarkEvent(msg.Header.EventType, msg.Event)
+			}
+		case "pong":
+			// Heartbeat response
+		}
+	}
+}
+
+func (a *LarkAdapter) handleLarkEvent(eventType string, data json.RawMessage) {
+	switch eventType {
+	case "im.message.receive_v1":
+		var event larkMessageEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return
+		}
+		a.handleLarkMessage(&event)
+
+	case "card.action.trigger":
+		var event larkCardActionEvent
+		if err := json.Unmarshal(data, &event); err != nil {
+			return
+		}
+		a.handleLarkCardAction(&event)
+	}
+}
+
+func (a *LarkAdapter) handleLarkMessage(event *larkMessageEvent) {
+	if a.msgHandler == nil {
+		return
+	}
+
+	var content struct {
+		Text string `json:"text"`
+	}
+	json.Unmarshal([]byte(event.Message.Content), &content)
+
+	isMention := strings.Contains(content.Text, "@_user_")
+	text := content.Text
+	// Remove mention
+	for strings.Contains(text, "@_user_") {
+		start := strings.Index(text, "@_user_")
+		end := strings.Index(text[start:], " ")
+		if end == -1 {
+			text = text[:start]
+		} else {
+			text = text[:start] + text[start+end:]
+		}
+	}
+
+	msg := &Message{
+		ID:        event.Message.MessageID,
+		Platform:  PlatformLark,
+		ChatID:    event.Message.ChatID,
+		UserID:    event.Sender.SenderID.UserID,
+		Content:   strings.TrimSpace(text),
+		IsMention: isMention,
+	}
+	a.msgHandler(msg)
+}
+
+func (a *LarkAdapter) handleLarkCardAction(event *larkCardActionEvent) {
+	if a.buttonHandler == nil {
+		return
+	}
+
+	click := &ButtonClick{
+		Platform:  PlatformLark,
+		ChatID:    event.Context.OpenChatID,
+		UserID:    event.Operator.UserID,
+		MessageID: event.Context.OpenMessageID,
+		ButtonID:  event.Action.Value["id"],
+		Data:      event.Action.Value["data"],
+	}
+	a.buttonHandler(click)
 }

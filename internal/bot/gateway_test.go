@@ -610,3 +610,130 @@ func TestGateway_MultipleClientConnect(t *testing.T) {
 		t.Errorf("expected 2 registered processes, got %d", len(processes))
 	}
 }
+
+// mockSessionProvider implements SessionProvider for testing.
+type mockSessionProvider struct {
+	processes []*ProcessInfo
+}
+
+func (m *mockSessionProvider) GetProcessInfo() []*ProcessInfo {
+	return m.processes
+}
+
+func TestGateway_ListAllProcesses_WithSessionProvider(t *testing.T) {
+	socketPath := testSocketPath(t)
+	config := &GatewayConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Interaction: InteractionConfig{
+			MentionKeywords: []string{"@zen"},
+		},
+	}
+
+	logger := log.New(os.Stderr, "[test] ", log.LstdFlags)
+	g := NewGateway(config, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := g.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer g.Stop()
+
+	// Register a process via IPC
+	conn, err := net.Dial("unix", socketPath)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	regPayload, _ := json.Marshal(RegisterPayload{
+		ProcessID:   "ipc-process",
+		ProcessPath: "/path/to/claude",
+		PID:         12345,
+	})
+	json.NewEncoder(conn).Encode(IPCMessage{Type: IPCRegister, Payload: regPayload})
+	time.Sleep(50 * time.Millisecond)
+
+	// Set up mock session provider with external processes
+	mockProvider := &mockSessionProvider{
+		processes: []*ProcessInfo{
+			{
+				ID:         "external-1",
+				Name:       "claude-abc123",
+				Status:     "idle",
+				WaitingFor: "input",
+			},
+			{
+				ID:         "external-2",
+				Name:       "claude-def456",
+				Status:     "busy",
+			},
+		},
+	}
+	g.SetSessionProvider(mockProvider)
+
+	// ListAllProcesses should return both IPC and external processes
+	processes := g.ListAllProcesses()
+	if len(processes) != 3 {
+		t.Errorf("expected 3 processes, got %d", len(processes))
+	}
+
+	// Verify we have both types
+	var hasIPC, hasExternal1, hasExternal2 bool
+	for _, p := range processes {
+		switch p.ID {
+		case "ipc-process":
+			hasIPC = true
+		case "external-1":
+			hasExternal1 = true
+			if p.WaitingFor != "input" {
+				t.Errorf("external-1 WaitingFor = %q, want 'input'", p.WaitingFor)
+			}
+		case "external-2":
+			hasExternal2 = true
+			if p.Status != "busy" {
+				t.Errorf("external-2 Status = %q, want 'busy'", p.Status)
+			}
+		}
+	}
+
+	if !hasIPC {
+		t.Error("missing IPC process")
+	}
+	if !hasExternal1 {
+		t.Error("missing external-1 process")
+	}
+	if !hasExternal2 {
+		t.Error("missing external-2 process")
+	}
+}
+
+func TestGateway_ListAllProcesses_NoSessionProvider(t *testing.T) {
+	socketPath := testSocketPath(t)
+	config := &GatewayConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Interaction: InteractionConfig{
+			MentionKeywords: []string{"@zen"},
+		},
+	}
+
+	logger := log.New(os.Stderr, "[test] ", log.LstdFlags)
+	g := NewGateway(config, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := g.Start(ctx); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer g.Stop()
+
+	// No session provider set - should only return registry processes
+	processes := g.ListAllProcesses()
+	if len(processes) != 0 {
+		t.Errorf("expected 0 processes with no registrations, got %d", len(processes))
+	}
+}

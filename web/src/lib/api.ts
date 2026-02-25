@@ -277,6 +277,68 @@ export const botApi = {
       method: 'PUT',
       body: JSON.stringify(bot),
     }),
+  chat: async (
+    message: string,
+    sessionId?: string,
+    onDelta?: (content: string) => void,
+    onSession?: (sessionId: string) => void
+  ): Promise<{ content: string; sessionId: string }> => {
+    const response = await fetch(`${API_BASE}/bot/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ message, session_id: sessionId }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new ApiError(response.status, error.error || `HTTP ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const decoder = new TextDecoder()
+    let fullContent = ''
+    let newSessionId = sessionId || ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n')
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        if (line.startsWith('event: ')) {
+          const event = line.slice(7)
+          const dataLine = lines[i + 1]
+          if (dataLine?.startsWith('data: ')) {
+            const data = JSON.parse(dataLine.slice(6))
+            if (event === 'session') {
+              newSessionId = data.session_id
+              onSession?.(newSessionId)
+            } else if (event === 'delta') {
+              fullContent += data.content
+              onDelta?.(data.content)
+            } else if (event === 'done') {
+              fullContent = data.content
+            } else if (event === 'error') {
+              throw new ApiError(500, data.error)
+            }
+          }
+        }
+      }
+    }
+
+    return { content: fullContent, sessionId: newSessionId }
+  },
+  clearChat: (sessionId: string) =>
+    request<{ session_id: string; status: string }>('/bot/chat', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, clear: true }),
+    }),
 }
 
 // Middleware API

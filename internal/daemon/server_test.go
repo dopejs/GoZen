@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy"
 )
 
 func TestDaemonStatusAPI(t *testing.T) {
@@ -104,10 +105,25 @@ func TestDaemonSessionsAPI(t *testing.T) {
 func TestDaemonSessionsAPIMethodNotAllowed(t *testing.T) {
 	d := newTestDaemon()
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/daemon/sessions", nil)
+	r := httptest.NewRequest("DELETE", "/api/v1/daemon/sessions", nil)
 	d.handleDaemonSessions(w, r)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestDaemonSessionsAPIRegister(t *testing.T) {
+	d := newTestDaemon()
+
+	// Initialize bot bridge for the test
+	proxy.InitBotBridge("")
+
+	body := `{"session_id":"test-123","profile":"default","client_type":"claude"}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/daemon/sessions", strings.NewReader(body))
+	d.handleDaemonSessions(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

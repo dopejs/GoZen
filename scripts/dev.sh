@@ -28,8 +28,12 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Build the binary
 build_daemon() {
-    echo -e "${YELLOW}Building daemon...${NC}"
+    echo -e "${YELLOW}Building frontend...${NC}"
+    cd "$PROJECT_ROOT/web"
+    npm run build
     cd "$PROJECT_ROOT"
+
+    echo -e "${YELLOW}Building daemon...${NC}"
     go build -o "$PROJECT_ROOT/bin/zen-dev" .
     echo -e "${GREEN}Built: $PROJECT_ROOT/bin/zen-dev${NC}"
 }
@@ -145,6 +149,16 @@ run_zen() {
     GOZEN_CONFIG_DIR="$DEV_CONFIG_DIR" "$PROJECT_ROOT/bin/zen-dev" "$@"
 }
 
+# Run bot test harness
+run_bot_test() {
+    echo -e "${YELLOW}Building bot test harness...${NC}"
+    cd "$PROJECT_ROOT"
+    go build -o "$PROJECT_ROOT/bin/bottest" ./cmd/bottest
+    echo -e "${GREEN}Starting bot chat test...${NC}"
+    echo ""
+    GOZEN_CONFIG_DIR="$DEV_CONFIG_DIR" "$PROJECT_ROOT/bin/bottest"
+}
+
 # Main
 case "${1:-start}" in
     start)
@@ -175,6 +189,9 @@ case "${1:-start}" in
     zen)
         run_zen "${@:2}"
         ;;
+    bot)
+        run_bot_test
+        ;;
     client)
         start_client "${@:2}"
         ;;
@@ -188,7 +205,7 @@ case "${1:-start}" in
         start_client opencode "${@:2}"
         ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|web|all|build|zen|client|claude|codex|opencode}"
+        echo "Usage: $0 {start|stop|restart|status|web|all|build|zen|bot|client|claude|codex|opencode}"
         echo ""
         echo "Commands:"
         echo "  start     Start dev daemon (ports $DEV_WEB_PORT/$DEV_PROXY_PORT)"
@@ -199,6 +216,7 @@ case "${1:-start}" in
         echo "  all       Start both daemon and frontend"
         echo "  build     Build dev binary only"
         echo "  zen       Run zen command with dev config (e.g., zen daemon start)"
+        echo "  bot       Run bot chat test harness"
         echo "  client    Start a client with dev proxy (e.g., client claude)"
         echo "  claude    Shortcut for 'client claude'"
         echo "  codex     Shortcut for 'client codex'"

@@ -63,10 +63,16 @@ type RegisterPayload struct {
 
 // HeartbeatPayload is sent periodically by processes.
 type HeartbeatPayload struct {
-	ProcessID   string `json:"process_id"`
-	Status      string `json:"status"`
-	CurrentTask string `json:"current_task,omitempty"`
-	Memory      uint64 `json:"memory,omitempty"`
+	ProcessID     string `json:"process_id"`
+	Status        string `json:"status"`
+	CurrentTask   string `json:"current_task,omitempty"`
+	Memory        uint64 `json:"memory,omitempty"`
+	WaitingFor    string `json:"waiting_for,omitempty"`     // input, approval, tool_result, etc.
+	LastMessage   string `json:"last_message,omitempty"`    // last message (truncated if long)
+	MessageRole   string `json:"message_role,omitempty"`    // user, assistant, system
+	PendingAction string `json:"pending_action,omitempty"`  // description of pending action
+	TokensUsed    int    `json:"tokens_used,omitempty"`     // tokens used in current session
+	TurnCount     int    `json:"turn_count,omitempty"`      // number of conversation turns
 }
 
 // CommandPayload is sent from gateway to process.
@@ -131,6 +137,9 @@ const (
 	IntentSubscribe   Intent = "subscribe"
 	IntentBind        Intent = "bind"
 	IntentHelp        Intent = "help"
+	IntentChat        Intent = "chat"
+	IntentPersona     Intent = "persona"
+	IntentForget      Intent = "forget"
 	IntentUnknown     Intent = "unknown"
 )
 

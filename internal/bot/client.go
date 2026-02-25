@@ -12,14 +12,15 @@ import (
 
 // Client is the bot client for zen processes to communicate with the gateway.
 type Client struct {
-	processID   string
-	processPath string
-	socketPath  string
-	gatewayPath string
-	conn        net.Conn
-	mu          sync.Mutex
-	handlers    ClientHandlers
-	connected   bool
+	processID     string
+	processPath   string
+	socketPath    string
+	gatewayPath   string
+	conn          net.Conn
+	mu            sync.Mutex
+	handlers      ClientHandlers
+	connected     bool
+	currentStatus StatusUpdate // cached status for heartbeat
 }
 
 // ClientHandlers contains handlers for incoming messages from gateway.
@@ -118,6 +119,46 @@ func (c *Client) UpdateStatus(status, currentTask string) error {
 		ProcessID:   c.processID,
 		Status:      status,
 		CurrentTask: currentTask,
+	}
+	return c.sendMessage(IPCHeartbeat, "", payload)
+}
+
+// StatusUpdate contains extended status information.
+type StatusUpdate struct {
+	Status        string
+	CurrentTask   string
+	WaitingFor    string // input, approval, tool_result, etc.
+	LastMessage   string // last message (will be truncated if too long)
+	MessageRole   string // user, assistant, system
+	PendingAction string // description of pending action
+	TokensUsed    int
+	TurnCount     int
+}
+
+// UpdateStatusExtended updates the process status with extended information.
+func (c *Client) UpdateStatusExtended(update StatusUpdate) error {
+	// Truncate last message if too long
+	lastMsg := update.LastMessage
+	if len(lastMsg) > 200 {
+		lastMsg = lastMsg[:200] + "..."
+	}
+	update.LastMessage = lastMsg
+
+	// Cache the status for heartbeat
+	c.mu.Lock()
+	c.currentStatus = update
+	c.mu.Unlock()
+
+	payload := HeartbeatPayload{
+		ProcessID:     c.processID,
+		Status:        update.Status,
+		CurrentTask:   update.CurrentTask,
+		WaitingFor:    update.WaitingFor,
+		LastMessage:   lastMsg,
+		MessageRole:   update.MessageRole,
+		PendingAction: update.PendingAction,
+		TokensUsed:    update.TokensUsed,
+		TurnCount:     update.TurnCount,
 	}
 	return c.sendMessage(IPCHeartbeat, "", payload)
 }
@@ -226,15 +267,29 @@ func (c *Client) heartbeatLoop() {
 	for range ticker.C {
 		c.mu.Lock()
 		connected := c.connected
+		status := c.currentStatus
 		c.mu.Unlock()
 
 		if !connected {
 			return
 		}
 
-		c.sendMessage(IPCHeartbeat, "", HeartbeatPayload{
-			ProcessID: c.processID,
-			Status:    "idle",
-		})
+		// Use cached status if available, otherwise send idle
+		payload := HeartbeatPayload{
+			ProcessID:     c.processID,
+			Status:        status.Status,
+			CurrentTask:   status.CurrentTask,
+			WaitingFor:    status.WaitingFor,
+			LastMessage:   status.LastMessage,
+			MessageRole:   status.MessageRole,
+			PendingAction: status.PendingAction,
+			TokensUsed:    status.TokensUsed,
+			TurnCount:     status.TurnCount,
+		}
+		if payload.Status == "" {
+			payload.Status = "idle"
+		}
+
+		c.sendMessage(IPCHeartbeat, "", payload)
 	}
 }

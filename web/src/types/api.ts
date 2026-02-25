@@ -214,6 +214,8 @@ export interface SyncConfig {
   secret_key?: string
   // WebDAV
   username?: string
+  // Encryption
+  passphrase?: string
   // Common
   auto_pull?: boolean
   pull_interval?: number

@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -217,6 +220,9 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 	// Set X-Zen-Client header via env var (proxy strips it)
 	os.Setenv("X_ZEN_CLIENT", clientBin)
 
+	// Register session with daemon for bot visibility
+	registerSession(proxyPort, profile, sessionID, clientBin)
+
 	// Find client binary
 	cliPath, err := exec.LookPath(clientBin)
 	if err != nil {
@@ -256,6 +262,23 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 	signal.Stop(sigCh)
 	close(sigCh)
 	return nil
+}
+
+// registerSession registers a session with the daemon for bot visibility.
+func registerSession(proxyPort int, profile, sessionID, clientType string) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/sessions", proxyPort)
+	body, _ := json.Marshal(map[string]string{
+		"session_id":  sessionID,
+		"profile":     profile,
+		"client_type": clientType,
+	})
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return // Silently ignore - daemon might not support this yet
+	}
+	resp.Body.Close()
 }
 
 // ensureDaemonRunning checks if zend is running and starts it if not.

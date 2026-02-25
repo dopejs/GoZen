@@ -139,6 +139,19 @@ type DiscordConfig struct {
 	AllowedGuilds []string `json:"allowed_guilds,omitempty"`
 }
 
+// IsGuildAllowed checks if a guild/server is in the allowed list.
+func (c *DiscordConfig) IsGuildAllowed(guildID string) bool {
+	if len(c.AllowedGuilds) == 0 {
+		return true
+	}
+	for _, g := range c.AllowedGuilds {
+		if g == guildID {
+			return true
+		}
+	}
+	return false
+}
+
 // SlackConfig is the configuration for Slack adapter.
 type SlackConfig struct {
 	AdapterConfig

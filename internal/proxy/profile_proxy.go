@@ -54,6 +54,11 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	pp.Logger.Printf("[route] profile=%s session=%s client=%s format=%s path=%s",
 		route.Profile, route.SessionID, clientType, clientFormat, route.Remainder)
 
+	// Register session with bot bridge (for task list visibility)
+	if bridge := GetBotBridge(); bridge != nil {
+		bridge.MarkSessionBusy(route.CacheKey(), clientType)
+	}
+
 	// Resolve provider names for this profile
 	providerNames, err := pp.resolveProviderNames(route)
 	if err != nil {

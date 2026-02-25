@@ -273,6 +273,8 @@
     "quietHoursStart": "静音時間開始",
     "quietHoursEnd": "静音時間終了",
     "quietHoursZone": "タイムゾーン",
-    "recentPaths": "最近使用したパス"
+    "recentPaths": "最近使用したパス",
+    "betaNotice": "ベータ機能：",
+    "betaNoticeDesc": "ボットゲートウェイは現在ベータ版です。設定オプションは今後のリリースで変更される可能性があります。"
   }
 }

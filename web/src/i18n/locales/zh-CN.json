@@ -295,7 +295,9 @@
     "quietHoursStart": "静默时段开始",
     "quietHoursEnd": "静默时段结束",
     "quietHoursZone": "时区",
-    "recentPaths": "最近使用的路径"
+    "recentPaths": "最近使用的路径",
+    "betaNotice": "Beta 功能：",
+    "betaNoticeDesc": "机器人网关目前处于 Beta 阶段，配置选项可能会在未来版本中更改。"
   },
   "middleware": {
     "title": "中间件",

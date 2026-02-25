@@ -310,7 +310,9 @@
     "quietHoursStart": "Quiet Hours Start",
     "quietHoursEnd": "Quiet Hours End",
     "quietHoursZone": "Timezone",
-    "recentPaths": "Recent Paths"
+    "recentPaths": "Recent Paths",
+    "betaNotice": "Beta Feature:",
+    "betaNoticeDesc": "The bot gateway is currently in beta. Configuration options may change in future releases."
   },
   "middleware": {
     "title": "Middleware",

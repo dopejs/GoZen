@@ -231,7 +231,9 @@
     "quietHoursStart": "Inicio de Horas Silenciosas",
     "quietHoursEnd": "Fin de Horas Silenciosas",
     "quietHoursZone": "Zona Horaria",
-    "recentPaths": "Rutas Recientes"
+    "recentPaths": "Rutas Recientes",
+    "betaNotice": "Función Beta:",
+    "betaNoticeDesc": "La pasarela de bot está actualmente en beta. Las opciones de configuración pueden cambiar en futuras versiones."
   },
   "middleware": {
     "title": "Middleware",

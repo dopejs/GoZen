@@ -982,6 +982,8 @@ func (s *Store) SetAgent(ac *AgentConfig) error {
 	return s.saveLocked()
 }
 
+// --- Bot (BETA) ---
+
 // GetBot returns the bot configuration.
 func (s *Store) GetBot() *BotConfig {
 	s.mu.Lock()

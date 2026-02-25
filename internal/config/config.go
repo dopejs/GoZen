@@ -561,11 +561,12 @@ type RuntimeConfig struct {
 	MaxTokens       int    `json:"max_tokens,omitempty"`       // max total tokens (default: 500000)
 }
 
-// --- Bot Configuration ---
+// --- Bot Configuration (BETA) ---
 
 // BotConfig holds bot gateway settings.
+// [BETA] This feature is experimental and disabled by default.
 type BotConfig struct {
-	Enabled     bool                    `json:"enabled"`
+	Enabled     bool                    `json:"enabled"`          // default: false (BETA)
 	Profile     string                  `json:"profile,omitempty"`     // profile for NLU (recommend small model)
 	Model       string                  `json:"model,omitempty"`       // LLM model ID (default: "claude-3-haiku-20240307")
 	SocketPath  string                  `json:"socket_path,omitempty"` // IPC socket path
@@ -704,7 +705,7 @@ type OpenCCConfig struct {
 	Compression     *CompressionConfig          `json:"compression,omitempty"`       // [BETA] context compression
 	Middleware      *MiddlewareConfig           `json:"middleware,omitempty"`        // [BETA] middleware pipeline
 	Agent           *AgentConfig                `json:"agent,omitempty"`             // [BETA] agent infrastructure
-	Bot             *BotConfig                  `json:"bot,omitempty"`               // bot gateway configuration
+	Bot             *BotConfig                  `json:"bot,omitempty"`               // [BETA] bot gateway configuration
 }
 
 // UnmarshalJSON supports multiple config versions:

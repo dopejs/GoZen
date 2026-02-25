@@ -273,6 +273,8 @@
     "quietHoursStart": "조용한 시간 시작",
     "quietHoursEnd": "조용한 시간 종료",
     "quietHoursZone": "시간대",
-    "recentPaths": "최근 사용한 경로"
+    "recentPaths": "최근 사용한 경로",
+    "betaNotice": "베타 기능:",
+    "betaNoticeDesc": "봇 게이트웨이는 현재 베타 단계입니다. 향후 릴리스에서 구성 옵션이 변경될 수 있습니다."
   }
 }

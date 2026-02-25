@@ -295,7 +295,9 @@
     "quietHoursStart": "靜默時段開始",
     "quietHoursEnd": "靜默時段結束",
     "quietHoursZone": "時區",
-    "recentPaths": "最近使用的路徑"
+    "recentPaths": "最近使用的路徑",
+    "betaNotice": "Beta 功能：",
+    "betaNoticeDesc": "機器人閘道目前處於 Beta 階段，設定選項可能會在未來版本中變更。"
   },
   "middleware": {
     "title": "中介軟體",

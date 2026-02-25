@@ -32,7 +32,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "3.0.0-alpha.9"
+var Version = "3.0.0-alpha.10"
 
 var updateChecker *update.Checker
 

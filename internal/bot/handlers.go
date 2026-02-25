@@ -69,7 +69,7 @@ func (g *Gateway) processIntent(intent *ParsedIntent, session *Session, replyTo 
 		g.handleForget(session, replyTo)
 
 	default:
-		// All other intents (including Help, Chat, QueryStatus, QueryList, Unknown)
+		// All other intents (including Help, Chat, QueryStatus, Unknown)
 		// go through the LLM with full process context
 		g.handleChat(intent, session, replyTo)
 	}
@@ -93,7 +93,7 @@ func (g *Gateway) handleChat(intent *ParsedIntent, session *Session, replyTo Rep
 	}
 
 	// Build system prompt with full process state
-	processes := g.registry.List()
+	processes := g.ListAllProcesses()
 	memory, _ := LoadMemory(g.config.MemoryDir)
 	systemPrompt := BuildSystemPrompt(processes, g.config.Profile, memory)
 

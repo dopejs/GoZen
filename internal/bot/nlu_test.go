@@ -35,26 +35,40 @@ func TestNLUParser_Parse_Help(t *testing.T) {
 func TestNLUParser_Parse_List(t *testing.T) {
 	parser := NewNLUParser([]string{"@zen"})
 
-	// "list" now falls through to chat intent (handled by LLM)
-	msg := &Message{Content: "list", IsMention: true}
-	result := parser.Parse(msg, false)
-	if result == nil {
-		t.Error("Parse(list) returned nil")
-		return
-	}
-	if result.Intent != IntentChat {
-		t.Errorf("Parse(list) = %v, want %v", result.Intent, IntentChat)
-	}
-}
-
-func TestNLUParser_Parse_Status(t *testing.T) {
-	parser := NewNLUParser([]string{"@zen"})
-
-	// "status" now falls through to chat intent (handled by LLM)
+	// Task/process query words should fall through to IntentChat (LLM handles intent)
 	tests := []struct {
 		content string
 	}{
+		{"list"},
+		{"任务"},
+		{"tasks"},
+		{"进程"},
 		{"status"},
+		{"状态"},
+		{"有哪些任务"},
+		{"现在有哪些"},
+	}
+
+	for _, tt := range tests {
+		msg := &Message{Content: tt.content, IsMention: true}
+		result := parser.Parse(msg, false)
+		if result == nil {
+			t.Errorf("Parse(%q) returned nil", tt.content)
+			continue
+		}
+		if result.Intent != IntentChat {
+			t.Errorf("Parse(%q) = %v, want %v", tt.content, result.Intent, IntentChat)
+		}
+	}
+}
+
+func TestNLUParser_Parse_Status_WithTarget(t *testing.T) {
+	parser := NewNLUParser([]string{"@zen"})
+
+	// "status <target>" falls through to chat intent (handled by LLM)
+	tests := []struct {
+		content string
+	}{
 		{"status api"},
 		{"status myproject"},
 	}

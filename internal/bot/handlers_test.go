@@ -189,7 +189,7 @@ func TestGateway_processIntent_QueryList_Empty(t *testing.T) {
 		ChatID:   "chat-1",
 	}
 
-	// IntentQueryList now goes through handleChat (LLM-first approach)
+	// IntentQueryList now falls through to default (chat handler)
 	intent := &ParsedIntent{Intent: IntentQueryList}
 	msg := &Message{
 		Platform: PlatformTelegram,
@@ -203,7 +203,7 @@ func TestGateway_processIntent_QueryList_Empty(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(adapter.sentMessages))
 	}
 
-	// Now handled by chat fallback (no LLM configured)
+	// Should go through chat handler (no LLM configured, so friendly fallback)
 	if !strings.Contains(adapter.sentMessages[0].Text, "Zen") {
 		t.Errorf("unexpected message: %s", adapter.sentMessages[0].Text)
 	}

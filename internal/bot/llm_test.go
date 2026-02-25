@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewLLMClient(t *testing.T) {
-	client := NewLLMClient(19841, "default")
+	client := NewLLMClient(19841, "default", "")
 	if client == nil {
 		t.Fatal("NewLLMClient returned nil")
 	}
@@ -26,8 +26,8 @@ func TestBuildSystemPrompt_NoProcesses(t *testing.T) {
 	if prompt == "" {
 		t.Error("BuildSystemPrompt should not return empty string")
 	}
-	if !contains(prompt, "No connected processes") {
-		t.Error("prompt should contain 'No connected processes' when no processes")
+	if !contains(prompt, "No connected sessions") {
+		t.Error("prompt should contain 'No connected sessions' when no processes")
 	}
 	if !contains(prompt, "default") {
 		t.Error("prompt should contain profile name")
@@ -77,9 +77,12 @@ func TestBuildSystemPrompt_WithMemory(t *testing.T) {
 	if !contains(prompt, "猫娘") {
 		t.Error("prompt should contain memory persona")
 	}
-	// Should NOT contain default base when memory is set
-	if contains(prompt, "You are Zen") {
-		t.Error("prompt should use memory instead of default base")
+	// Memory is appended as persona instructions; base identity is always present
+	if !contains(prompt, "You are Zen") {
+		t.Error("prompt should always contain base identity")
+	}
+	if !contains(prompt, "Persona Instructions") {
+		t.Error("prompt should contain persona instructions section when memory is set")
 	}
 }
 

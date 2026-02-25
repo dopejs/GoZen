@@ -567,11 +567,13 @@ type RuntimeConfig struct {
 type BotConfig struct {
 	Enabled     bool                    `json:"enabled"`
 	Profile     string                  `json:"profile,omitempty"`     // profile for NLU (recommend small model)
+	Model       string                  `json:"model,omitempty"`       // LLM model ID (default: "claude-3-haiku-20240307")
 	SocketPath  string                  `json:"socket_path,omitempty"` // IPC socket path
 	Platforms   *BotPlatformsConfig     `json:"platforms,omitempty"`
 	Interaction *BotInteractionConfig   `json:"interaction,omitempty"`
 	Aliases     map[string]string       `json:"aliases,omitempty"` // alias -> project path
 	Notify      *BotNotifyConfig        `json:"notify,omitempty"`
+	HistorySize int                     `json:"history_size,omitempty"` // conversation history size, default 20
 }
 
 // BotPlatformsConfig holds configuration for all chat platforms.
@@ -664,6 +666,7 @@ type ProjectBinding struct {
 
 // SyncConfig holds configuration for remote config sync.
 type SyncConfig struct {
+	Enabled      bool   `json:"enabled,omitempty"`         // enable/disable sync
 	Backend      string `json:"backend"`                   // "webdav"|"s3"|"gist"|"repo"
 	Endpoint     string `json:"endpoint,omitempty"`        // WebDAV URL or S3 endpoint
 	Bucket       string `json:"bucket,omitempty"`          // S3

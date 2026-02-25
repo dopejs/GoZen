@@ -19,10 +19,14 @@ type GatewayConfig struct {
 	Enabled       bool              `json:"enabled"`
 	SocketPath    string            `json:"socket_path,omitempty"`
 	Profile       string            `json:"profile,omitempty"` // Profile for NLU
+	Model         string            `json:"model,omitempty"`   // LLM model ID
+	ProxyPort     int               `json:"proxy_port,omitempty"`
 	Platforms     PlatformsConfig   `json:"platforms"`
 	Interaction   InteractionConfig `json:"interaction"`
 	Aliases       map[string]string `json:"aliases,omitempty"`
 	Notifications NotifyConfig      `json:"notifications,omitempty"`
+	MemoryDir     string            `json:"memory_dir,omitempty"`
+	HistorySize   int               `json:"history_size,omitempty"`
 }
 
 // PlatformsConfig contains configuration for all platforms.
@@ -56,22 +60,30 @@ type NotifyConfig struct {
 	} `json:"quiet_hours,omitempty"`
 }
 
+// SessionProvider provides additional session/process information to the gateway.
+type SessionProvider interface {
+	// GetProcessInfo returns process info for active sessions.
+	GetProcessInfo() []*ProcessInfo
+}
+
 // Gateway is the central bot gateway that manages adapters and routes messages.
 type Gateway struct {
 	config   *GatewayConfig
 	logger   *log.Logger
 	adapters []adapters.Adapter
+	llm      *LLMClient
 
-	registry    *Registry
-	sessions    *SessionManager
-	approvals   *ApprovalManager
-	nlu         *NLUParser
-	listener    net.Listener
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	mu          sync.RWMutex
-	connections map[string]net.Conn // processID -> connection
+	registry        *Registry
+	sessions        *SessionManager
+	approvals       *ApprovalManager
+	nlu             *NLUParser
+	sessionProvider SessionProvider // optional external session provider
+	listener        net.Listener
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	mu              sync.RWMutex
+	connections     map[string]net.Conn // processID -> connection
 }
 
 // NewGateway creates a new bot gateway.
@@ -80,16 +92,27 @@ func NewGateway(config *GatewayConfig, logger *log.Logger) *Gateway {
 		config.SocketPath = filepath.Join(os.TempDir(), "zen-gateway.sock")
 	}
 
+	if config.MemoryDir == "" {
+		config.MemoryDir = MemoryDir()
+	}
+
 	keywords := config.Interaction.MentionKeywords
 	if len(keywords) == 0 {
 		keywords = []string{"@zen", "/zen", "zen"}
 	}
 
+	// Initialize LLM client if profile and proxy port are configured
+	var llmClient *LLMClient
+	if config.Profile != "" && config.ProxyPort > 0 {
+		llmClient = NewLLMClient(config.ProxyPort, config.Profile, config.Model)
+	}
+
 	return &Gateway{
 		config:      config,
 		logger:      logger,
+		llm:         llmClient,
 		registry:    NewRegistry(config.Aliases),
-		sessions:    NewSessionManager(),
+		sessions:    NewSessionManagerWithHistory(config.HistorySize),
 		approvals:   NewApprovalManager(),
 		nlu:         NewNLUParser(keywords),
 		connections: make(map[string]net.Conn),
@@ -149,6 +172,24 @@ func (g *Gateway) Stop() error {
 	g.wg.Wait()
 	g.logger.Println("Bot gateway stopped")
 	return nil
+}
+
+// SetSessionProvider sets an external session provider.
+func (g *Gateway) SetSessionProvider(provider SessionProvider) {
+	g.sessionProvider = provider
+}
+
+// ListAllProcesses returns all processes from registry and session provider.
+func (g *Gateway) ListAllProcesses() []*ProcessInfo {
+	processes := g.registry.List()
+
+	// Add processes from session provider if available
+	if g.sessionProvider != nil {
+		external := g.sessionProvider.GetProcessInfo()
+		processes = append(processes, external...)
+	}
+
+	return processes
 }
 
 func (g *Gateway) initAdapters() error {
@@ -313,7 +354,7 @@ func (g *Gateway) handleConnection(conn net.Conn) {
 		case IPCHeartbeat:
 			var payload HeartbeatPayload
 			json.Unmarshal(msg.Payload, &payload)
-			g.registry.UpdateStatus(payload.ProcessID, payload.Status, payload.CurrentTask)
+			g.registry.UpdateFromHeartbeat(&payload)
 
 		case IPCNotification:
 			var payload NotificationPayload

@@ -11,12 +11,14 @@ import (
 type botResponse struct {
 	Enabled     bool                         `json:"enabled"`
 	Profile     string                       `json:"profile,omitempty"`
+	Model       string                       `json:"model,omitempty"`
 	SocketPath  string                       `json:"socket_path,omitempty"`
 	Platforms   *botPlatformsResponse        `json:"platforms,omitempty"`
 	Interaction *config.BotInteractionConfig `json:"interaction,omitempty"`
 	Aliases     map[string]string            `json:"aliases,omitempty"`
 	Notify      *config.BotNotifyConfig      `json:"notify,omitempty"`
 	RecentPaths []string                     `json:"recent_paths,omitempty"`
+	HistorySize int                          `json:"history_size,omitempty"`
 }
 
 type botPlatformsResponse struct {
@@ -141,10 +143,12 @@ func toBotResponse(bot *config.BotConfig) *botResponse {
 	resp := &botResponse{
 		Enabled:     bot.Enabled,
 		Profile:     bot.Profile,
+		Model:       bot.Model,
 		SocketPath:  bot.SocketPath,
 		Interaction: bot.Interaction,
 		Aliases:     bot.Aliases,
 		Notify:      bot.Notify,
+		HistorySize: bot.HistorySize,
 	}
 
 	if bot.Platforms != nil {
@@ -259,9 +263,11 @@ func mergeBotConfig(existing, update *config.BotConfig) *config.BotConfig {
 	}
 
 	result := &config.BotConfig{
-		Enabled:    update.Enabled,
-		Profile:    update.Profile,
-		SocketPath: update.SocketPath,
+		Enabled:     update.Enabled,
+		Profile:     update.Profile,
+		Model:       update.Model,
+		SocketPath:  update.SocketPath,
+		HistorySize: update.HistorySize,
 	}
 
 	// Merge platforms

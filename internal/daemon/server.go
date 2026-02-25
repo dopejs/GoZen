@@ -164,6 +164,9 @@ func (d *Daemon) Start() error {
 	// Initialize sync if configured
 	d.initSync()
 
+	// Initialize bot bridge for session tracking
+	proxy.InitBotBridge("")
+
 	// Initialize bot gateway if configured
 	d.initBot()
 
@@ -490,10 +493,13 @@ func (d *Daemon) initBot() {
 
 	// Convert config types to bot gateway config
 	gwConfig := &bot.GatewayConfig{
-		Enabled:    cfg.Enabled,
-		SocketPath: cfg.SocketPath,
-		Profile:    cfg.Profile,
-		Aliases:    cfg.Aliases,
+		Enabled:     cfg.Enabled,
+		SocketPath:  cfg.SocketPath,
+		Profile:     cfg.Profile,
+		Model:       cfg.Model,
+		ProxyPort:   d.proxyPort,
+		Aliases:     cfg.Aliases,
+		HistorySize: cfg.HistorySize,
 	}
 
 	// Convert platform configs
@@ -605,6 +611,12 @@ func (d *Daemon) initBot() {
 		d.logger.Printf("Failed to start bot gateway: %v", err)
 		d.botGateway = nil
 		return
+	}
+
+	// Connect bot bridge to gateway for session tracking
+	if bridge := proxy.GetBotBridge(); bridge != nil {
+		d.botGateway.SetSessionProvider(bridge)
+		d.logger.Println("Bot bridge connected to gateway")
 	}
 
 	d.logger.Println("Bot gateway started")

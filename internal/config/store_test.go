@@ -337,6 +337,47 @@ func TestStoreSetProfileOrderNil(t *testing.T) {
 	}
 }
 
+// --- GetProxyPort tests (002-fix-proxy-port) ---
+
+func TestStoreGetProxyPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		port     int
+		expected int
+	}{
+		{"unset (zero value)", 0, DefaultProxyPort},
+		{"default port", DefaultProxyPort, DefaultProxyPort},
+		{"custom port", 8080, 8080},
+		{"high port", 65535, 65535},
+		{"port 1", 1, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			s.Load()
+			if tt.port != 0 {
+				if err := s.SetProxyPort(tt.port); err != nil {
+					t.Fatalf("SetProxyPort(%d) error: %v", tt.port, err)
+				}
+			}
+			got := s.GetProxyPort()
+			if got != tt.expected {
+				t.Errorf("GetProxyPort() = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStoreGetProxyPortNilConfig(t *testing.T) {
+	s, _ := newTestStore(t)
+	// Don't call Load — config stays nil
+	got := s.GetProxyPort()
+	if got != DefaultProxyPort {
+		t.Errorf("GetProxyPort() with nil config = %d, want %d", got, DefaultProxyPort)
+	}
+}
+
 func TestStoreGetProfileOrderReturnsCopy(t *testing.T) {
 	s, _ := newTestStore(t)
 	s.Load()

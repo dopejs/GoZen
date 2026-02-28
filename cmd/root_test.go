@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -582,5 +583,35 @@ func TestSetupCLIEnvironment_UnknownCLI(t *testing.T) {
 // discardLogger returns a logger that discards all output.
 func discardLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
+}
+
+// --- Proxy port address formatting tests (002-fix-proxy-port) ---
+
+func TestProxyListenAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		port     int
+		expected string
+	}{
+		{"default port", 0, "127.0.0.1:19841"},
+		{"custom port", 8080, "127.0.0.1:8080"},
+		{"high port", 65535, "127.0.0.1:65535"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.port != 0 {
+				if err := config.SetProxyPort(tt.port); err != nil {
+					t.Fatalf("SetProxyPort(%d) error: %v", tt.port, err)
+				}
+			}
+			proxyPort := config.GetProxyPort()
+			addr := fmt.Sprintf("127.0.0.1:%d", proxyPort)
+			if addr != tt.expected {
+				t.Errorf("proxy listen address = %q, want %q", addr, tt.expected)
+			}
+		})
+	}
 }
 

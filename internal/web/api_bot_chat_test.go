@@ -87,7 +87,9 @@ func TestChatSessionStore_Clear_NonExistent(t *testing.T) {
 func TestChatSessionStore_Cleanup(t *testing.T) {
 	store := &chatSessionStore{sessions: make(map[string]*ChatSession)}
 	old := store.Create()
-	store.sessions[old.ID].UpdatedAt = time.Now().Add(-2 * time.Hour)
+	old.UpdatedAt = time.Now().Add(-2 * time.Hour)
+	// Ensure distinct ID by sleeping briefly
+	time.Sleep(time.Millisecond)
 	recent := store.Create()
 
 	store.Cleanup(1 * time.Hour)

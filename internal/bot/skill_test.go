@@ -2,6 +2,8 @@ package bot
 
 import (
 	"testing"
+
+	"github.com/dopejs/gozen/internal/config"
 )
 
 func TestNewSkill(t *testing.T) {
@@ -278,5 +280,196 @@ func TestSkillRegistryListEnabled(t *testing.T) {
 	}
 	if list[0].Name != "enabled1" || list[1].Name != "enabled2" {
 		t.Errorf("ListEnabled() = [%s, %s], want [enabled1, enabled2]", list[0].Name, list[1].Name)
+	}
+}
+
+// --- T009: LoadFromConfig tests ---
+
+func TestSkillRegistryLoadFromConfig(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		Enabled:             true,
+		ConfidenceThreshold: 0.7,
+		LLMFallback:         true,
+		Custom:              []config.SkillDefinition{},
+	}
+
+	reg := NewSkillRegistry()
+	if err := reg.LoadFromConfig(cfg); err != nil {
+		t.Fatalf("LoadFromConfig() error = %v", err)
+	}
+
+	// Should have all builtins loaded
+	builtins := BuiltinSkills()
+	for _, b := range builtins {
+		got := reg.Get(b.Name)
+		if got == nil {
+			t.Errorf("builtin skill %q not loaded", b.Name)
+		}
+	}
+}
+
+func TestSkillRegistryLoadFromConfigMergesCustom(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		Enabled: true,
+		Custom: []config.SkillDefinition{
+			{
+				Name:        "my-custom",
+				Description: "custom skill",
+				Intent:      "control",
+				Priority:    15,
+				Keywords:    map[string][]string{"en": {"custom-kw"}},
+			},
+		},
+	}
+
+	reg := NewSkillRegistry()
+	if err := reg.LoadFromConfig(cfg); err != nil {
+		t.Fatalf("LoadFromConfig() error = %v", err)
+	}
+
+	// Custom skill should be registered
+	got := reg.Get("my-custom")
+	if got == nil {
+		t.Fatal("custom skill not loaded")
+	}
+	if got.Builtin {
+		t.Error("custom skill should not be builtin")
+	}
+	if !got.Enabled {
+		t.Error("custom skill should be enabled")
+	}
+
+	// Builtins should still be present
+	if reg.Get("process-control") == nil {
+		t.Error("builtin skill process-control missing after merge")
+	}
+}
+
+func TestSkillRegistryLoadFromConfigSkipsInvalid(t *testing.T) {
+	cfg := &config.SkillsConfig{
+		Enabled: true,
+		Custom: []config.SkillDefinition{
+			{
+				Name:        "", // invalid: no name
+				Description: "bad",
+				Intent:      "control",
+				Priority:    15,
+				Keywords:    map[string][]string{"en": {"x"}},
+			},
+			{
+				Name:        "good-skill",
+				Description: "good",
+				Intent:      "bind",
+				Priority:    25,
+				Keywords:    map[string][]string{"en": {"good"}},
+			},
+		},
+	}
+
+	reg := NewSkillRegistry()
+	// Should not return error — just skip invalid
+	if err := reg.LoadFromConfig(cfg); err != nil {
+		t.Fatalf("LoadFromConfig() error = %v", err)
+	}
+
+	if reg.Get("good-skill") == nil {
+		t.Error("valid custom skill should be loaded")
+	}
+}
+
+func TestSkillRegistryLoadFromConfigNilConfig(t *testing.T) {
+	reg := NewSkillRegistry()
+	if err := reg.LoadFromConfig(nil); err != nil {
+		t.Fatalf("LoadFromConfig(nil) error = %v", err)
+	}
+
+	// Should still load builtins
+	builtins := BuiltinSkills()
+	if len(reg.List()) < len(builtins) {
+		t.Errorf("List() len = %d, want >= %d builtins", len(reg.List()), len(builtins))
+	}
+}
+
+// --- T010: Reload tests ---
+
+func TestSkillRegistryReload(t *testing.T) {
+	// Initial load
+	cfg1 := &config.SkillsConfig{
+		Enabled: true,
+		Custom: []config.SkillDefinition{
+			{
+				Name:        "old-custom",
+				Description: "old",
+				Intent:      "control",
+				Priority:    15,
+				Keywords:    map[string][]string{"en": {"old"}},
+			},
+		},
+	}
+
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(cfg1)
+
+	if reg.Get("old-custom") == nil {
+		t.Fatal("old-custom should exist after initial load")
+	}
+
+	// Reload with different config
+	cfg2 := &config.SkillsConfig{
+		Enabled: true,
+		Custom: []config.SkillDefinition{
+			{
+				Name:        "new-custom",
+				Description: "new",
+				Intent:      "bind",
+				Priority:    25,
+				Keywords:    map[string][]string{"en": {"new"}},
+			},
+		},
+	}
+
+	if err := reg.Reload(cfg2); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+
+	// Old custom should be gone
+	if reg.Get("old-custom") != nil {
+		t.Error("old-custom should not exist after reload")
+	}
+
+	// New custom should be present
+	if reg.Get("new-custom") == nil {
+		t.Error("new-custom should exist after reload")
+	}
+
+	// Builtins should still be present
+	if reg.Get("process-control") == nil {
+		t.Error("builtin process-control should survive reload")
+	}
+}
+
+func TestSkillRegistryReloadPreservesBuiltins(t *testing.T) {
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(&config.SkillsConfig{Enabled: true})
+
+	builtinsBefore := 0
+	for _, s := range reg.List() {
+		if s.Builtin {
+			builtinsBefore++
+		}
+	}
+
+	// Reload with empty custom
+	reg.Reload(&config.SkillsConfig{Enabled: true})
+
+	builtinsAfter := 0
+	for _, s := range reg.List() {
+		if s.Builtin {
+			builtinsAfter++
+		}
+	}
+
+	if builtinsAfter != builtinsBefore {
+		t.Errorf("builtins count changed: before=%d, after=%d", builtinsBefore, builtinsAfter)
 	}
 }

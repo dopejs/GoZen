@@ -378,18 +378,21 @@ func startLegacyProxy(names []string, pc *config.ProfileConfig, cli string, args
 	logger.Printf("CLI: %s, Client format: %s", cliBin, clientFormat)
 
 	// Start proxy — with routing if configured, otherwise plain
+	proxyPort := config.GetProxyPort()
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", proxyPort)
+
 	var port int
 	if pc != nil && len(pc.Routing) > 0 {
 		routingCfg, err := buildRoutingConfig(pc, providers, logger)
 		if err != nil {
 			return fmt.Errorf("failed to build routing config: %w", err)
 		}
-		port, err = proxy.StartProxyWithRouting(routingCfg, clientFormat, "127.0.0.1:0", logger)
+		port, err = proxy.StartProxyWithRouting(routingCfg, clientFormat, listenAddr, logger)
 		if err != nil {
 			return fmt.Errorf("failed to start proxy: %w", err)
 		}
 	} else {
-		port, err = proxy.StartProxy(providers, clientFormat, "127.0.0.1:0", logger)
+		port, err = proxy.StartProxy(providers, clientFormat, listenAddr, logger)
 		if err != nil {
 			return fmt.Errorf("failed to start proxy: %w", err)
 		}

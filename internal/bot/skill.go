@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // Skill represents an intent recognition skill.
@@ -126,4 +128,47 @@ func (r *SkillRegistry) SetEnabled(name string, enabled bool) error {
 	}
 	s.Enabled = enabled
 	return nil
+}
+
+// LoadFromConfig loads builtin skills and merges custom skills from config.
+// Invalid custom skills are skipped (not fatal).
+func (r *SkillRegistry) LoadFromConfig(cfg *config.SkillsConfig) error {
+	r.mu.Lock()
+	r.skills = make(map[string]*Skill)
+	r.mu.Unlock()
+
+	// Register all builtins first
+	for _, b := range BuiltinSkills() {
+		if err := r.Register(b); err != nil {
+			return fmt.Errorf("builtin skill %q: %w", b.Name, err)
+		}
+	}
+
+	// Merge custom skills from config
+	if cfg == nil {
+		return nil
+	}
+	for _, def := range cfg.Custom {
+		s := &Skill{
+			Name:        def.Name,
+			Description: def.Description,
+			Intent:      Intent(def.Intent),
+			Priority:    def.Priority,
+			Enabled:     true,
+			Builtin:     false,
+			Keywords:    def.Keywords,
+			Synonyms:    def.Synonyms,
+			Examples:    def.Examples,
+		}
+		// Skip invalid custom skills
+		if err := r.Register(s); err != nil {
+			continue
+		}
+	}
+	return nil
+}
+
+// Reload clears all skills and re-loads from config.
+func (r *SkillRegistry) Reload(cfg *config.SkillsConfig) error {
+	return r.LoadFromConfig(cfg)
 }

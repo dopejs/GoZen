@@ -285,3 +285,15 @@ func GetBot() *BotConfig {
 func SetBot(bc *BotConfig) error {
 	return DefaultStore().SetBot(bc)
 }
+
+// --- Skills convenience functions ---
+
+// GetSkillsConfig returns the skills configuration from bot config.
+func GetSkillsConfig() *SkillsConfig {
+	return DefaultStore().GetSkillsConfig()
+}
+
+// SetSkillsConfig sets the skills configuration within bot config.
+func SetSkillsConfig(sc *SkillsConfig) error {
+	return DefaultStore().SetSkillsConfig(sc)
+}

@@ -1004,3 +1004,31 @@ func (s *Store) SetBot(bc *BotConfig) error {
 	s.config.Bot = bc
 	return s.saveLocked()
 }
+
+// --- Skills (via Bot) ---
+
+// GetSkillsConfig returns the skills configuration from bot config.
+// Returns nil if bot config is nil or skills not configured.
+func (s *Store) GetSkillsConfig() *SkillsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.Bot == nil {
+		return nil
+	}
+	return s.config.Bot.Skills
+}
+
+// SetSkillsConfig sets the skills configuration within bot config and saves.
+// Creates bot config with defaults if it doesn't exist.
+func (s *Store) SetSkillsConfig(sc *SkillsConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	if s.config.Bot == nil {
+		s.config.Bot = &BotConfig{}
+	}
+	s.config.Bot.Skills = sc
+	return s.saveLocked()
+}

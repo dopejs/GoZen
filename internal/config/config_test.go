@@ -1636,3 +1636,264 @@ func TestMaskProxyURL(t *testing.T) {
 		})
 	}
 }
+
+// --- Skills Config Migration Tests (v9 → v10) ---
+
+func TestSkillsConfigMigrationFromV9(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config with bot but no skills field
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": { "providers": ["test"] }
+  },
+  "bot": {
+    "enabled": true,
+    "profile": "default",
+    "model": "claude-3-haiku-20240307"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// Should auto-upgrade to v10
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+
+	// Bot config should be preserved
+	bot := store.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be preserved after migration")
+	}
+	if !bot.Enabled {
+		t.Error("bot.enabled should be true")
+	}
+	if bot.Profile != "default" {
+		t.Errorf("bot.profile = %q, want %q", bot.Profile, "default")
+	}
+	if bot.Model != "claude-3-haiku-20240307" {
+		t.Errorf("bot.model = %q, want %q", bot.Model, "claude-3-haiku-20240307")
+	}
+
+	// Provider should be preserved
+	p := store.GetProvider("test")
+	if p == nil {
+		t.Fatal("provider should be preserved after migration")
+	}
+	if p.BaseURL != "https://api.test.com" {
+		t.Errorf("base_url = %q, want %q", p.BaseURL, "https://api.test.com")
+	}
+}
+
+func TestSkillsConfigMigrationNoBotField(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config without bot field at all
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": { "providers": ["test"] }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// Should upgrade without error
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+
+	// Bot should be nil (not created from nothing)
+	bot := store.GetBot()
+	if bot != nil {
+		t.Error("bot config should be nil when not present in v9 config")
+	}
+}
+
+func TestSkillsConfigRoundTrip(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write config with skills
+	store := DefaultStore()
+	store.SetBot(&BotConfig{
+		Enabled: true,
+		Profile: "default",
+		Skills: &SkillsConfig{
+			Enabled:             true,
+			ConfidenceThreshold: 0.8,
+			LLMFallback:         true,
+			LogBufferSize:       500,
+			Custom: []SkillDefinition{
+				{
+					Name:        "code-review",
+					Description: "请求代码审查",
+					Intent:      "send_task",
+					Priority:    50,
+					Keywords: map[string][]string{
+						"en": {"review", "code review"},
+						"zh": {"审查", "代码审查"},
+					},
+					Synonyms: map[string]string{"审核": "审查"},
+					Examples: []string{"帮我审查一下这段代码"},
+				},
+			},
+		},
+	})
+
+	// Re-read and verify round-trip
+	ResetDefaultStore()
+	store2 := DefaultStore()
+	bot := store2.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be loaded")
+	}
+	if bot.Skills == nil {
+		t.Fatal("skills config should be loaded")
+	}
+	if bot.Skills.ConfidenceThreshold != 0.8 {
+		t.Errorf("confidence_threshold = %f, want 0.8", bot.Skills.ConfidenceThreshold)
+	}
+	if bot.Skills.LogBufferSize != 500 {
+		t.Errorf("log_buffer_size = %d, want 500", bot.Skills.LogBufferSize)
+	}
+	if len(bot.Skills.Custom) != 1 {
+		t.Fatalf("custom skills count = %d, want 1", len(bot.Skills.Custom))
+	}
+
+	skill := bot.Skills.Custom[0]
+	if skill.Name != "code-review" {
+		t.Errorf("skill name = %q, want %q", skill.Name, "code-review")
+	}
+	if skill.Intent != "send_task" {
+		t.Errorf("skill intent = %q, want %q", skill.Intent, "send_task")
+	}
+	if skill.Priority != 50 {
+		t.Errorf("skill priority = %d, want 50", skill.Priority)
+	}
+	if len(skill.Keywords["en"]) != 2 {
+		t.Errorf("en keywords count = %d, want 2", len(skill.Keywords["en"]))
+	}
+	if len(skill.Keywords["zh"]) != 2 {
+		t.Errorf("zh keywords count = %d, want 2", len(skill.Keywords["zh"]))
+	}
+	if skill.Synonyms["审核"] != "审查" {
+		t.Errorf("synonym 审核 = %q, want 审查", skill.Synonyms["审核"])
+	}
+}
+
+func TestSkillsConfigFieldPreservation(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config with bot containing all existing fields
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "p1": {"base_url": "https://a.com", "auth_token": "t1"}
+  },
+  "profiles": {
+    "default": {"providers": ["p1"]}
+  },
+  "bot": {
+    "enabled": true,
+    "profile": "default",
+    "model": "claude-3-haiku-20240307",
+    "history_size": 30,
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"]
+    },
+    "aliases": {"myproj": "/home/user/myproj"},
+    "notify": {
+      "default_platform": "telegram",
+      "default_chat_id": "12345"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+	bot := store.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be loaded")
+	}
+
+	// All existing fields should be preserved
+	if bot.HistorySize != 30 {
+		t.Errorf("history_size = %d, want 30", bot.HistorySize)
+	}
+	if bot.Interaction == nil {
+		t.Fatal("interaction should be preserved")
+	}
+	if !bot.Interaction.RequireMention {
+		t.Error("require_mention should be true")
+	}
+	if bot.Aliases["myproj"] != "/home/user/myproj" {
+		t.Errorf("alias myproj = %q, want /home/user/myproj", bot.Aliases["myproj"])
+	}
+	if bot.Notify == nil {
+		t.Fatal("notify should be preserved")
+	}
+	if bot.Notify.DefaultPlatform != "telegram" {
+		t.Errorf("default_platform = %q, want telegram", bot.Notify.DefaultPlatform)
+	}
+	if bot.Notify.DefaultChatID != "12345" {
+		t.Errorf("default_chat_id = %q, want 12345", bot.Notify.DefaultChatID)
+	}
+}

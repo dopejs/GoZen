@@ -624,6 +624,38 @@ type RuntimeConfig struct {
 	MaxTokens       int    `json:"max_tokens,omitempty"`       // max total tokens (default: 500000)
 }
 
+// --- Skills Configuration ---
+
+// SkillsConfig holds skill-based intent recognition settings.
+type SkillsConfig struct {
+	Enabled             bool              `json:"enabled"`                        // default: true
+	ConfidenceThreshold float64           `json:"confidence_threshold,omitempty"` // default: 0.7
+	LLMFallback         bool              `json:"llm_fallback"`                  // default: true
+	LogBufferSize       int               `json:"log_buffer_size,omitempty"`     // default: 200
+	Custom              []SkillDefinition `json:"custom,omitempty"`
+}
+
+// SkillDefinition defines a user-configured custom skill.
+type SkillDefinition struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Intent      string              `json:"intent"`
+	Priority    int                 `json:"priority"`
+	Keywords    map[string][]string `json:"keywords"`            // lang code -> keyword list
+	Synonyms    map[string]string   `json:"synonyms,omitempty"`  // variant -> canonical
+	Examples    []string            `json:"examples,omitempty"`
+}
+
+// DefaultSkillsConfig returns the default SkillsConfig.
+func DefaultSkillsConfig() *SkillsConfig {
+	return &SkillsConfig{
+		Enabled:             true,
+		ConfidenceThreshold: 0.7,
+		LLMFallback:         true,
+		LogBufferSize:       200,
+	}
+}
+
 // --- Bot Configuration (BETA) ---
 
 // BotConfig holds bot gateway settings.
@@ -638,6 +670,7 @@ type BotConfig struct {
 	Aliases     map[string]string       `json:"aliases,omitempty"` // alias -> project path
 	Notify      *BotNotifyConfig        `json:"notify,omitempty"`
 	HistorySize int                     `json:"history_size,omitempty"` // conversation history size, default 20
+	Skills      *SkillsConfig           `json:"skills,omitempty"`      // skill-based intent recognition
 }
 
 // BotPlatformsConfig holds configuration for all chat platforms.

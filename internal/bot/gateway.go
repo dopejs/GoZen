@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/bot/adapters"
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // GatewayConfig is the configuration for the bot gateway.
@@ -74,6 +75,7 @@ type Gateway struct {
 	llm      *LLMClient
 
 	registry        *Registry
+	skills          *SkillRegistry
 	sessions        *SessionManager
 	approvals       *ApprovalManager
 	nlu             *NLUParser
@@ -87,32 +89,40 @@ type Gateway struct {
 }
 
 // NewGateway creates a new bot gateway.
-func NewGateway(config *GatewayConfig, logger *log.Logger) *Gateway {
-	if config.SocketPath == "" {
-		config.SocketPath = filepath.Join(os.TempDir(), "zen-gateway.sock")
+func NewGateway(cfg *GatewayConfig, logger *log.Logger) *Gateway {
+	if cfg.SocketPath == "" {
+		cfg.SocketPath = filepath.Join(os.TempDir(), "zen-gateway.sock")
 	}
 
-	if config.MemoryDir == "" {
-		config.MemoryDir = MemoryDir()
+	if cfg.MemoryDir == "" {
+		cfg.MemoryDir = MemoryDir()
 	}
 
-	keywords := config.Interaction.MentionKeywords
+	keywords := cfg.Interaction.MentionKeywords
 	if len(keywords) == 0 {
 		keywords = []string{"@zen", "/zen", "zen"}
 	}
 
 	// Initialize LLM client if profile and proxy port are configured
 	var llmClient *LLMClient
-	if config.Profile != "" && config.ProxyPort > 0 {
-		llmClient = NewLLMClient(config.ProxyPort, config.Profile, config.Model)
+	if cfg.Profile != "" && cfg.ProxyPort > 0 {
+		llmClient = NewLLMClient(cfg.ProxyPort, cfg.Profile, cfg.Model)
+	}
+
+	// Initialize skill registry
+	skillReg := NewSkillRegistry()
+	skillsConfig := config.GetSkillsConfig()
+	if err := skillReg.LoadFromConfig(skillsConfig); err != nil {
+		logger.Printf("Warning: failed to load skills: %v", err)
 	}
 
 	return &Gateway{
-		config:      config,
+		config:      cfg,
 		logger:      logger,
 		llm:         llmClient,
-		registry:    NewRegistry(config.Aliases),
-		sessions:    NewSessionManagerWithHistory(config.HistorySize),
+		registry:    NewRegistry(cfg.Aliases),
+		skills:      skillReg,
+		sessions:    NewSessionManagerWithHistory(cfg.HistorySize),
 		approvals:   NewApprovalManager(),
 		nlu:         NewNLUParser(keywords),
 		connections: make(map[string]net.Conn),
@@ -190,6 +200,21 @@ func (g *Gateway) ListAllProcesses() []*ProcessInfo {
 	}
 
 	return processes
+}
+
+// Skills returns the gateway's skill registry.
+func (g *Gateway) Skills() *SkillRegistry {
+	return g.skills
+}
+
+// ReloadSkills reloads the skill registry from the current config.
+func (g *Gateway) ReloadSkills() error {
+	sc := config.GetSkillsConfig()
+	if err := g.skills.Reload(sc); err != nil {
+		return fmt.Errorf("reload skills: %w", err)
+	}
+	g.logger.Printf("Skills reloaded (%d total)", len(g.skills.List()))
+	return nil
 }
 
 func (g *Gateway) initAdapters() error {

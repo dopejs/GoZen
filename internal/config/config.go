@@ -395,7 +395,9 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
 // - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port, web_password_hash
 // - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy; compression; middleware
-const CurrentConfigVersion = 9
+// - Version 9 (v2.3.0+): added agent infrastructure (coordinator, observatory, guardrails, task queue, runtime)
+// - Version 10 (v3.0.0+): added skills config to bot (skill-based intent recognition)
+const CurrentConfigVersion = 10
 
 // --- Model Pricing ---
 

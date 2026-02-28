@@ -503,8 +503,20 @@ func buildProviders(names []string) ([]*proxy.Provider, error) {
 			ClaudeEnvVars:   p.ClaudeEnvVars,
 			CodexEnvVars:    p.CodexEnvVars,
 			OpenCodeEnvVars: p.OpenCodeEnvVars,
+			ProxyURL:        p.ProxyURL,
 			Healthy:         true,
 		})
+
+		// Create per-provider HTTP client if proxy is configured
+		if p.ProxyURL != "" {
+			prov := providers[len(providers)-1]
+			client, err := proxy.NewHTTPClientWithProxy(p.ProxyURL, 10*time.Minute)
+			if err != nil {
+				log.Printf("[%s] warning: failed to create proxy client: %v", name, err)
+			} else {
+				prov.Client = client
+			}
+		}
 	}
 
 	if len(providers) == 0 {

@@ -40,6 +40,7 @@ export function ProviderEditPage() {
     type: 'anthropic',
     base_url: 'https://api.anthropic.com',
     auth_token: '',
+    proxy_url: '',
     model: '',
     reasoning_model: '',
     haiku_model: '',
@@ -189,6 +190,17 @@ export function ProviderEditPage() {
                   onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
                   placeholder={isNew ? '' : t('providers.leaveEmptyToKeep')}
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="proxy_url">{t('providers.proxyUrl')}</Label>
+                <Input
+                  id="proxy_url"
+                  value={formData.proxy_url || ''}
+                  onChange={(e) => setFormData({ ...formData, proxy_url: e.target.value })}
+                  placeholder="socks5://proxy:1080"
+                />
+                <p className="text-xs text-muted-foreground">{t('providers.proxyUrlHint')}</p>
               </div>
             </CardContent>
           </Card>

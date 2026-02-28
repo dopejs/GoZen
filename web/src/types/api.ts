@@ -4,6 +4,7 @@ export interface Provider {
   type?: 'anthropic' | 'openai'
   base_url: string
   auth_token: string
+  proxy_url?: string
   model?: string
   reasoning_model?: string
   haiku_model?: string

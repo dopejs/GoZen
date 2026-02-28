@@ -3,6 +3,8 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 )
 
@@ -51,6 +53,7 @@ type ProviderConfig struct {
 	Type           string            `json:"type,omitempty"` // "anthropic" (default) or "openai"
 	BaseURL        string            `json:"base_url"`
 	AuthToken      string            `json:"auth_token"`
+	ProxyURL       string            `json:"proxy_url,omitempty"`
 	Model          string            `json:"model,omitempty"`
 	ReasoningModel string            `json:"reasoning_model,omitempty"`
 	HaikuModel     string            `json:"haiku_model,omitempty"`
@@ -100,6 +103,7 @@ func (p *ProviderConfig) Clone() *ProviderConfig {
 		Type:           p.Type,
 		BaseURL:        p.BaseURL,
 		AuthToken:      p.AuthToken,
+		ProxyURL:       p.ProxyURL,
 		Model:          p.Model,
 		ReasoningModel: p.ReasoningModel,
 		HaikuModel:     p.HaikuModel,
@@ -167,6 +171,65 @@ func (p *ProviderConfig) ExportToEnv() {
 			os.Setenv(k, v)
 		}
 	}
+
+	// Export proxy environment variables
+	p.ExportProxyToEnv()
+}
+
+// ExportProxyToEnv sets proxy environment variables based on the ProxyURL scheme.
+// HTTP/HTTPS proxies set HTTP_PROXY and HTTPS_PROXY. SOCKS5 proxies set ALL_PROXY.
+// No-op when ProxyURL is empty.
+func (p *ProviderConfig) ExportProxyToEnv() {
+	if p.ProxyURL == "" {
+		return
+	}
+	u, err := url.Parse(p.ProxyURL)
+	if err != nil {
+		return
+	}
+	switch u.Scheme {
+	case "http", "https":
+		os.Setenv("HTTP_PROXY", p.ProxyURL)
+		os.Setenv("HTTPS_PROXY", p.ProxyURL)
+	case "socks5":
+		os.Setenv("ALL_PROXY", p.ProxyURL)
+	}
+}
+
+// ValidateProxyURL validates a proxy URL string.
+// Empty string is valid (means no proxy). Otherwise the URL must have
+// a scheme of http, https, or socks5, be parseable, and have a non-empty host.
+func ValidateProxyURL(rawURL string) error {
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("proxy_url: invalid URL format")
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5":
+		// valid
+	default:
+		return fmt.Errorf("proxy_url: unsupported scheme %q (must be http, https, or socks5)", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("proxy_url: missing host")
+	}
+	return nil
+}
+
+// MaskProxyURL returns the proxy URL with credentials masked for safe logging.
+// Returns the empty string unchanged.
+func MaskProxyURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return u.Redacted()
 }
 
 // Scenario represents a request scenario for routing decisions.
@@ -332,7 +395,7 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 6 (v2.0.0+): renamed config dir from .opencc to .zen
 // - Version 7 (v2.1.0+): renamed default_cli→default_client, cli→client in JSON; added proxy_port, web_password_hash
 // - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy; compression; middleware
-const CurrentConfigVersion = 8
+const CurrentConfigVersion = 9
 
 // --- Model Pricing ---
 

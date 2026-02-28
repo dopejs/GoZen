@@ -46,6 +46,8 @@
     "type": "服务商类型",
     "baseUrl": "基础 URL",
     "authToken": "认证令牌",
+    "proxyUrl": "代理 URL",
+    "proxyUrlHint": "可选。HTTP、HTTPS 或 SOCKS5 代理（例如 socks5://proxy:1080）。仅本机，不同步。",
     "leaveEmptyToKeep": "留空保持当前值",
     "apiKey": "API 密钥",
     "model": "模型",

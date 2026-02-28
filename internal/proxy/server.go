@@ -286,7 +286,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			modelOverride = modelOverrides[p.Name]
 		}
 
-		s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
+		if p.ProxyURL != "" {
+			s.Logger.Printf("[%s] trying %s %s via proxy %s", p.Name, r.Method, r.URL.Path, config.MaskProxyURL(p.ProxyURL))
+		} else {
+			s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
+		}
 		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride, requestFormat)
 		if err != nil {
 			// Check if client canceled the request - don't mark provider unhealthy
@@ -484,7 +488,12 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 	// Apply environment variable headers
 	s.applyEnvVarsHeaders(req, p.EnvVars)
 
-	return s.Client.Do(req)
+	// Use per-provider client if available, otherwise fall back to shared client
+	client := s.Client
+	if p.Client != nil {
+		client = p.Client
+	}
+	return client.Do(req)
 }
 
 func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p *Provider, requestFormat string) {

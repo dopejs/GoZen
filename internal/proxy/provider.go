@@ -1,11 +1,14 @@
 package proxy
 
 import (
+	"fmt"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"golang.org/x/net/proxy"
 )
 
 const (
@@ -29,6 +32,8 @@ type Provider struct {
 	ClaudeEnvVars   map[string]string // Claude Code specific
 	CodexEnvVars    map[string]string // Codex specific
 	OpenCodeEnvVars map[string]string // OpenCode specific
+	ProxyURL        string            // Proxy server URL (http/https/socks5)
+	Client          *http.Client      // Per-provider HTTP client (nil = use shared)
 	Healthy         bool
 	AuthFailed      bool
 	FailedAt        time.Time
@@ -113,4 +118,47 @@ func (p *Provider) MarkHealthy() {
 	p.Healthy = true
 	p.AuthFailed = false
 	p.Backoff = 0
+}
+
+// NewHTTPClientWithProxy creates an *http.Client that routes requests through
+// the given proxy URL. Supports http, https (via http.ProxyURL) and socks5
+// (via golang.org/x/net/proxy.SOCKS5 dialer). Returns an error for empty or
+// invalid proxy URLs.
+func NewHTTPClientWithProxy(proxyURL string, timeout time.Duration) (*http.Client, error) {
+	if proxyURL == "" {
+		return nil, fmt.Errorf("proxy URL is empty")
+	}
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL: %w", err)
+	}
+
+	transport := &http.Transport{}
+
+	switch u.Scheme {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(u)
+	case "socks5":
+		var auth *proxy.Auth
+		if u.User != nil {
+			auth = &proxy.Auth{
+				User: u.User.Username(),
+			}
+			if p, ok := u.User.Password(); ok {
+				auth.Password = p
+			}
+		}
+		dialer, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
+		}
+		transport.DialContext = dialer.(proxy.ContextDialer).DialContext
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme: %s", u.Scheme)
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}, nil
 }

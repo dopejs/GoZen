@@ -163,13 +163,14 @@ func (h *HealthChecker) checkAllProviders() {
 			continue
 		}
 
-		result := h.CheckProvider(name, p.BaseURL)
+		result := h.CheckProvider(name, p.BaseURL, p.ProxyURL)
 		h.updateStatus(result)
 	}
 }
 
 // CheckProvider performs a health check on a single provider.
-func (h *HealthChecker) CheckProvider(name string, baseURL string) *HealthResult {
+// If proxyURL is non-empty, the check is performed through the proxy.
+func (h *HealthChecker) CheckProvider(name string, baseURL string, proxyURL string) *HealthResult {
 	result := &HealthResult{
 		Provider:  name,
 		Timestamp: time.Now(),
@@ -180,8 +181,19 @@ func (h *HealthChecker) CheckProvider(name string, baseURL string) *HealthResult
 		return result
 	}
 
+	// Use per-check proxy client if configured, otherwise use shared client
+	client := h.client
+	if proxyURL != "" {
+		proxyClient, err := NewHTTPClientWithProxy(proxyURL, h.client.Timeout)
+		if err != nil {
+			result.Error = "proxy client error: " + err.Error()
+			return result
+		}
+		client = proxyClient
+	}
+
 	// Simple connectivity check - HEAD request to base URL
-	ctx, cancel := context.WithTimeout(context.Background(), h.client.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), client.Timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -191,7 +203,7 @@ func (h *HealthChecker) CheckProvider(name string, baseURL string) *HealthResult
 		return result
 	}
 
-	resp, err := h.client.Do(req)
+	resp, err := client.Do(req)
 	result.LatencyMs = int(time.Since(start).Milliseconds())
 
 	if err != nil {

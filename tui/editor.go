@@ -22,6 +22,7 @@ const (
 	fieldHaikuModel
 	fieldOpusModel
 	fieldSonnetModel
+	fieldProxyURL
 	fieldEnvVars // special field - opens env vars editor
 	fieldCount
 )
@@ -76,6 +77,8 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 	fields[fieldOpusModel].Prompt = "  Opus Model:       "
 	fields[fieldSonnetModel].Placeholder = "claude-sonnet-4-5"
 	fields[fieldSonnetModel].Prompt = "  Sonnet Model:     "
+	fields[fieldProxyURL].Placeholder = "socks5://proxy:1080"
+	fields[fieldProxyURL].Prompt = "  Proxy URL:        "
 	// fieldEnvVars is a special field, not a textinput
 
 	m := editorModel{
@@ -100,6 +103,7 @@ func newEditorModelWithPreset(configName string, presetName string) editorModel 
 			m.fields[fieldHaikuModel].SetValue(p.HaikuModel)
 			m.fields[fieldOpusModel].SetValue(p.OpusModel)
 			m.fields[fieldSonnetModel].SetValue(p.SonnetModel)
+			m.fields[fieldProxyURL].SetValue(p.ProxyURL)
 			// Load provider type
 			if p.GetType() == config.ProviderTypeOpenAI {
 				m.providerType = 1
@@ -149,7 +153,7 @@ func (m editorModel) init() tea.Cmd {
 // maxField returns the total navigable positions (including save button).
 func (m editorModel) maxField() editorField {
 	if m.standalone {
-		return fieldSonnetModel + 2 // fields up to SonnetModel + save button
+		return fieldProxyURL + 2 // fields up to ProxyURL + save button
 	}
 	return fieldCount + 1 // all fields + save button
 }
@@ -346,6 +350,14 @@ func (m editorModel) save() (editorModel, tea.Cmd) {
 		OpusModel:      modelValues[3],
 		SonnetModel:    modelValues[4],
 	}
+
+	// Validate and set proxy URL
+	proxyURL := strings.TrimSpace(m.fields[fieldProxyURL].Value())
+	if err := config.ValidateProxyURL(proxyURL); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	p.ProxyURL = proxyURL
 
 	// Add env vars for each CLI if any
 	if len(m.claudeEnvVars) > 0 {

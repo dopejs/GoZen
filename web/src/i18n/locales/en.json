@@ -46,6 +46,8 @@
     "type": "Provider Type",
     "baseUrl": "Base URL",
     "authToken": "Auth Token",
+    "proxyUrl": "Proxy URL",
+    "proxyUrlHint": "Optional. HTTP, HTTPS, or SOCKS5 proxy (e.g. socks5://proxy:1080). Device-local, not synced.",
     "leaveEmptyToKeep": "Leave empty to keep current",
     "apiKey": "API Key",
     "model": "Model",

@@ -46,6 +46,8 @@
     "type": "服務商類型",
     "baseUrl": "基礎 URL",
     "authToken": "認證權杖",
+    "proxyUrl": "代理 URL",
+    "proxyUrlHint": "選填。HTTP、HTTPS 或 SOCKS5 代理（例如 socks5://proxy:1080）。僅本機，不同步。",
     "leaveEmptyToKeep": "留空保持當前值",
     "apiKey": "API 金鑰",
     "model": "模型",

@@ -1463,3 +1463,176 @@ func TestProviderConfigGetEnvVarsForClient(t *testing.T) {
 		t.Errorf("fallback vars = %v", vars)
 	}
 }
+
+func TestExportProxyToEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		proxyURL string
+		wantVars map[string]string // expected env vars to be set
+		noVars   []string          // env vars that should NOT be set
+	}{
+		{
+			name:     "http sets HTTP_PROXY and HTTPS_PROXY",
+			proxyURL: "http://proxy:8080",
+			wantVars: map[string]string{
+				"HTTP_PROXY":  "http://proxy:8080",
+				"HTTPS_PROXY": "http://proxy:8080",
+			},
+			noVars: []string{"ALL_PROXY"},
+		},
+		{
+			name:     "https sets HTTP_PROXY and HTTPS_PROXY",
+			proxyURL: "https://proxy:8443",
+			wantVars: map[string]string{
+				"HTTP_PROXY":  "https://proxy:8443",
+				"HTTPS_PROXY": "https://proxy:8443",
+			},
+			noVars: []string{"ALL_PROXY"},
+		},
+		{
+			name:     "socks5 sets ALL_PROXY",
+			proxyURL: "socks5://proxy:1080",
+			wantVars: map[string]string{
+				"ALL_PROXY": "socks5://proxy:1080",
+			},
+			noVars: []string{"HTTP_PROXY", "HTTPS_PROXY"},
+		},
+		{
+			name:     "empty does not set any proxy vars",
+			proxyURL: "",
+			noVars:   []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear all proxy env vars before each test
+			os.Unsetenv("HTTP_PROXY")
+			os.Unsetenv("HTTPS_PROXY")
+			os.Unsetenv("ALL_PROXY")
+
+			p := &ProviderConfig{ProxyURL: tt.proxyURL}
+			p.ExportProxyToEnv()
+
+			for k, want := range tt.wantVars {
+				got := os.Getenv(k)
+				if got != want {
+					t.Errorf("%s = %q, want %q", k, got, want)
+				}
+			}
+			for _, k := range tt.noVars {
+				if got := os.Getenv(k); got != "" {
+					t.Errorf("%s should not be set, got %q", k, got)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateProxyURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+		errMsg  string
+	}{
+		{"empty string", "", false, ""},
+		{"valid http", "http://proxy:8080", false, ""},
+		{"valid https", "https://proxy:8443", false, ""},
+		{"valid socks5", "socks5://proxy:1080", false, ""},
+		{"http with IP", "http://192.168.1.1:8080", false, ""},
+		{"http with credentials", "http://user:pass@proxy:8080", false, ""},
+		{"unsupported scheme ftp", "ftp://proxy:21", true, "unsupported scheme"},
+		{"malformed URL", "://bad", true, "invalid URL"},
+		{"missing host", "http://", true, "missing host"},
+		{"no scheme", "proxy:8080", true, "unsupported scheme"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateProxyURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateProxyURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" {
+				if err == nil || !contains(err.Error(), tt.errMsg) {
+					t.Errorf("ValidateProxyURL(%q) error = %v, want error containing %q", tt.url, err, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigMigrationProxyURL(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v8 config without proxy_url
+	v8Config := `{
+		"version": 8,
+		"providers": {
+			"test": {
+				"base_url": "https://api.test.com",
+				"auth_token": "tok"
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(v8Config), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := DefaultStore()
+	names := store.ProviderNames()
+	if len(names) == 0 {
+		t.Fatal("expected at least one provider")
+	}
+
+	pc := store.GetProvider("test")
+	if pc == nil {
+		t.Fatal("expected provider 'test'")
+	}
+	if pc.ProxyURL != "" {
+		t.Errorf("expected empty ProxyURL for v8 config, got %q", pc.ProxyURL)
+	}
+
+	// Verify round-trip: set proxy_url and reload
+	pc.ProxyURL = "socks5://proxy:1080"
+	store.SetProvider("test", pc)
+
+	ResetDefaultStore()
+	store = DefaultStore()
+	pc2 := store.GetProvider("test")
+	if pc2 == nil {
+		t.Fatal("expected provider 'test' after reload")
+	}
+	if pc2.ProxyURL != "socks5://proxy:1080" {
+		t.Errorf("ProxyURL round-trip failed: got %q, want %q", pc2.ProxyURL, "socks5://proxy:1080")
+	}
+}
+
+func TestMaskProxyURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"empty string", "", ""},
+		{"no credentials", "http://proxy:8080", "http://proxy:8080"},
+		{"with credentials", "http://user:pass@proxy:8080", "http://user:xxxxx@proxy:8080"},
+		{"socks5 no credentials", "socks5://proxy:1080", "socks5://proxy:1080"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MaskProxyURL(tt.url)
+			if got != tt.want {
+				t.Errorf("MaskProxyURL(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}

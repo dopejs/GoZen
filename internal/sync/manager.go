@@ -186,7 +186,10 @@ func (m *SyncManager) buildLocalPayload() (*SyncPayload, error) {
 
 	// Providers
 	for name, pc := range providers {
-		raw, err := json.Marshal(pc)
+		// Clone and clear ProxyURL — proxy settings are device-local, not synced
+		clone := pc.Clone()
+		clone.ProxyURL = ""
+		raw, err := json.Marshal(clone)
 		if err != nil {
 			m.mu.Unlock()
 			return nil, err
@@ -246,6 +249,10 @@ func (m *SyncManager) applyToLocal(payload *SyncPayload) error {
 		var pc config.ProviderConfig
 		if err := json.Unmarshal(ent.Config, &pc); err != nil {
 			return fmt.Errorf("unmarshal provider %s: %w", name, err)
+		}
+		// Preserve local ProxyURL — proxy settings are device-local, not synced
+		if existing, ok := currentProviders[name]; ok && existing != nil {
+			pc.ProxyURL = existing.ProxyURL
 		}
 		if err := store.SetProvider(name, &pc); err != nil {
 			return err

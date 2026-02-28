@@ -108,7 +108,7 @@ func TestHealthChecker_CheckProvider(t *testing.T) {
 		statuses: make(map[string]*ProviderHealthStatus),
 	}
 
-	result := hc.CheckProvider("test", server.URL)
+	result := hc.CheckProvider("test", server.URL, "")
 	if !result.Healthy {
 		t.Errorf("Expected healthy result, got error: %s", result.Error)
 	}
@@ -124,7 +124,7 @@ func TestHealthChecker_CheckProvider_NoURL(t *testing.T) {
 		statuses: make(map[string]*ProviderHealthStatus),
 	}
 
-	result := hc.CheckProvider("test", "")
+	result := hc.CheckProvider("test", "", "")
 	if result.Healthy {
 		t.Error("Expected unhealthy result for empty URL")
 	}
@@ -144,7 +144,7 @@ func TestHealthChecker_CheckProvider_ServerError(t *testing.T) {
 		statuses: make(map[string]*ProviderHealthStatus),
 	}
 
-	result := hc.CheckProvider("test", server.URL)
+	result := hc.CheckProvider("test", server.URL, "")
 	if result.Healthy {
 		t.Error("Expected unhealthy result for server error")
 	}
@@ -454,7 +454,7 @@ func TestHealthChecker_CheckProvider_RateLimit(t *testing.T) {
 		statuses: make(map[string]*ProviderHealthStatus),
 	}
 
-	result := hc.CheckProvider("test", server.URL)
+	result := hc.CheckProvider("test", server.URL, "")
 	// 429 is < 500, so it's considered "reachable" (healthy)
 	if !result.Healthy {
 		t.Error("Expected healthy result for rate limit (429 < 500)")

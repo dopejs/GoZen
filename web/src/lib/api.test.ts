@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { providersApi, profilesApi, settingsApi, logsApi, usageApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi } from './api'
+import { providersApi, profilesApi, settingsApi, logsApi, usageApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi, botApi } from './api'
 
 describe('API utilities', () => {
   beforeEach(() => {
@@ -344,6 +344,51 @@ describe('API utilities', () => {
     it('gets hourly usage with hours', async () => {
       const hourly = await usageApi.hourly({ hours: 24 })
       expect(hourly).toBeDefined()
+    })
+  })
+
+  describe('botApi', () => {
+    it('streams chat response with SSE', async () => {
+      const deltas: string[] = []
+      let receivedSessionId = ''
+
+      const result = await botApi.chat(
+        'hello',
+        undefined,
+        (content) => deltas.push(content),
+        (sid) => { receivedSessionId = sid }
+      )
+
+      expect(result.content).toBe('Hello world')
+      expect(result.sessionId).toBe('sess-123')
+      expect(receivedSessionId).toBe('sess-123')
+      expect(deltas).toContain('Hello')
+    })
+
+    it('streams chat with existing session', async () => {
+      const result = await botApi.chat('hello', 'existing-sess')
+      expect(result.content).toBe('Hello world')
+    })
+
+    it('clears chat session', async () => {
+      const result = await botApi.clearChat('sess-123')
+      expect(result.session_id).toBe('sess-123')
+      expect(result.status).toBe('cleared')
+    })
+  })
+
+  describe('middlewareApi.upload', () => {
+    it('uploads a middleware plugin', async () => {
+      const file = new File(['test'], 'plugin.so', { type: 'application/octet-stream' })
+      const result = await middlewareApi.upload(file, 'test-plugin')
+      expect(result.status).toBe('uploaded')
+      expect(result.name).toBe('test')
+    })
+
+    it('uploads without name', async () => {
+      const file = new File(['test'], 'plugin.so', { type: 'application/octet-stream' })
+      const result = await middlewareApi.upload(file)
+      expect(result.status).toBe('uploaded')
     })
   })
 })

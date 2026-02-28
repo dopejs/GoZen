@@ -111,6 +111,26 @@ export const handlers = [
     return HttpResponse.json({ enabled: true, profile: 'default' })
   }),
 
+  http.post('/api/v1/bot/chat', async ({ request }) => {
+    const body = await request.json() as { clear?: boolean; session_id?: string }
+    if (body.clear) {
+      return HttpResponse.json({ session_id: body.session_id, status: 'cleared' })
+    }
+    // SSE streaming response
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: session\ndata: {"session_id":"sess-123"}\n\n'))
+        controller.enqueue(encoder.encode('event: delta\ndata: {"content":"Hello"}\n\n'))
+        controller.enqueue(encoder.encode('event: done\ndata: {"content":"Hello world"}\n\n'))
+        controller.close()
+      },
+    })
+    return new HttpResponse(stream, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }),
+
   // Usage
   http.get('/api/v1/usage/summary', () => {
     return HttpResponse.json({

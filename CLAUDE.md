@@ -146,3 +146,11 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - v1.5.3: Per-binary PID files to avoid multi-binary conflicts
 - v2.0.0: Rename to GoZen (opencc → zen), config migration from ~/.opencc/ to ~/.zen/, non-blocking version update check
 - v3.0.0: Usage tracking & budget control, provider health monitoring, smart load balancing, webhooks, context compression, middleware pipeline, agent infrastructure
+
+## Active Technologies
+- Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5) (001-provider-proxy)
+- JSON config at `~/.zen/zen.json` (001-provider-proxy)
+- Go 1.21+ + `net`, `net/http`, `internal/config`, `internal/proxy` (002-fix-proxy-port)
+
+## Recent Changes
+- 001-provider-proxy: Added Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5)

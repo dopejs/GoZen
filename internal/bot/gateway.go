@@ -237,6 +237,27 @@ func (g *Gateway) ReloadSkills() error {
 	return nil
 }
 
+// SkillMatcher returns the gateway's skill matcher (may be nil).
+func (g *Gateway) SkillMatcher() *SkillMatcher {
+	return g.skillMatcher
+}
+
+// GetMatchLogs returns the most recent match logs.
+func (g *Gateway) GetMatchLogs(limit int) []*MatchLog {
+	if g.skillMatcher == nil {
+		return nil
+	}
+	return g.skillMatcher.GetMatchLogs(limit)
+}
+
+// TestMatch tests a message against the skill matcher and returns the result.
+func (g *Gateway) TestMatch(ctx context.Context, message string) *MatchResult {
+	if g.skillMatcher == nil {
+		return nil
+	}
+	return g.skillMatcher.Match(ctx, message)
+}
+
 func (g *Gateway) initAdapters() error {
 	cfg := g.config.Platforms
 

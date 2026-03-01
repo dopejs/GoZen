@@ -75,6 +75,21 @@ func (m *SkillMatcher) Classifier() LLMClassifier {
 	return m.classifier
 }
 
+// GetMatchLogs returns the most recent match logs, up to limit.
+func (m *SkillMatcher) GetMatchLogs(limit int) []*MatchLog {
+	if m.logBuffer == nil {
+		return nil
+	}
+	return m.logBuffer.List(limit)
+}
+
+// ClearMatchLogs clears all match logs.
+func (m *SkillMatcher) ClearMatchLogs() {
+	if m.logBuffer != nil {
+		m.logBuffer.Clear()
+	}
+}
+
 // MatchLocal attempts to match using local keyword/synonym/fuzzy matching.
 func (m *SkillMatcher) MatchLocal(message string) *MatchResult {
 	skills := m.reg.ListEnabled()

@@ -105,17 +105,17 @@
 > **Write tests FIRST, ensure they FAIL before implementation**
 
 - [x] T024 [P] [US3] Write tests for MatchLog ring buffer (add, list with limit, overflow eviction) in internal/bot/matcher_test.go
-- [ ] T025 [P] [US3] Write tests for Skill Web API endpoints (GET list, POST create, PUT update, DELETE, PUT config, POST test, GET logs) in internal/web/api_bot_skills_test.go
+- [x] T025 [P] [US3] Write tests for Skill Web API endpoints (GET list, POST create, PUT update, DELETE, PUT config, POST test, GET logs) in internal/web/api_bot_skills_test.go
 
 ### Implementation for User Story 3
 
 - [x] T026 [US3] Implement MatchLog ring buffer in internal/bot/matcher.go (make T024 pass)
 - [x] T027 [US3] Record match logs in SkillMatcher.Match after each match attempt in internal/bot/matcher.go
-- [ ] T028 [US3] Implement Skill CRUD API handlers (GET /api/v1/bot/skills, POST, PUT /{name}, DELETE /{name}) in internal/web/api_bot_skills.go
-- [ ] T029 [US3] Implement Skill config API handler (PUT /api/v1/bot/skills/config) in internal/web/api_bot_skills.go
-- [ ] T030 [US3] Implement Skill test API handler (POST /api/v1/bot/skills/test) in internal/web/api_bot_skills.go
-- [ ] T031 [US3] Implement Skill logs API handler (GET /api/v1/bot/skills/logs) in internal/web/api_bot_skills.go
-- [ ] T032 [US3] Register Skill API routes in internal/web/server.go
+- [x] T028 [US3] Implement Skill CRUD API handlers (GET /api/v1/bot/skills, POST, PUT /{name}, DELETE /{name}) in internal/web/api_bot_skills.go
+- [x] T029 [US3] Implement Skill config API handler (PUT /api/v1/bot/skills/config) in internal/web/api_bot_skills.go
+- [x] T030 [US3] Implement Skill test API handler (POST /api/v1/bot/skills/test) in internal/web/api_bot_skills.go
+- [x] T031 [US3] Implement Skill logs API handler (GET /api/v1/bot/skills/logs) in internal/web/api_bot_skills.go
+- [x] T032 [US3] Register Skill API routes in internal/web/server.go
 - [ ] T033 [US3] Add Skill management UI components (skill list, create/edit form, test panel, log viewer) in internal/web/static/app.js
 
 **Checkpoint**: All 7 API endpoints functional, Web UI shows skills and test results. `go test ./internal/web/... -run TestSkill` passes

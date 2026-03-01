@@ -99,61 +99,79 @@ func (m *SkillMatcher) MatchLocal(message string) *MatchResult {
 }
 
 func (m *SkillMatcher) computeLocalScore(s *Skill, message string) float64 {
-	// Compute keyword match score
+	// Exact keyword match (highest confidence)
+	for _, keywords := range s.Keywords {
+		for _, kw := range keywords {
+			if strings.ToLower(kw) == message {
+				return 0.95
+			}
+		}
+	}
+
+	// Exact synonym match (high confidence)
+	for variant := range s.Synonyms {
+		if variant == message {
+			return 0.9
+		}
+	}
+
+	// Keyword substring match
 	keywordScore := 0.0
 	for _, keywords := range s.Keywords {
 		for _, kw := range keywords {
 			kwLower := strings.ToLower(kw)
 			if strings.Contains(message, kwLower) {
-				// Exact match: higher score
-				if len(message) == len(kwLower) {
-					keywordScore = 1.0
-					break
+				// Substring match: ensure confidence above threshold
+				subScore := 0.5 + 0.5*float64(len(kwLower))/float64(len(message))
+				if subScore < 0.8 {
+					subScore = 0.8 // minimum for substring keyword match
 				}
-				// Substring match: lower score
-				subScore := float64(len(kwLower)) / float64(len(message))
 				if subScore > keywordScore {
 					keywordScore = subScore
 				}
 			}
 		}
-		if keywordScore >= 1.0 {
+		if keywordScore >= 0.8 {
 			break
 		}
 	}
 
-	// Compute synonym match score
+	// Synonym substring match
 	synonymScore := 0.0
 	for variant := range s.Synonyms {
 		if strings.Contains(message, variant) {
-			// Synonym matches are slightly less confident than keywords
-			synonymScore = 0.9
-			break
+			synScore := 0.4 + 0.4*float64(len(variant))/float64(len(message))
+			if synScore < 0.75 {
+				synScore = 0.75 // minimum for synonym substring match
+			}
+			if synScore > synonymScore {
+				synonymScore = synScore
+			}
 		}
 	}
 
-	// Compute fuzzy matching (simple word presence)
+	// Fuzzy word match
 	fuzzyScore := 0.0
 	words := strings.Fields(message)
 	for _, w := range words {
 		for _, keywords := range s.Keywords {
 			for _, kw := range keywords {
 				if strings.Contains(kw, w) || strings.Contains(w, kw) {
-					fuzzyScore = 0.7
+					fuzzyScore = 0.6
 					break
 				}
 			}
 		}
 		for variant := range s.Synonyms {
 			if strings.Contains(variant, w) || strings.Contains(w, variant) {
-				fuzzyScore = 0.7
+				fuzzyScore = 0.6
 				break
 			}
 		}
 	}
 
-	// Weighted combination
-	total := keywordScore*0.5 + synonymScore*0.3 + fuzzyScore*0.2
+	// Weighted combination favoring keyword matches
+	total := keywordScore*0.9 + synonymScore*0.08 + fuzzyScore*0.02
 	if total > 1.0 {
 		total = 1.0
 	}

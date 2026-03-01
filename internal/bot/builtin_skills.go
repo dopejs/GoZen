@@ -16,8 +16,10 @@ func BuiltinSkills() []*Skill {
 			},
 			Synonyms: map[string]string{
 				"halt": "stop", "kill": "stop", "suspend": "pause",
-				"continue": "resume", "unpause": "resume",
+				"continue": "resume", "unpause": "resume", "abort": "cancel",
 				"中止": "停止", "挂起": "暂停", "继续": "恢复",
+				"终止": "停止", "关掉": "停止", "停掉": "停止",
+				"暂时停": "暂停", "先停": "暂停",
 			},
 			Examples: []string{"pause myapp", "帮我暂停一下", "stop the server"},
 		},
@@ -34,7 +36,7 @@ func BuiltinSkills() []*Skill {
 			},
 			Synonyms: map[string]string{
 				"bindto": "bind", "bindwith": "bind",
-				"绑到": "绑定", "关联到": "关联",
+				"绑到": "绑定", "关联到": "关联", "对接": "连接",
 			},
 			Examples: []string{"bind myproject", "绑定到myproject"},
 		},
@@ -53,6 +55,7 @@ func BuiltinSkills() []*Skill {
 				"ok": "approve", "lgtm": "approve", "confirm": "approve",
 				"decline": "reject", "nope": "reject",
 				"好的": "批准", "不行": "拒绝", "可以": "批准",
+				"行": "批准", "不同意": "拒绝", "没问题": "批准",
 			},
 			Examples: []string{"approve", "reject the request", "批准"},
 		},
@@ -69,7 +72,7 @@ func BuiltinSkills() []*Skill {
 			},
 			Synonyms: map[string]string{
 				"sendto": "send", "push": "send",
-				"发给": "发送", "交给": "分配",
+				"发给": "发送", "交给": "分配", "传给": "转发",
 			},
 			Examples: []string{"send worker1 build the project", "告诉worker1编译项目"},
 		},
@@ -103,7 +106,7 @@ func BuiltinSkills() []*Skill {
 			},
 			Synonyms: map[string]string{
 				"erase": "clear", "flush": "clear",
-				"清除记忆": "清除", "忘掉": "忘记",
+				"清除记忆": "清除", "忘掉": "忘记", "删掉": "清除",
 			},
 			Examples: []string{"forget", "清除记忆"},
 		},
@@ -120,7 +123,7 @@ func BuiltinSkills() []*Skill {
 			},
 			Synonyms: map[string]string{
 				"stat": "status", "how": "status",
-				"怎么样": "状态", "运行状况": "状态",
+				"怎么样": "状态", "运行状况": "状态", "跑得怎样": "状态",
 			},
 			Examples: []string{"status worker1", "查看所有进程状态"},
 		},

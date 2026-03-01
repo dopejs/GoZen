@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dopejs/gozen/internal/bot"
 	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
@@ -29,6 +30,7 @@ type Server struct {
 	keys       *KeyPair
 	syncMu     sync.RWMutex
 	syncMgr    *gosync.SyncManager
+	botGateway *bot.Gateway
 }
 
 // NewServer creates a new web server bound to 127.0.0.1 on the configured port.
@@ -120,6 +122,11 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	// Bot routes (BETA)
 	s.mux.HandleFunc("/api/v1/bot", s.handleBot)
 	s.mux.HandleFunc("/api/v1/bot/chat", s.handleBotChat)
+	s.mux.HandleFunc("/api/v1/bot/skills", s.handleBotSkills)
+	s.mux.HandleFunc("/api/v1/bot/skills/", s.handleBotSkills)
+	s.mux.HandleFunc("/api/v1/bot/skills/config", s.handleBotSkillsConfig)
+	s.mux.HandleFunc("/api/v1/bot/skills/test", s.handleBotSkillsTest)
+	s.mux.HandleFunc("/api/v1/bot/skills/logs", s.handleBotSkillsLogs)
 
 	// Agent routes (BETA)
 	s.mux.HandleFunc("/api/v1/agent/config", s.handleAgentConfig)
@@ -159,6 +166,20 @@ func (s *Server) SetSyncManager(mgr *gosync.SyncManager) {
 	s.syncMu.Lock()
 	s.syncMgr = mgr
 	s.syncMu.Unlock()
+}
+
+// SetBotGateway sets the bot gateway for the web server.
+func (s *Server) SetBotGateway(gw *bot.Gateway) {
+	s.syncMu.Lock()
+	s.botGateway = gw
+	s.syncMu.Unlock()
+}
+
+// getBotGateway returns the bot gateway with read lock.
+func (s *Server) getBotGateway() *bot.Gateway {
+	s.syncMu.RLock()
+	defer s.syncMu.RUnlock()
+	return s.botGateway
 }
 
 // Start begins listening. Returns an error if the port is already in use.

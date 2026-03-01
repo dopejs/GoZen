@@ -13,7 +13,7 @@ func TestLocalMatcherKeywordMatch(t *testing.T) {
 	reg := NewSkillRegistry()
 	reg.LoadFromConfig(nil) // load builtins
 
-	m := NewSkillMatcher(reg, nil, 0.7)
+	m := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	tests := []struct {
 		name       string
@@ -52,7 +52,7 @@ func TestLocalMatcherSynonymMatch(t *testing.T) {
 	reg := NewSkillRegistry()
 	reg.LoadFromConfig(nil)
 
-	m := NewSkillMatcher(reg, nil, 0.7)
+	m := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	tests := []struct {
 		name       string
@@ -83,7 +83,7 @@ func TestLocalMatcherFuzzyMatch(t *testing.T) {
 	reg := NewSkillRegistry()
 	reg.LoadFromConfig(nil)
 
-	m := NewSkillMatcher(reg, nil, 0.7)
+	m := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	// Fuzzy should match substrings in longer input
 	tests := []struct {
@@ -113,7 +113,7 @@ func TestLocalMatcherNoMatch(t *testing.T) {
 	reg := NewSkillRegistry()
 	reg.LoadFromConfig(nil)
 
-	m := NewSkillMatcher(reg, nil, 0.7)
+	m := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	result := m.MatchLocal("hello how are you today")
 	if result != nil && result.Confidence >= 0.7 {
@@ -126,7 +126,7 @@ func TestLocalMatcherScoreWeighting(t *testing.T) {
 	reg := NewSkillRegistry()
 	reg.LoadFromConfig(nil)
 
-	m := NewSkillMatcher(reg, nil, 0.7)
+	m := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	// Exact keyword match should score higher than fuzzy
 	exact := m.MatchLocal("pause")
@@ -173,7 +173,7 @@ func TestLLMFallbackMatcherSuccess(t *testing.T) {
 		response: `{"skill":"process-control","intent":"control","confidence":0.9}`,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	result, err := m.MatchLLM(context.Background(), "帮我把那个任务停掉")
 	if err != nil {
@@ -201,7 +201,7 @@ func TestLLMFallbackMatcherInvalidJSON(t *testing.T) {
 		response: `not valid json`,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	result, err := m.MatchLLM(context.Background(), "some message")
 	if err == nil {
@@ -221,7 +221,7 @@ func TestLLMFallbackMatcherTimeout(t *testing.T) {
 		delay:    5 * time.Second,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -240,7 +240,7 @@ func TestLLMFallbackMatcherError(t *testing.T) {
 		err: fmt.Errorf("llm service unavailable"),
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	result, err := m.MatchLLM(context.Background(), "some message")
 	if err == nil {
@@ -261,7 +261,7 @@ func TestParameterExtractionControl(t *testing.T) {
 		response: `{"skill":"process-control","intent":"control","confidence":0.9}`,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	// Test that Match orchestrator returns a MatchResult with intent info
 	result := m.MatchLocal("pause worker1")
@@ -281,7 +281,7 @@ func TestParameterExtractionSendTask(t *testing.T) {
 		response: `{"skill":"send-task","intent":"send_task","confidence":0.9}`,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	result := m.MatchLocal("send")
 	if result == nil {
@@ -302,7 +302,7 @@ func TestSkillMatcherMatchOrchestrator(t *testing.T) {
 		response: `{"skill":"process-control","intent":"control","confidence":0.9}`,
 	}
 
-	m := NewSkillMatcher(reg, mock, 0.7)
+	m := NewSkillMatcher(reg, mock, 0.7, 0)
 
 	tests := []struct {
 		name       string
@@ -406,4 +406,145 @@ func TestMatchLogBuffer_Clear(t *testing.T) {
 	if len(logs) != 1 || logs[0].Input != "msg3" {
 		t.Errorf("after clear and add, logs = %v, want [msg3]", logs)
 	}
+}
+
+// --- T027: Match logging tests ---
+
+func TestSkillMatcherMatchLogging(t *testing.T) {
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(nil)
+
+	// Create matcher with log buffer
+	m := NewSkillMatcher(reg, nil, 0.7, 10) // buffer size 10
+
+	// Test local match logging
+	result := m.Match(context.Background(), "pause")
+	if result == nil {
+		t.Fatal("Match(pause) returned nil")
+	}
+
+	// Check that logs were recorded
+	if m.logBuffer == nil {
+		t.Fatal("logBuffer should not be nil")
+	}
+	logs := m.logBuffer.List(10)
+	if len(logs) == 0 {
+		t.Fatal("expected logs after match")
+	}
+
+	// Verify first log entry (local match attempt)
+	log := logs[0]
+	if log.Input != "pause" {
+		t.Errorf("log.Input = %q, want %q", log.Input, "pause")
+	}
+	if log.Result == nil {
+		t.Error("log.Result should not be nil for successful local match")
+	} else if log.Result.Skill != "process-control" {
+		t.Errorf("log.Result.Skill = %q, want %q", log.Result.Skill, "process-control")
+	}
+	if log.LLMUsed {
+		t.Error("log.LLMUsed should be false for local match")
+	}
+	if log.Duration <= 0 {
+		t.Error("log.Duration should be positive")
+	}
+
+	// Should have at least one log (local match succeeded)
+	// Since local match succeeded, LLM fallback not attempted
+	// So only one log entry expected
+	if len(logs) != 1 {
+		t.Errorf("expected 1 log entry for successful local match, got %d", len(logs))
+	}
+}
+
+func TestSkillMatcherMatchLoggingLLMFallback(t *testing.T) {
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(nil)
+
+	// Mock classifier that returns a valid skill
+	mock := &mockLLMClassifier{
+		response: `{"skill":"process-control","intent":"control","confidence":0.9}`,
+	}
+
+	// Create matcher with log buffer and LLM fallback enabled
+	m := NewSkillMatcher(reg, mock, 0.7, 10) // threshold 0.7, LLM confidence 0.9 should succeed
+
+	// Test with message that won't match locally (no keyword overlap)
+	result := m.Match(context.Background(), "帮我把那个任务停掉")
+	if result == nil {
+		t.Fatal("Match should return result via LLM fallback")
+	}
+
+	if m.logBuffer == nil {
+		t.Fatal("logBuffer should not be nil")
+	}
+	logs := m.logBuffer.List(10)
+	if len(logs) < 2 {
+		t.Fatalf("expected at least 2 logs (local attempt + LLM attempt), got %d", len(logs))
+	}
+
+	// First log should be local attempt with nil result (no match)
+	localLog := logs[0]
+	if localLog.Input != "帮我把那个任务停掉" {
+		t.Errorf("localLog.Input = %q, want %q", localLog.Input, "帮我把那个任务停掉")
+	}
+	if localLog.Result != nil {
+		t.Error("localLog.Result should be nil for no local match")
+	}
+	if localLog.LLMUsed {
+		t.Error("localLog.LLMUsed should be false")
+	}
+
+	// Second log should be LLM attempt with result
+	llmLog := logs[1]
+	if llmLog.Input != "帮我把那个任务停掉" {
+		t.Errorf("llmLog.Input = %q, want %q", llmLog.Input, "帮我把那个任务停掉")
+	}
+	if llmLog.Result == nil {
+		t.Error("llmLog.Result should not be nil for successful LLM match")
+	} else if llmLog.Result.Skill != "process-control" {
+		t.Errorf("llmLog.Result.Skill = %q, want %q", llmLog.Result.Skill, "process-control")
+	}
+	if !llmLog.LLMUsed {
+		t.Error("llmLog.LLMUsed should be true")
+	}
+	if llmLog.Duration <= 0 {
+		t.Error("llmLog.Duration should be positive")
+	}
+}
+
+func TestSkillMatcherMatchLoggingNoMatch(t *testing.T) {
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(nil)
+
+	// Create matcher with log buffer, no LLM classifier
+	m := NewSkillMatcher(reg, nil, 0.95, 10) // high threshold ensures no match
+
+	// Test with generic chat message
+	result := m.Match(context.Background(), "hello how are you")
+	if result != nil {
+		t.Fatal("Match should return nil for generic chat with high threshold")
+	}
+
+	if m.logBuffer == nil {
+		t.Fatal("logBuffer should not be nil")
+	}
+	logs := m.logBuffer.List(10)
+	if len(logs) == 0 {
+		t.Fatal("expected logs even for no match")
+	}
+
+	// Should have at least one log (local attempt with nil result)
+	log := logs[0]
+	if log.Input != "hello how are you" {
+		t.Errorf("log.Input = %q, want %q", log.Input, "hello how are you")
+	}
+	if log.Result != nil {
+		t.Error("log.Result should be nil for no match")
+	}
+	if log.LLMUsed {
+		t.Error("log.LLMUsed should be false")
+	}
+	// Duration may be 0 for no-match log (we set 0 in Match)
+	// That's acceptable
 }

@@ -128,7 +128,11 @@ func NewGateway(cfg *GatewayConfig, logger *log.Logger) *Gateway {
 		if skillsConfig.ConfidenceThreshold > 0 {
 			threshold = skillsConfig.ConfidenceThreshold
 		}
-		skillMatcher = NewSkillMatcher(skillReg, classifier, threshold)
+		bufferSize := 200
+		if skillsConfig.LogBufferSize > 0 {
+			bufferSize = skillsConfig.LogBufferSize
+		}
+		skillMatcher = NewSkillMatcher(skillReg, classifier, threshold, bufferSize)
 	}
 
 	return &Gateway{

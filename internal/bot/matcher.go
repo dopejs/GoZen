@@ -51,18 +51,23 @@ type LLMClassifier interface {
 
 // SkillMatcher implements hybrid intent matching (local + LLM fallback).
 type SkillMatcher struct {
-	reg      *SkillRegistry
+	reg        *SkillRegistry
 	classifier LLMClassifier
-	threshold float64
+	threshold  float64
+	logBuffer  *MatchLogBuffer
 }
 
 // NewSkillMatcher creates a new skill matcher.
-func NewSkillMatcher(reg *SkillRegistry, classifier LLMClassifier, threshold float64) *SkillMatcher {
-	return &SkillMatcher{
+func NewSkillMatcher(reg *SkillRegistry, classifier LLMClassifier, threshold float64, bufferSize int) *SkillMatcher {
+	sm := &SkillMatcher{
 		reg:        reg,
 		classifier: classifier,
 		threshold:  threshold,
 	}
+	if bufferSize > 0 {
+		sm.logBuffer = NewMatchLogBuffer(bufferSize)
+	}
+	return sm
 }
 
 // Classifier returns the LLM classifier used by the matcher (may be nil).
@@ -223,23 +228,52 @@ func (m *SkillMatcher) MatchLLM(ctx context.Context, message string) (*MatchResu
 	}, nil
 }
 
+// recordMatchLog records a match attempt to the log buffer if available.
+func (m *SkillMatcher) recordMatchLog(message string, result *MatchResult, duration time.Duration, llmUsed bool) {
+	if m.logBuffer == nil {
+		return
+	}
+	log := &MatchLog{
+		Timestamp: time.Now(),
+		Input:     message,
+		Result:    result,
+		Duration:  duration,
+		LLMUsed:   llmUsed,
+	}
+	m.logBuffer.Add(log)
+}
+
 // Match orchestrates local → LLM fallback → chat fallback.
 func (m *SkillMatcher) Match(ctx context.Context, message string) *MatchResult {
 	// First try local matching
+	localStart := time.Now()
 	localResult := m.MatchLocal(message)
+	localDuration := time.Since(localStart)
+
+	// Record local match attempt
+	m.recordMatchLog(message, localResult, localDuration, false)
+
 	if localResult != nil && localResult.Confidence >= m.threshold {
 		return localResult
 	}
 
 	// Fall back to LLM if available
 	if m.classifier != nil {
+		llmStart := time.Now()
 		llmResult, err := m.MatchLLM(ctx, message)
+		llmDuration := time.Since(llmStart)
+
+		// Record LLM match attempt
+		m.recordMatchLog(message, llmResult, llmDuration, true)
+
 		if err == nil && llmResult != nil && llmResult.Confidence >= m.threshold {
 			return llmResult
 		}
 	}
 
 	// No confident match
+	// Record final no-match result (nil result, duration 0, llmUsed false)
+	m.recordMatchLog(message, nil, 0, false)
 	return nil
 }
 

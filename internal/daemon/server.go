@@ -620,4 +620,9 @@ func (d *Daemon) initBot() {
 	}
 
 	d.logger.Println("Bot gateway started")
+
+	// Expose gateway to web server for skill management API
+	if d.webServer != nil {
+		d.webServer.SetBotGateway(d.botGateway)
+	}
 }

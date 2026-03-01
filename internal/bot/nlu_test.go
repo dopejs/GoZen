@@ -395,7 +395,7 @@ func TestNLUParser_Parse_SkillIntegration(t *testing.T) {
 	reg.LoadFromConfig(nil) // load builtins
 
 	// Create skill matcher with no LLM fallback for tests
-	matcher := NewSkillMatcher(reg, nil, 0.7)
+	matcher := NewSkillMatcher(reg, nil, 0.7, 0)
 
 	// Create parser with skill matcher
 	parser := NewNLUParserWithSkills([]string{"@zen"}, matcher)

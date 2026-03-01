@@ -109,8 +109,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Implement MatchLog ring buffer in internal/bot/matcher.go (make T024 pass)
-- [ ] T027 [US3] Record match logs in SkillMatcher.Match after each match attempt in internal/bot/matcher.go
+- [x] T026 [US3] Implement MatchLog ring buffer in internal/bot/matcher.go (make T024 pass)
+- [x] T027 [US3] Record match logs in SkillMatcher.Match after each match attempt in internal/bot/matcher.go
 - [ ] T028 [US3] Implement Skill CRUD API handlers (GET /api/v1/bot/skills, POST, PUT /{name}, DELETE /{name}) in internal/web/api_bot_skills.go
 - [ ] T029 [US3] Implement Skill config API handler (PUT /api/v1/bot/skills/config) in internal/web/api_bot_skills.go
 - [ ] T030 [US3] Implement Skill test API handler (POST /api/v1/bot/skills/test) in internal/web/api_bot_skills.go

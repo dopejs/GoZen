@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"regexp"
 	"strings"
 )
@@ -9,6 +10,7 @@ import (
 type NLUParser struct {
 	mentionKeywords []string
 	commandPatterns []*commandPattern
+	skillMatcher    *SkillMatcher // optional skill-based matcher
 }
 
 type commandPattern struct {
@@ -25,6 +27,20 @@ func NewNLUParser(mentionKeywords []string) *NLUParser {
 
 	p := &NLUParser{
 		mentionKeywords: mentionKeywords,
+	}
+	p.initPatterns()
+	return p
+}
+
+// NewNLUParserWithSkills creates a new NLU parser with skill-based matching.
+func NewNLUParserWithSkills(mentionKeywords []string, skillMatcher *SkillMatcher) *NLUParser {
+	if len(mentionKeywords) == 0 {
+		mentionKeywords = []string{"@zen", "/zen", "zen"}
+	}
+
+	p := &NLUParser{
+		mentionKeywords: mentionKeywords,
+		skillMatcher:    skillMatcher,
 	}
 	p.initPatterns()
 	return p
@@ -157,6 +173,21 @@ func (p *NLUParser) Parse(msg *Message, requireMention bool) *ParsedIntent {
 			intent := cp.extract(matches)
 			intent.Raw = msg.Content
 			return intent
+		}
+	}
+
+	// Try skill-based matching if available
+	if p.skillMatcher != nil {
+		result := p.skillMatcher.Match(context.Background(), content)
+		if result != nil && result.Confidence >= 0.7 { // use threshold from matcher
+			// Convert MatchResult to ParsedIntent
+			parsed := &ParsedIntent{
+				Intent: result.Intent,
+				Raw:    msg.Content,
+				Task:   content, // preserve original message for parameter extraction
+			}
+			// Note: parameter extraction will be handled by handlers.go (T023)
+			return parsed
 		}
 	}
 

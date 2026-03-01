@@ -47,8 +47,67 @@ func (g *Gateway) handleMessage(msg *Message) {
 	g.processIntent(intent, session, replyTo, msg)
 }
 
+// extractMissingParams uses LLM to extract parameters for intents that need them.
+func (g *Gateway) extractMissingParams(intent *ParsedIntent, msg *Message) (*ParsedIntent, error) {
+	// Check if we have a classifier
+	if g.skillMatcher == nil || g.skillMatcher.Classifier() == nil {
+		return intent, nil // no LLM available, keep as-is
+	}
+
+	// Determine if parameters are missing based on intent type
+	switch intent.Intent {
+	case IntentControl:
+		if intent.Action == "" {
+			// Extract action and target from message
+			params, err := g.skillMatcher.Classifier().ExtractParams(context.Background(), msg.Content, intent.Intent)
+			if err != nil {
+				return intent, fmt.Errorf("extract control params: %w", err)
+			}
+			if action, ok := params["action"]; ok {
+				intent.Action = action
+			}
+			if target, ok := params["target"]; ok {
+				intent.Target = target
+			}
+		}
+	case IntentBind:
+		if intent.Target == "" {
+			params, err := g.skillMatcher.Classifier().ExtractParams(context.Background(), msg.Content, intent.Intent)
+			if err != nil {
+				return intent, fmt.Errorf("extract bind params: %w", err)
+			}
+			if target, ok := params["target"]; ok {
+				intent.Target = target
+			}
+		}
+	case IntentSendTask:
+		if intent.Target == "" || intent.Task == "" {
+			params, err := g.skillMatcher.Classifier().ExtractParams(context.Background(), msg.Content, intent.Intent)
+			if err != nil {
+				return intent, fmt.Errorf("extract send_task params: %w", err)
+			}
+			if target, ok := params["target"]; ok {
+				intent.Target = target
+			}
+			if task, ok := params["task"]; ok {
+				intent.Task = task
+			}
+		}
+	// Other intents may not need parameter extraction
+	}
+	return intent, nil
+}
 // processIntent handles a parsed intent.
 func (g *Gateway) processIntent(intent *ParsedIntent, session *Session, replyTo ReplyContext, msg *Message) {
+	// Try to extract missing parameters via LLM if available
+	updatedIntent, err := g.extractMissingParams(intent, msg)
+	if err != nil {
+		g.logger.Printf("Parameter extraction failed: %v", err)
+		// Continue with original intent
+		updatedIntent = intent
+	}
+	intent = updatedIntent
+
 	switch intent.Intent {
 	case IntentControl:
 		g.handleControl(intent, session, replyTo)

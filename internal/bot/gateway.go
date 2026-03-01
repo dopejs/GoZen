@@ -76,6 +76,7 @@ type Gateway struct {
 
 	registry        *Registry
 	skills          *SkillRegistry
+	skillMatcher    *SkillMatcher
 	sessions        *SessionManager
 	approvals       *ApprovalManager
 	nlu             *NLUParser
@@ -116,16 +117,31 @@ func NewGateway(cfg *GatewayConfig, logger *log.Logger) *Gateway {
 		logger.Printf("Warning: failed to load skills: %v", err)
 	}
 
+	// Initialize skill matcher
+	var skillMatcher *SkillMatcher
+	if skillsConfig != nil && skillsConfig.Enabled {
+		var classifier LLMClassifier
+		if llmClient != nil && skillsConfig.LLMFallback {
+			classifier = NewLLMClassifierAdapter(llmClient)
+		}
+		threshold := 0.7
+		if skillsConfig.ConfidenceThreshold > 0 {
+			threshold = skillsConfig.ConfidenceThreshold
+		}
+		skillMatcher = NewSkillMatcher(skillReg, classifier, threshold)
+	}
+
 	return &Gateway{
-		config:      cfg,
-		logger:      logger,
-		llm:         llmClient,
-		registry:    NewRegistry(cfg.Aliases),
-		skills:      skillReg,
-		sessions:    NewSessionManagerWithHistory(cfg.HistorySize),
-		approvals:   NewApprovalManager(),
-		nlu:         NewNLUParser(keywords),
-		connections: make(map[string]net.Conn),
+		config:       cfg,
+		logger:       logger,
+		llm:          llmClient,
+		registry:     NewRegistry(cfg.Aliases),
+		skills:       skillReg,
+		skillMatcher: skillMatcher,
+		sessions:     NewSessionManagerWithHistory(cfg.HistorySize),
+		approvals:    NewApprovalManager(),
+		nlu:          NewNLUParserWithSkills(keywords, skillMatcher),
+		connections:  make(map[string]net.Conn),
 	}
 }
 

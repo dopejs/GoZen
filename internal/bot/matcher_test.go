@@ -326,3 +326,84 @@ func TestSkillMatcherMatchOrchestrator(t *testing.T) {
 		})
 	}
 }
+
+
+// --- T024: MatchLog ring buffer tests ---
+
+func TestMatchLogBuffer_AddAndList(t *testing.T) {
+	buf := NewMatchLogBuffer(3)
+
+	log1 := &MatchLog{Input: "msg1"}
+	log2 := &MatchLog{Input: "msg2"}
+	log3 := &MatchLog{Input: "msg3"}
+
+	buf.Add(log1)
+	buf.Add(log2)
+	buf.Add(log3)
+
+	logs := buf.List(10)
+	if len(logs) != 3 {
+		t.Fatalf("List(10) len = %d, want 3", len(logs))
+	}
+	if logs[0].Input != "msg1" || logs[1].Input != "msg2" || logs[2].Input != "msg3" {
+		t.Errorf("logs mismatch: got %v, %v, %v", logs[0].Input, logs[1].Input, logs[2].Input)
+	}
+}
+
+func TestMatchLogBuffer_Overflow(t *testing.T) {
+	buf := NewMatchLogBuffer(3)
+
+	// Add 5 logs, buffer size is 3
+	for i := 0; i < 5; i++ {
+		buf.Add(&MatchLog{Input: fmt.Sprintf("msg%d", i+1)})
+	}
+
+	logs := buf.List(10)
+	if len(logs) != 3 {
+		t.Fatalf("List(10) len = %d, want 3 after overflow", len(logs))
+	}
+	// Should contain the 3 most recent: msg3, msg4, msg5
+	expected := []string{"msg3", "msg4", "msg5"}
+	for i, exp := range expected {
+		if logs[i].Input != exp {
+			t.Errorf("logs[%d] = %q, want %q", i, logs[i].Input, exp)
+		}
+	}
+}
+
+func TestMatchLogBuffer_ListWithLimit(t *testing.T) {
+	buf := NewMatchLogBuffer(5)
+
+	for i := 0; i < 5; i++ {
+		buf.Add(&MatchLog{Input: fmt.Sprintf("msg%d", i+1)})
+	}
+
+	// Request fewer than total
+	logs := buf.List(2)
+	if len(logs) != 2 {
+		t.Fatalf("List(2) len = %d, want 2", len(logs))
+	}
+	// Should return the 2 most recent: msg4, msg5
+	if logs[0].Input != "msg4" || logs[1].Input != "msg5" {
+		t.Errorf("logs = [%q, %q], want [msg4, msg5]", logs[0].Input, logs[1].Input)
+	}
+}
+
+func TestMatchLogBuffer_Clear(t *testing.T) {
+	buf := NewMatchLogBuffer(3)
+	buf.Add(&MatchLog{Input: "msg1"})
+	buf.Add(&MatchLog{Input: "msg2"})
+
+	buf.Clear()
+	logs := buf.List(10)
+	if len(logs) != 0 {
+		t.Errorf("after Clear, List(10) len = %d, want 0", len(logs))
+	}
+
+	// Should be able to add after clear
+	buf.Add(&MatchLog{Input: "msg3"})
+	logs = buf.List(10)
+	if len(logs) != 1 || logs[0].Input != "msg3" {
+		t.Errorf("after clear and add, logs = %v, want [msg3]", logs)
+	}
+}

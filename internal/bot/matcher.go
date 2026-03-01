@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -62,6 +63,11 @@ func NewSkillMatcher(reg *SkillRegistry, classifier LLMClassifier, threshold flo
 		classifier: classifier,
 		threshold:  threshold,
 	}
+}
+
+// Classifier returns the LLM classifier used by the matcher (may be nil).
+func (m *SkillMatcher) Classifier() LLMClassifier {
+	return m.classifier
 }
 
 // MatchLocal attempts to match using local keyword/synonym/fuzzy matching.
@@ -308,4 +314,66 @@ Return a JSON object with the appropriate parameters for this intent type.`, int
 		return nil, fmt.Errorf("parse LLM params response: %w", err)
 	}
 	return params, nil
+}
+
+// MatchLogBuffer is a ring buffer for storing match logs.
+type MatchLogBuffer struct {
+	mu    sync.RWMutex
+	logs  []*MatchLog
+	start int
+	size  int
+	cap   int
+}
+
+// NewMatchLogBuffer creates a new buffer with the given capacity.
+func NewMatchLogBuffer(capacity int) *MatchLogBuffer {
+	return &MatchLogBuffer{
+		logs: make([]*MatchLog, capacity),
+		cap:  capacity,
+	}
+}
+
+// Add adds a log entry to the buffer.
+func (b *MatchLogBuffer) Add(log *MatchLog) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.cap == 0 {
+		return
+	}
+
+	idx := (b.start + b.size) % b.cap
+	b.logs[idx] = log
+
+	if b.size < b.cap {
+		b.size++
+	} else {
+		b.start = (b.start + 1) % b.cap
+	}
+}
+
+// List returns the most recent logs, up to limit.
+func (b *MatchLogBuffer) List(limit int) []*MatchLog {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if limit <= 0 || limit > b.size {
+		limit = b.size
+	}
+
+	result := make([]*MatchLog, limit)
+	for i := 0; i < limit; i++ {
+		idx := (b.start + b.size - limit + i) % b.cap
+		result[i] = b.logs[idx]
+	}
+	return result
+}
+
+// Clear removes all logs from the buffer.
+func (b *MatchLogBuffer) Clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.start = 0
+	b.size = 0
+	// Keep slice allocated
 }

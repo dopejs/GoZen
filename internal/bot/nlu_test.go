@@ -388,3 +388,48 @@ func TestNLUParser_Parse_Forget(t *testing.T) {
 		}
 	}
 }
+
+func TestNLUParser_Parse_SkillIntegration(t *testing.T) {
+	// Create skill registry with builtin skills
+	reg := NewSkillRegistry()
+	reg.LoadFromConfig(nil) // load builtins
+
+	// Create skill matcher with no LLM fallback for tests
+	matcher := NewSkillMatcher(reg, nil, 0.7)
+
+	// Create parser with skill matcher
+	parser := NewNLUParserWithSkills([]string{"@zen"}, matcher)
+
+	tests := []struct {
+		name       string
+		content    string
+		wantIntent Intent
+	}{
+		// Regex still wins for exact commands
+		{"regex exact pause", "pause", IntentControl},
+		{"regex exact bind", "bind", IntentBind},
+		{"regex exact approve", "approve", IntentApprove},
+		// Natural language via skill matching
+		{"skill natural language zh", "帮我暂停一下", IntentControl},
+		{"skill natural language en", "can you pause it", IntentControl},
+		{"skill status query", "查看所有进程状态", IntentQueryStatus},
+		{"skill list query", "显示所有进程", IntentQueryList},
+		{"skill forget natural", "忘记刚才的对话", IntentForget},
+		// Fallback to chat
+		{"chat fallback", "随便聊聊", IntentChat},
+		{"chat generic", "hello how are you", IntentChat},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &Message{Content: tt.content, IsMention: true}
+			result := parser.Parse(msg, false)
+			if result == nil {
+				t.Fatalf("Parse(%q) returned nil", tt.content)
+			}
+			if result.Intent != tt.wantIntent {
+				t.Errorf("Parse(%q) intent = %v, want %v", tt.content, result.Intent, tt.wantIntent)
+			}
+		})
+	}
+}

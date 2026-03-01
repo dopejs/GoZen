@@ -1,0 +1,293 @@
+package bot
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// MatchResult represents a single intent match result.
+type MatchResult struct {
+	Skill       string      `json:"skill"`        // matched skill name
+	Intent      Intent      `json:"intent"`       // recognized intent
+	Confidence  float64     `json:"confidence"`   // score (0.0 - 1.0)
+	Method      string      `json:"method"`       // "local" or "llm"
+	ParsedIntent *ParsedIntent `json:"parsed_intent,omitempty"`
+}
+
+// SkillScore contains detailed scoring for a skill.
+type SkillScore struct {
+	SkillName    string  `json:"skill_name"`
+	KeywordScore float64 `json:"keyword_score"`
+	SynonymScore float64 `json:"synonym_score"`
+	FuzzyScore   float64 `json:"fuzzy_score"`
+	LocalScore   float64 `json:"local_score"`
+	LLMScore     float64 `json:"llm_score"`
+	FinalScore   float64 `json:"final_score"`
+}
+
+// MatchLog records a match attempt for debugging.
+type MatchLog struct {
+	Timestamp time.Time `json:"timestamp"`
+	Input     string    `json:"input"`
+	Platform  string    `json:"platform"`
+	UserID    string    `json:"user_id"`
+	Scores    []SkillScore `json:"scores,omitempty"`
+	Result    *MatchResult `json:"result"`
+	Duration  time.Duration `json:"duration_ms"`
+	LLMUsed   bool        `json:"llm_used"`
+}
+
+// LLMClassifier interface for LLM-based classification and parameter extraction.
+type LLMClassifier interface {
+	// Classify returns the matched skill and intent via LLM.
+	Classify(ctx context.Context, message string, skills []*Skill) (string, error) // JSON response
+	// ExtractParams extracts intent-specific parameters via LLM.
+	ExtractParams(ctx context.Context, message string, intent Intent) (map[string]string, error)
+}
+
+// SkillMatcher implements hybrid intent matching (local + LLM fallback).
+type SkillMatcher struct {
+	reg      *SkillRegistry
+	classifier LLMClassifier
+	threshold float64
+}
+
+// NewSkillMatcher creates a new skill matcher.
+func NewSkillMatcher(reg *SkillRegistry, classifier LLMClassifier, threshold float64) *SkillMatcher {
+	return &SkillMatcher{
+		reg:        reg,
+		classifier: classifier,
+		threshold:  threshold,
+	}
+}
+
+// MatchLocal attempts to match using local keyword/synonym/fuzzy matching.
+func (m *SkillMatcher) MatchLocal(message string) *MatchResult {
+	skills := m.reg.ListEnabled()
+	if len(skills) == 0 {
+		return nil
+	}
+
+	message = strings.ToLower(strings.TrimSpace(message))
+	bestScore := 0.0
+	var bestSkill *Skill
+
+	for _, s := range skills {
+		if !s.Enabled {
+			continue
+		}
+		score := m.computeLocalScore(s, message)
+		if score > bestScore {
+			bestScore = score
+			bestSkill = s
+		}
+	}
+
+	if bestSkill == nil || bestScore < m.threshold {
+		return nil
+	}
+
+	return &MatchResult{
+		Skill:      bestSkill.Name,
+		Intent:     bestSkill.Intent,
+		Confidence: bestScore,
+		Method:     "local",
+	}
+}
+
+func (m *SkillMatcher) computeLocalScore(s *Skill, message string) float64 {
+	// Compute keyword match score
+	keywordScore := 0.0
+	for _, keywords := range s.Keywords {
+		for _, kw := range keywords {
+			kwLower := strings.ToLower(kw)
+			if strings.Contains(message, kwLower) {
+				// Exact match: higher score
+				if len(message) == len(kwLower) {
+					keywordScore = 1.0
+					break
+				}
+				// Substring match: lower score
+				subScore := float64(len(kwLower)) / float64(len(message))
+				if subScore > keywordScore {
+					keywordScore = subScore
+				}
+			}
+		}
+		if keywordScore >= 1.0 {
+			break
+		}
+	}
+
+	// Compute synonym match score
+	synonymScore := 0.0
+	for variant := range s.Synonyms {
+		if strings.Contains(message, variant) {
+			// Synonym matches are slightly less confident than keywords
+			synonymScore = 0.9
+			break
+		}
+	}
+
+	// Compute fuzzy matching (simple word presence)
+	fuzzyScore := 0.0
+	words := strings.Fields(message)
+	for _, w := range words {
+		for _, keywords := range s.Keywords {
+			for _, kw := range keywords {
+				if strings.Contains(kw, w) || strings.Contains(w, kw) {
+					fuzzyScore = 0.7
+					break
+				}
+			}
+		}
+		for variant := range s.Synonyms {
+			if strings.Contains(variant, w) || strings.Contains(w, variant) {
+				fuzzyScore = 0.7
+				break
+			}
+		}
+	}
+
+	// Weighted combination
+	total := keywordScore*0.5 + synonymScore*0.3 + fuzzyScore*0.2
+	if total > 1.0 {
+		total = 1.0
+	}
+	return total
+}
+
+// MatchLLM attempts to match using LLM fallback.
+func (m *SkillMatcher) MatchLLM(ctx context.Context, message string) (*MatchResult, error) {
+	if m.classifier == nil {
+		return nil, fmt.Errorf("no LLM classifier available")
+	}
+
+	skills := m.reg.ListEnabled()
+	if len(skills) == 0 {
+		return nil, fmt.Errorf("no skills available")
+	}
+
+	respJSON, err := m.classifier.Classify(ctx, message, skills)
+	if err != nil {
+		return nil, fmt.Errorf("LLM classification: %w", err)
+	}
+
+	var resp struct {
+		Skill      string  `json:"skill"`
+		Intent     string  `json:"intent"`
+		Confidence float64 `json:"confidence"`
+	}
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		return nil, fmt.Errorf("parse LLM response: %w", err)
+	}
+
+	// Validate skill exists and is enabled
+	skill := m.reg.Get(resp.Skill)
+	if skill == nil || !skill.Enabled {
+		return nil, fmt.Errorf("LLM returned invalid skill: %s", resp.Skill)
+	}
+
+	return &MatchResult{
+		Skill:      resp.Skill,
+		Intent:     Intent(resp.Intent),
+		Confidence: resp.Confidence,
+		Method:     "llm",
+	}, nil
+}
+
+// Match orchestrates local → LLM fallback → chat fallback.
+func (m *SkillMatcher) Match(ctx context.Context, message string) *MatchResult {
+	// First try local matching
+	localResult := m.MatchLocal(message)
+	if localResult != nil && localResult.Confidence >= m.threshold {
+		return localResult
+	}
+
+	// Fall back to LLM if available
+	if m.classifier != nil {
+		llmResult, err := m.MatchLLM(ctx, message)
+		if err == nil && llmResult != nil && llmResult.Confidence >= m.threshold {
+			return llmResult
+		}
+	}
+
+	// No confident match
+	return nil
+}
+
+// LLMClassifierAdapter adapts LLMClient to the LLMClassifier interface.
+type LLMClassifierAdapter struct {
+	client *LLMClient
+}
+
+// NewLLMClassifierAdapter creates a new adapter.
+func NewLLMClassifierAdapter(client *LLMClient) *LLMClassifierAdapter {
+	return &LLMClassifierAdapter{client: client}
+}
+
+// Classify uses the LLM to classify the message into a skill.
+func (a *LLMClassifierAdapter) Classify(ctx context.Context, message string, skills []*Skill) (string, error) {
+	// Build a prompt that lists available skills
+	var skillDescs []string
+	for _, s := range skills {
+		if !s.Enabled {
+			continue
+		}
+		skillDescs = append(skillDescs, fmt.Sprintf("- %s: %s (intent: %s, keywords: %v)",
+			s.Name, s.Description, s.Intent, s.Keywords))
+	}
+
+	prompt := fmt.Sprintf(`You are an intent classification assistant. Given a user message, select the most appropriate skill from the list below.
+
+Available skills:
+%s
+
+User message: "%s"
+
+Return a JSON object with exactly these fields:
+{
+  "skill": "<skill name>",
+  "intent": "<intent string>",
+  "confidence": <float between 0.0 and 1.0>
+}
+
+If no skill matches, return skill: "" and intent: "chat".`, strings.Join(skillDescs, "\n"), message)
+
+	history := []ChatMessage{
+		{Role: "user", Content: message},
+	}
+
+	response, err := a.client.Chat(ctx, prompt, history)
+	if err != nil {
+		return "", err
+	}
+	return response, nil
+}
+
+// ExtractParams extracts intent-specific parameters via LLM.
+func (a *LLMClassifierAdapter) ExtractParams(ctx context.Context, message string, intent Intent) (map[string]string, error) {
+	prompt := fmt.Sprintf(`Extract structured parameters from the user message for intent "%s".
+
+User message: "%s"
+
+Return a JSON object with the appropriate parameters for this intent type.`, intent, message)
+
+	history := []ChatMessage{
+		{Role: "user", Content: message},
+	}
+
+	response, err := a.client.Chat(ctx, prompt, history)
+	if err != nil {
+		return nil, err
+	}
+
+	var params map[string]string
+	if err := json.Unmarshal([]byte(response), &params); err != nil {
+		return nil, fmt.Errorf("parse LLM params response: %w", err)
+	}
+	return params, nil
+}

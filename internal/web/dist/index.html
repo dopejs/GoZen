@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoZen - Skill Management</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>GoZen Skills</h1>
+      <nav>
+        <button class="tab active" data-tab="skills">Skills</button>
+        <button class="tab" data-tab="test">Test</button>
+        <button class="tab" data-tab="logs">Logs</button>
+        <button class="tab" data-tab="config">Config</button>
+      </nav>
+    </header>
+    <main>
+      <section id="skills-panel" class="panel active">
+        <div class="panel-header">
+          <h2>Registered Skills</h2>
+          <button id="btn-add-skill" class="btn btn-primary">+ Add Skill</button>
+        </div>
+        <div id="skill-list"></div>
+      </section>
+      <section id="test-panel" class="panel">
+        <h2>Test Intent Matching</h2>
+        <form id="test-form">
+          <input type="text" id="test-message" placeholder="Type a message to test..." required>
+          <button type="submit" class="btn btn-primary">Test</button>
+        </form>
+        <div id="test-result"></div>
+      </section>
+      <section id="logs-panel" class="panel">
+        <h2>Match Logs</h2>
+        <button id="btn-refresh-logs" class="btn">Refresh</button>
+        <div id="log-list"></div>
+      </section>
+      <section id="config-panel" class="panel">
+        <h2>Skills Configuration</h2>
+        <div id="config-form-container"></div>
+      </section>
+    </main>
+    <dialog id="skill-dialog">
+      <form id="skill-form">
+        <h3 id="dialog-title">Add Skill</h3>
+        <label>Name <input type="text" id="skill-name" required></label>
+        <label>Description <input type="text" id="skill-desc"></label>
+        <label>Intent <input type="text" id="skill-intent" required></label>
+        <label>Priority <input type="number" id="skill-priority" min="1" max="100" value="50"></label>
+        <label>Keywords (EN, comma-separated) <input type="text" id="skill-keywords-en"></label>
+        <label>Keywords (ZH, comma-separated) <input type="text" id="skill-keywords-zh"></label>
+        <div class="dialog-actions">
+          <button type="button" class="btn" id="btn-cancel-skill">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

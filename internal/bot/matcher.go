@@ -363,12 +363,17 @@ func (a *LLMClassifierAdapter) Classify(ctx context.Context, message string, ski
 			s.Name, s.Description, s.Intent, s.Keywords))
 	}
 
-	prompt := fmt.Sprintf(`You are an intent classification assistant. Given a user message, select the most appropriate skill from the list below.
+	prompt := fmt.Sprintf(`You are a multi-language intent classification assistant. Given a user message in any language (Chinese, English, or mixed), select the most appropriate skill from the list below.
 
 Available skills:
 %s
 
 User message: "%s"
+
+Important:
+- The message may be in Chinese (中文), English, or a mix of both.
+- Match based on semantic meaning, not just keyword presence.
+- Examples: "帮我把那个任务停掉" → process-control, "check the status" → query-status, "请pause一下" → process-control
 
 Return a JSON object with exactly these fields:
 {

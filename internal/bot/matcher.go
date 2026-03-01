@@ -124,8 +124,30 @@ func (m *SkillMatcher) MatchLocal(message string) *MatchResult {
 	}
 }
 
+// detectLanguage returns a best-guess language code for the message.
+// Returns "zh" if message contains Chinese characters, "en" otherwise.
+func detectLanguage(message string) string {
+	for _, r := range message {
+		if r >= 0x4E00 && r <= 0x9FFF { // Unicode CJK Unified Ideographs
+			return "zh"
+		}
+	}
+	return "en"
+}
+
 func (m *SkillMatcher) computeLocalScore(s *Skill, message string) float64 {
+	lang := detectLanguage(message)
+
 	// Exact keyword match (highest confidence)
+	// Check language-specific keywords first
+	if langKeywords, ok := s.Keywords[lang]; ok {
+		for _, kw := range langKeywords {
+			if strings.ToLower(kw) == message {
+				return 0.95
+			}
+		}
+	}
+	// Fall back to checking all keywords
 	for _, keywords := range s.Keywords {
 		for _, kw := range keywords {
 			if strings.ToLower(kw) == message {
@@ -143,6 +165,23 @@ func (m *SkillMatcher) computeLocalScore(s *Skill, message string) float64 {
 
 	// Keyword substring match
 	keywordScore := 0.0
+	// Try language-specific keywords first
+	if langKeywords, ok := s.Keywords[lang]; ok {
+		for _, kw := range langKeywords {
+			kwLower := strings.ToLower(kw)
+			if strings.Contains(message, kwLower) {
+				// Substring match: ensure confidence above threshold
+				subScore := 0.5 + 0.5*float64(len(kwLower))/float64(len(message))
+				if subScore < 0.8 {
+					subScore = 0.8 // minimum for substring keyword match
+				}
+				if subScore > keywordScore {
+					keywordScore = subScore
+				}
+			}
+		}
+	}
+	// Fall back to all keywords
 	for _, keywords := range s.Keywords {
 		for _, kw := range keywords {
 			kwLower := strings.ToLower(kw)
@@ -180,6 +219,16 @@ func (m *SkillMatcher) computeLocalScore(s *Skill, message string) float64 {
 	fuzzyScore := 0.0
 	words := strings.Fields(message)
 	for _, w := range words {
+		// Check language-specific keywords first
+		if langKeywords, ok := s.Keywords[lang]; ok {
+			for _, kw := range langKeywords {
+				if strings.Contains(kw, w) || strings.Contains(w, kw) {
+					fuzzyScore = 0.6
+					break
+				}
+			}
+		}
+		// Fall back to all keywords
 		for _, keywords := range s.Keywords {
 			for _, kw := range keywords {
 				if strings.Contains(kw, w) || strings.Contains(w, kw) {

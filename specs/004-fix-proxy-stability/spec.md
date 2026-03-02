@@ -63,6 +63,20 @@ When all providers in a profile fail, the error returned to the user should clea
 - What happens during a config hot-reload — are active sessions disrupted when providers are rebuilt?
 - What happens when a provider hangs indefinitely (neither succeeds nor fails within the 10-minute timeout)?
 
+### Test Coverage Gaps (identified via code review)
+
+The existing test suite has 150+ proxy-related tests with strong failover coverage (15+ failover-specific tests). The following gaps are in scope for this fix:
+
+1. **ProxyURL propagation in daemon path** — `ProfileProxy.buildProviders()` never tested with ProxyURL config (this is the root cause bug)
+2. **`buildProviders` with ProxyURL in direct path** — `cmd/root.go` reference path not tested with ProxyURL
+3. **`waitForDaemonReady` proxy port check** — no test for the readiness function itself
+4. **502 response body format** — status code tested but response body content not validated
+
+Out of scope (real gaps but require significant infrastructure and don't address the reported issue):
+- Concurrent failover under load (provider health mutex already handles this)
+- SSE mid-stream failover (edge case not related to ConnectionRefused)
+- Half-open recovery under load (isolated tests already cover the logic)
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements

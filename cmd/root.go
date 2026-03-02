@@ -318,7 +318,10 @@ func ensureDaemonRunning() error {
 	// Wait for daemon to be ready
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return waitForDaemonReady(ctx)
+	if err := waitForDaemonReady(ctx); err != nil {
+		return fmt.Errorf("daemon started but not ready: %w (try 'zen daemon status' for diagnostics)", err)
+	}
+	return nil
 }
 
 // generateSessionID generates a short random hex session ID.

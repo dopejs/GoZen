@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -194,6 +195,7 @@ func startDaemonBackground() error {
 // waitForDaemonReady polls the daemon status endpoint until ready.
 func waitForDaemonReady(ctx context.Context) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/status", config.GetWebPort())
+	proxyAddr := fmt.Sprintf("127.0.0.1:%d", config.GetProxyPort())
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	for {
 		select {
@@ -201,11 +203,17 @@ func waitForDaemonReady(ctx context.Context) error {
 			return ctx.Err()
 		default:
 		}
+		// Check web port (HTTP GET)
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				return nil
+				// Also check proxy port (TCP dial)
+				conn, err := net.DialTimeout("tcp", proxyAddr, 500*time.Millisecond)
+				if err == nil {
+					conn.Close()
+					return nil
+				}
 			}
 		}
 		time.Sleep(100 * time.Millisecond)

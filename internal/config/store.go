@@ -397,6 +397,27 @@ func (s *Store) SetProxyPort(port int) error {
 	return s.saveLocked()
 }
 
+// GetShowProviderTag returns whether provider/model tag injection is enabled.
+func (s *Store) GetShowProviderTag() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return false
+	}
+	return s.config.ShowProviderTag
+}
+
+// SetShowProviderTag enables or disables provider/model tag injection.
+func (s *Store) SetShowProviderTag(enabled bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.ShowProviderTag = enabled
+	return s.saveLocked()
+}
+
 // GetWebPasswordHash returns the stored bcrypt password hash.
 func (s *Store) GetWebPasswordHash() string {
 	s.mu.Lock()

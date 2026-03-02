@@ -19,8 +19,8 @@
 
 **Purpose**: Branch verification and baseline establishment
 
-- [ ] T001 Verify branch `005-provider-model-tag` is checked out and builds cleanly with `go build ./...`
-- [ ] T002 Run baseline test suite `go test ./...` and record pass count and coverage for `internal/proxy/`, `internal/config/`, `internal/web/`
+- [x] T001 Verify branch `005-provider-model-tag` is checked out and builds cleanly with `go build ./...`
+- [x] T002 Run baseline test suite `go test ./...` and record pass count and coverage for `internal/proxy/`, `internal/config/`, `internal/web/` — baseline: proxy 81.7%, config 85.6%, web 79.5%
 
 **Checkpoint**: Baseline established — all existing tests pass before any changes
 
@@ -36,16 +36,16 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T003 [P] Write test for `ShowProviderTag` config field: v10→v11 migration, default `false`, marshal round-trip in `internal/config/config_test.go`
-- [ ] T004 [P] Write test for `GetShowProviderTag()` / `SetShowProviderTag()` in `internal/config/store_test.go`
-- [ ] T005 [P] Write test for settings API GET/PUT with `show_provider_tag` field in `internal/web/api_settings_test.go`
+- [x] T003 [P] Write test for `ShowProviderTag` config field: v10→v11 migration, default `false`, marshal round-trip in `internal/config/config_test.go`
+- [x] T004 [P] Write test for `GetShowProviderTag()` / `SetShowProviderTag()` in `internal/config/store_test.go`
+- [x] T005 [P] Write test for settings API GET/PUT with `show_provider_tag` field in `internal/web/api_settings_test.go`
 
 ### Implementation for Foundational
 
-- [ ] T006 Add `ShowProviderTag bool` field to `OpenCCConfig` in `internal/config/config.go` and bump `CurrentConfigVersion` from 10 to 11
-- [ ] T007 Add `GetShowProviderTag()` / `SetShowProviderTag()` methods to Store in `internal/config/store.go` and convenience functions in `internal/config/compat.go`
-- [ ] T008 Add `ShowProviderTag` to `settingsResponse` and `settingsRequest` (as `*bool`) in `internal/web/api_settings.go`, wire getter/setter in `getSettings()` / `updateSettings()`
-- [ ] T009 Verify all foundational tests pass (T003, T004, T005)
+- [x] T006 Add `ShowProviderTag bool` field to `OpenCCConfig` in `internal/config/config.go` and bump `CurrentConfigVersion` from 10 to 11
+- [x] T007 Add `GetShowProviderTag()` / `SetShowProviderTag()` methods to Store in `internal/config/store.go` and convenience functions in `internal/config/compat.go`
+- [x] T008 Add `ShowProviderTag` to `settingsResponse` and `settingsRequest` (as `*bool`) in `internal/web/api_settings.go`, wire getter/setter in `getSettings()` / `updateSettings()`
+- [x] T009 Verify all foundational tests pass (T003, T004, T005)
 
 **Checkpoint**: Config field exists, API can read/write it, tests pass. Tag injection and Web UI can now proceed.
 

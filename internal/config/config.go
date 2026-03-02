@@ -397,7 +397,7 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy; compression; middleware
 // - Version 9 (v2.3.0+): added agent infrastructure (coordinator, observatory, guardrails, task queue, runtime)
 // - Version 10 (v3.0.0+): added skills config to bot (skill-based intent recognition)
-const CurrentConfigVersion = 10
+const CurrentConfigVersion = 11
 
 // --- Model Pricing ---
 
@@ -792,6 +792,7 @@ type OpenCCConfig struct {
 	ProxyPort       int                         `json:"proxy_port,omitempty"`        // proxy port (defaults to 19841)
 	WebPort         int                         `json:"web_port,omitempty"`          // web UI port (defaults to 19840)
 	WebPasswordHash string                      `json:"web_password_hash,omitempty"` // bcrypt hash for Web UI access password
+	ShowProviderTag bool                        `json:"show_provider_tag,omitempty"` // show provider/model tag in proxy responses
 	Providers       map[string]*ProviderConfig  `json:"providers"`                   // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                    // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"`  // directory path -> binding config
@@ -821,6 +822,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		ProxyPort       int                            `json:"proxy_port,omitempty"`
 		WebPort         int                            `json:"web_port,omitempty"`
 		WebPasswordHash string                         `json:"web_password_hash,omitempty"` // v7+
+		ShowProviderTag bool                           `json:"show_provider_tag,omitempty"` // v11+
 		Providers       map[string]*ProviderConfig     `json:"providers"`
 		Profiles        map[string]*ProfileConfig      `json:"profiles"`
 		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`
@@ -843,6 +845,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.ProxyPort = raw.ProxyPort
 	c.WebPort = raw.WebPort
 	c.WebPasswordHash = raw.WebPasswordHash
+	c.ShowProviderTag = raw.ShowProviderTag
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 	c.Sync = raw.Sync

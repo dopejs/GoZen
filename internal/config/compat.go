@@ -129,6 +129,16 @@ func SetProxyPort(port int) error {
 	return DefaultStore().SetProxyPort(port)
 }
 
+// GetShowProviderTag returns whether provider/model tag injection is enabled.
+func GetShowProviderTag() bool {
+	return DefaultStore().GetShowProviderTag()
+}
+
+// SetShowProviderTag enables or disables provider/model tag injection.
+func SetShowProviderTag(enabled bool) error {
+	return DefaultStore().SetShowProviderTag(enabled)
+}
+
 // --- Project Bindings convenience functions ---
 
 // BindProject binds a directory path to a profile and/or CLI.

@@ -9,18 +9,20 @@ import (
 
 // settingsResponse is the JSON shape for global settings.
 type settingsResponse struct {
-	DefaultProfile string   `json:"default_profile"`
-	DefaultClient  string   `json:"default_client"`
-	WebPort        int      `json:"web_port"`
-	Profiles       []string `json:"profiles"`
-	Clients        []string `json:"clients"`
+	DefaultProfile  string   `json:"default_profile"`
+	DefaultClient   string   `json:"default_client"`
+	WebPort         int      `json:"web_port"`
+	ShowProviderTag bool     `json:"show_provider_tag"`
+	Profiles        []string `json:"profiles"`
+	Clients         []string `json:"clients"`
 }
 
 // settingsRequest is the JSON shape for updating settings.
 type settingsRequest struct {
-	DefaultProfile string `json:"default_profile,omitempty"`
-	DefaultClient  string `json:"default_client,omitempty"`
-	WebPort        int    `json:"web_port,omitempty"`
+	DefaultProfile  string `json:"default_profile,omitempty"`
+	DefaultClient   string `json:"default_client,omitempty"`
+	WebPort         int    `json:"web_port,omitempty"`
+	ShowProviderTag *bool  `json:"show_provider_tag,omitempty"`
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -39,11 +41,12 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	profiles := store.ListProfiles()
 
 	resp := settingsResponse{
-		DefaultProfile: store.GetDefaultProfile(),
-		DefaultClient:  store.GetDefaultClient(),
-		WebPort:        store.GetWebPort(),
-		Profiles:       profiles,
-		Clients:        config.AvailableClients,
+		DefaultProfile:  store.GetDefaultProfile(),
+		DefaultClient:   store.GetDefaultClient(),
+		WebPort:         store.GetWebPort(),
+		ShowProviderTag: store.GetShowProviderTag(),
+		Profiles:        profiles,
+		Clients:         config.AvailableClients,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -84,6 +87,13 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := store.SetWebPort(req.WebPort); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	if req.ShowProviderTag != nil {
+		if err := store.SetShowProviderTag(*req.ShowProviderTag); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}

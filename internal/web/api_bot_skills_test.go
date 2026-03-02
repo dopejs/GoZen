@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/bot"
@@ -375,5 +376,46 @@ func TestSkillAPIMethodNotAllowed(t *testing.T) {
 	w = doRequest(s, "POST", "/api/v1/bot/skills/logs", nil)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405 for POST on logs endpoint, got %d", w.Code)
+	}
+}
+
+// --- T045: Frontend smoke tests ---
+
+func TestSkillUIStaticFiles(t *testing.T) {
+	s := setupTestServerWithSkills(t)
+
+	// Verify index.html is served
+	w := doRequest(s, "GET", "/", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "GoZen") {
+		t.Error("index.html should contain GoZen")
+	}
+	if !strings.Contains(body, "skills") {
+		t.Error("index.html should reference skills")
+	}
+}
+
+func TestSkillUIAppJS(t *testing.T) {
+	s := setupTestServerWithSkills(t)
+
+	w := doRequest(s, "GET", "/app.js", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /app.js, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "/api/v1/bot/skills") {
+		t.Error("app.js should reference the skills API")
+	}
+}
+
+func TestSkillUIStyleCSS(t *testing.T) {
+	s := setupTestServerWithSkills(t)
+
+	w := doRequest(s, "GET", "/style.css", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /style.css, got %d", w.Code)
 	}
 }

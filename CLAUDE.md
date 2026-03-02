@@ -154,6 +154,7 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - Go 1.21+ + Bubble Tea (TUI), Cobra (CLI), net/http (proxy/web) (003-skill-intent-recognition)
 - JSON config at `~/.zen/zen.json`, match logs in memory (ring buffer) (003-skill-intent-recognition)
 - Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (SOCKS5), Cobra (CLI) (004-fix-proxy-stability)
+- JSON config at `~/.zen/zen.json` (no schema changes needed) (004-fix-proxy-stability)
 
 ## Recent Changes
 - 001-provider-proxy: Added Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5)

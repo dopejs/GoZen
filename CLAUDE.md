@@ -155,6 +155,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at `~/.zen/zen.json`, match logs in memory (ring buffer) (003-skill-intent-recognition)
 - Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (SOCKS5), Cobra (CLI) (004-fix-proxy-stability)
 - JSON config at `~/.zen/zen.json` (no schema changes needed) (004-fix-proxy-stability)
+- Go 1.21+ + `net/http`, `encoding/json`, `bufio` (SSE parsing), React + TypeScript (Web UI) (005-provider-model-tag)
+- JSON config at `~/.zen/zen.json` (new `show_provider_tag` boolean field, version 10 → 11) (005-provider-model-tag)
 
 ## Recent Changes
 - 001-provider-proxy: Added Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5)

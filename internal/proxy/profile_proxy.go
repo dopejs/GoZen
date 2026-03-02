@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dopejs/gozen/internal/config"
 )
@@ -141,23 +142,52 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 		if model == "" {
 			model = "claude-sonnet-4-5"
 		}
+		reasoningModel := pc.ReasoningModel
+		if reasoningModel == "" {
+			reasoningModel = "claude-sonnet-4-5-thinking"
+		}
+		haikuModel := pc.HaikuModel
+		if haikuModel == "" {
+			haikuModel = "claude-haiku-4-5"
+		}
+		opusModel := pc.OpusModel
+		if opusModel == "" {
+			opusModel = "claude-opus-4-5"
+		}
+		sonnetModel := pc.SonnetModel
+		if sonnetModel == "" {
+			sonnetModel = "claude-sonnet-4-5"
+		}
 
-		providers = append(providers, &Provider{
+		p := &Provider{
 			Name:            name,
 			Type:            pc.GetType(),
 			BaseURL:         baseURL,
 			Token:           pc.AuthToken,
 			Model:           model,
-			ReasoningModel:  pc.ReasoningModel,
-			HaikuModel:      pc.HaikuModel,
-			OpusModel:       pc.OpusModel,
-			SonnetModel:     pc.SonnetModel,
+			ReasoningModel:  reasoningModel,
+			HaikuModel:      haikuModel,
+			OpusModel:       opusModel,
+			SonnetModel:     sonnetModel,
 			EnvVars:         pc.EnvVars,
 			ClaudeEnvVars:   pc.ClaudeEnvVars,
 			CodexEnvVars:    pc.CodexEnvVars,
 			OpenCodeEnvVars: pc.OpenCodeEnvVars,
+			ProxyURL:        pc.ProxyURL,
 			Healthy:         true,
-		})
+		}
+
+		// Create per-provider HTTP client if proxy is configured
+		if pc.ProxyURL != "" {
+			client, err := NewHTTPClientWithProxy(pc.ProxyURL, 10*time.Minute)
+			if err != nil {
+				pp.Logger.Printf("[%s] warning: failed to create proxy client: %v", name, err)
+			} else {
+				p.Client = client
+			}
+		}
+
+		providers = append(providers, p)
 	}
 
 	if len(providers) == 0 {

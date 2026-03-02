@@ -334,6 +334,46 @@ func TestBuildProvidersMissingConfigErrors(t *testing.T) {
 	}
 }
 
+// T005: Test that buildProviders (direct path) sets ProxyURL and creates per-provider Client.
+func TestBuildProvidersWithProxyURL(t *testing.T) {
+	setTestHome(t)
+	writeTestProvider(t, "proxied", &config.ProviderConfig{
+		BaseURL:   "https://api.example.com",
+		AuthToken: "tok1",
+		Model:     "claude-sonnet-4-5",
+		ProxyURL:  "socks5://proxy.example.com:1080",
+	})
+	writeTestProvider(t, "direct", &config.ProviderConfig{
+		BaseURL:   "https://api2.example.com",
+		AuthToken: "tok2",
+		Model:     "claude-sonnet-4-5",
+	})
+
+	providers, err := buildProviders([]string{"proxied", "direct"})
+	if err != nil {
+		t.Fatalf("buildProviders() error: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("expected 2 providers, got %d", len(providers))
+	}
+
+	// Proxied provider should have ProxyURL and non-nil Client
+	if providers[0].ProxyURL != "socks5://proxy.example.com:1080" {
+		t.Errorf("providers[0].ProxyURL = %q, want socks5://proxy.example.com:1080", providers[0].ProxyURL)
+	}
+	if providers[0].Client == nil {
+		t.Error("providers[0].Client should be non-nil for provider with ProxyURL")
+	}
+
+	// Direct provider should have empty ProxyURL and nil Client
+	if providers[1].ProxyURL != "" {
+		t.Errorf("providers[1].ProxyURL = %q, want empty", providers[1].ProxyURL)
+	}
+	if providers[1].Client != nil {
+		t.Error("providers[1].Client should be nil for provider without ProxyURL")
+	}
+}
+
 // --- validateProviderNames tests ---
 
 // mockStdin replaces stdinReader for the duration of the test.

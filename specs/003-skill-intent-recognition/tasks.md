@@ -53,14 +53,14 @@
 
 > **Write tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Write tests for SkillRegistry loading from config (load builtin + custom, merge, validate, skip invalid) in internal/bot/skill_test.go
-- [ ] T010 [P] [US1] Write tests for SkillRegistry hot-reload (config change triggers re-registration) in internal/bot/skill_test.go
+- [x] T009 [P] [US1] Write tests for SkillRegistry loading from config (load builtin + custom, merge, validate, skip invalid) in internal/bot/skill_test.go
+- [x] T010 [P] [US1] Write tests for SkillRegistry hot-reload (config change triggers re-registration) in internal/bot/skill_test.go
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implement LoadFromConfig on SkillRegistry: merge builtin + custom skills from SkillsConfig in internal/bot/skill.go (make T009 pass)
-- [ ] T012 [US1] Implement Reload on SkillRegistry: re-merge skills on config change in internal/bot/skill.go (make T010 pass)
-- [ ] T013 [US1] Integrate SkillRegistry into Gateway: init on startup, reload on config change in internal/bot/gateway.go
+- [x] T011 [US1] Implement LoadFromConfig on SkillRegistry: merge builtin + custom skills from SkillsConfig in internal/bot/skill.go (make T009 pass)
+- [x] T012 [US1] Implement Reload on SkillRegistry: re-merge skills on config change in internal/bot/skill.go (make T010 pass)
+- [x] T013 [US1] Integrate SkillRegistry into Gateway: init on startup, reload on config change in internal/bot/gateway.go
 
 **Checkpoint**: Skills load from config on startup, hot-reload works, `go test ./internal/bot/... -run TestSkill` passes
 
@@ -130,14 +130,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T034 [P] [US4] Write tests for multi-language keyword matching: zh keywords match Chinese input, en keywords match English input, mixed language input in internal/bot/matcher_test.go
-- [ ] T035 [P] [US4] Write tests for multi-language LLM fallback: Chinese natural language correctly classified in internal/bot/matcher_test.go
+- [x] T034 [P] [US4] Write tests for multi-language keyword matching: zh keywords match Chinese input, en keywords match English input, mixed language input in internal/bot/matcher_test.go
+- [x] T035 [P] [US4] Write tests for multi-language LLM fallback: Chinese natural language correctly classified in internal/bot/matcher_test.go
 
 ### Implementation for User Story 4
 
-- [ ] T036 [US4] Ensure builtin skills have comprehensive zh keyword coverage (review and expand Chinese synonyms) in internal/bot/builtin_skills.go
-- [ ] T037 [US4] Add language detection heuristic to local matcher for selecting keyword set in internal/bot/matcher.go (make T034 pass)
-- [ ] T038 [US4] Update LLM fallback prompt to include multi-language instruction and examples in internal/bot/matcher.go (make T035 pass)
+- [x] T036 [US4] Ensure builtin skills have comprehensive zh keyword coverage (review and expand Chinese synonyms) in internal/bot/builtin_skills.go
+- [x] T037 [US4] Add language detection heuristic to local matcher for selecting keyword set in internal/bot/matcher.go (make T034 pass)
+- [x] T038 [US4] Update LLM fallback prompt to include multi-language instruction and examples in internal/bot/matcher.go (make T035 pass)
 
 **Checkpoint**: "查看所有进程状态" → IntentQueryStatus, "帮我绑定到myproject" → IntentBind. `go test ./internal/bot/... -run TestMultiLang` passes
 
@@ -147,15 +147,15 @@
 
 **Purpose**: Coverage verification, edge cases, integration validation
 
-- [ ] T039 Verify test coverage ≥80% for internal/bot with `go test -cover ./internal/bot/`
-- [ ] T040 Verify test coverage ≥80% for internal/config with `go test -cover ./internal/config/`
-- [ ] T041 [P] Add edge case tests: short messages (emoji, single char), concurrent skill reload, multiple skills same confidence in internal/bot/matcher_test.go
-- [ ] T042 [P] Add edge case tests: LLM timeout fallback, invalid LLM response parsing in internal/bot/matcher_test.go
-- [ ] T043 [P] Add accuracy benchmark test: predefined test case set (≥20 cases covering all intents) verifying ≥85% correct recognition rate (SC-001) in internal/bot/matcher_test.go
-- [ ] T044 [P] Add latency benchmark test: verify local match ≤500ms for 95th percentile, LLM fallback ≤2s (SC-004) in internal/bot/matcher_test.go
-- [ ] T045 [P] Add frontend smoke tests for Skill management UI (skill list render, create form, test panel interaction) in internal/web/api_bot_skills_test.go
-- [ ] T046 Run full test suite `go test ./...` and fix any failures
-- [ ] T047 Run quickstart.md validation (dev daemon start, API smoke test)
+- [x] T039 Verify test coverage ≥80% for internal/bot with `go test -cover ./internal/bot/`
+- [x] T040 Verify test coverage ≥80% for internal/config with `go test -cover ./internal/config/`
+- [x] T041 [P] Add edge case tests: short messages (emoji, single char), concurrent skill reload, multiple skills same confidence in internal/bot/matcher_test.go
+- [x] T042 [P] Add edge case tests: LLM timeout fallback, invalid LLM response parsing in internal/bot/matcher_test.go
+- [x] T043 [P] Add accuracy benchmark test: predefined test case set (≥20 cases covering all intents) verifying ≥85% correct recognition rate (SC-001) in internal/bot/matcher_test.go
+- [x] T044 [P] Add latency benchmark test: verify local match ≤500ms for 95th percentile, LLM fallback ≤2s (SC-004) in internal/bot/matcher_test.go
+- [x] T045 [P] Add frontend smoke tests for Skill management UI (skill list render, create form, test panel interaction) in internal/web/api_bot_skills_test.go
+- [x] T046 Run full test suite `go test ./...` and fix any failures
+- [x] T047 Run quickstart.md validation (dev daemon start, API smoke test)
 
 ---
 

@@ -1870,3 +1870,88 @@ func TestIsRequestRelatedError(t *testing.T) {
 		})
 	}
 }
+
+// T013: Test that 502 response body includes per-provider failure details with elapsed time.
+func TestAllProvidersFailBodyFormat(t *testing.T) {
+	// Provider 1: returns 500 server error
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":"internal error"}`))
+	}))
+	defer backend1.Close()
+
+	// Provider 2: returns 429 rate limit
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(429)
+		w.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer backend2.Close()
+
+	u1, _ := url.Parse(backend1.URL)
+	u2, _ := url.Parse(backend2.URL)
+	providers := []*Provider{
+		{Name: "provider-alpha", BaseURL: u1, Token: "t1", Healthy: true},
+		{Name: "provider-beta", BaseURL: u2, Token: "t2", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+
+	body := w.Body.String()
+
+	// Body must mention each provider by name
+	if !strings.Contains(body, "provider-alpha") {
+		t.Errorf("502 body should mention provider-alpha, got:\n%s", body)
+	}
+	if !strings.Contains(body, "provider-beta") {
+		t.Errorf("502 body should mention provider-beta, got:\n%s", body)
+	}
+
+	// Body must contain status codes
+	if !strings.Contains(body, "500") {
+		t.Errorf("502 body should contain status code 500, got:\n%s", body)
+	}
+	if !strings.Contains(body, "429") {
+		t.Errorf("502 body should contain status code 429, got:\n%s", body)
+	}
+
+	// Body must contain elapsed time indicators (e.g., "42ms")
+	if !strings.Contains(body, "ms") {
+		t.Errorf("502 body should contain elapsed time in ms, got:\n%s", body)
+	}
+}
+
+// T013b: Test 502 body format with connection error (no status code).
+func TestAllProvidersFailConnectionError(t *testing.T) {
+	// Use a URL that will fail to connect
+	badURL, _ := url.Parse("http://127.0.0.1:1") // port 1 is unlikely to be listening
+	providers := []*Provider{
+		{Name: "broken-provider", BaseURL: badURL, Token: "t1", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "broken-provider") {
+		t.Errorf("502 body should mention broken-provider, got:\n%s", body)
+	}
+	if !strings.Contains(body, "error:") {
+		t.Errorf("502 body should contain 'error:' for connection failures, got:\n%s", body)
+	}
+	if !strings.Contains(body, "ms") {
+		t.Errorf("502 body should contain elapsed time in ms, got:\n%s", body)
+	}
+}

@@ -81,6 +81,7 @@ type providerFailure struct {
 	Name       string
 	StatusCode int
 	Body       string
+	Elapsed    time.Duration
 }
 
 type ProxyServer struct {
@@ -249,9 +250,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	errMsg.WriteString("all providers failed\n")
 	for _, f := range failures {
 		if f.StatusCode > 0 {
-			errMsg.WriteString(fmt.Sprintf("[%s] %d %s\n", f.Name, f.StatusCode, f.Body))
+			errMsg.WriteString(fmt.Sprintf("[%s] %d %s (%dms)\n", f.Name, f.StatusCode, f.Body, f.Elapsed.Milliseconds()))
 		} else {
-			errMsg.WriteString(fmt.Sprintf("[%s] error: %s\n", f.Name, f.Body))
+			errMsg.WriteString(fmt.Sprintf("[%s] error: %s (%dms)\n", f.Name, f.Body, f.Elapsed.Milliseconds()))
 		}
 	}
 
@@ -291,7 +292,9 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		} else {
 			s.Logger.Printf("[%s] trying %s %s", p.Name, r.Method, r.URL.Path)
 		}
+		start := time.Now()
 		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride, requestFormat)
+		elapsed := time.Since(start)
 		if err != nil {
 			// Check if client canceled the request - don't mark provider unhealthy
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -304,7 +307,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("request error: %v", err)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
 			s.logStructuredError(p.Name, r.Method, r.URL.Path, err, sessionID, clientType)
-			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error()})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error(), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
 		}
@@ -316,7 +319,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
-			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkAuthFailed()
 			continue
 		}
@@ -328,7 +331,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
-			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
 		}
@@ -344,7 +347,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
 				s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
-				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 				continue
 			}
 
@@ -352,7 +355,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
-			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody)})
+			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
 		}

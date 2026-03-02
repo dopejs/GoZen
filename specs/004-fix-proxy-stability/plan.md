@@ -21,8 +21,8 @@ Additionally: add model default fallbacks in daemon path to match the direct pat
 **Target Platform**: macOS, Linux (CLI + daemon)
 **Project Type**: CLI + daemon (reverse proxy with failover)
 **Performance Goals**: Failover latency <5s, daemon startup <5s
-**Constraints**: No breaking changes to config schema, no format changes to 502 errors
-**Scale/Scope**: 3 files modified (~50 lines changed) + 4 test gaps filled
+**Constraints**: No breaking changes to config schema, 502 errors stay plain text (content improved, format unchanged)
+**Scale/Scope**: 4 files modified (~70 lines changed) + 4 test gaps filled + 2 enhancement tasks
 
 ## Constitution Check
 

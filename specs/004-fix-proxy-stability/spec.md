@@ -86,8 +86,9 @@ Out of scope (real gaps but require significant infrastructure and don't address
 - **FR-003**: The proxy failover loop MUST attempt all configured providers before returning an error, regardless of individual provider failures (existing behavior — must be preserved).
 - **FR-004**: The proxy MUST always attempt the last provider in the chain even if it is marked unhealthy (existing behavior — must be preserved).
 - **FR-005**: Error responses from the proxy (when all providers fail) MUST include per-provider failure details (provider name, failure type).
-- **FR-006**: The system MUST detect and recover from stale daemon state (dead process with leftover PID file) on startup.
-- **FR-007**: The daemon MUST log all provider failover events with provider name, error details, and elapsed time.
+- **FR-006**: The system MUST detect and recover from stale daemon state (dead process with leftover PID file) on startup (existing behavior — must be preserved; already implemented in `internal/daemon/process_unix.go` with full test coverage in `internal/daemon/lifecycle_test.go`).
+- **FR-007**: The daemon MUST log all provider failover events with provider name, error details, and elapsed time (partially exists — provider name and error details are logged in `internal/proxy/server.go:tryProviders()`; elapsed time per attempt is NOT yet tracked).
+- **FR-008**: The daemon proxy MUST populate model default fallbacks (`ReasoningModel`, `HaikuModel`, `OpusModel`, `SonnetModel`) from the provider's `Model` field when not explicitly set, matching the `zen use` direct path behavior.
 
 ### Key Entities
 

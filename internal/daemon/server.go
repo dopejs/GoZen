@@ -323,6 +323,18 @@ func (d *Daemon) sessionCleanupLoop() {
 func (d *Daemon) onConfigReload() {
 	d.logger.Println("config file changed, reloading...")
 	config.ResetDefaultStore()
+
+	// Protect running ports: revert any port changes to preserve active sessions.
+	// Port changes only take effect on daemon restart.
+	if newProxy := config.GetProxyPort(); newProxy != d.proxyPort {
+		d.logger.Printf("WARNING: proxy_port changed %d→%d in config, reverting (active sessions depend on port %d; restart daemon to apply)", newProxy, d.proxyPort, d.proxyPort)
+		config.SetProxyPort(d.proxyPort)
+	}
+	if newWeb := config.GetWebPort(); newWeb != d.webPort {
+		d.logger.Printf("WARNING: web_port changed %d→%d in config, reverting (restart daemon to apply)", newWeb, d.webPort)
+		config.SetWebPort(d.webPort)
+	}
+
 	// Invalidate proxy cache so new config takes effect
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()

@@ -477,6 +477,67 @@ func TestDaemonOnConfigReload(t *testing.T) {
 	d.onConfigReload()
 }
 
+// Test that config reload reverts port changes to protect active sessions.
+func TestDaemonOnConfigReloadProtectsPorts(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	os.MkdirAll(filepath.Join(tmpDir, ".zen"), 0755)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Set the daemon's running ports
+	d := newTestDaemon()
+	d.proxyPort = 19841
+	d.webPort = 19840
+
+	// Simulate someone changing ports in the config
+	config.SetProxyPort(29841)
+	config.SetWebPort(29840)
+
+	// Verify ports are changed before reload
+	if config.GetProxyPort() != 29841 {
+		t.Fatalf("expected proxy port 29841, got %d", config.GetProxyPort())
+	}
+
+	// Config reload should revert the port changes
+	d.onConfigReload()
+
+	// Verify ports are reverted to daemon's running values
+	if got := config.GetProxyPort(); got != 19841 {
+		t.Errorf("proxy port should be reverted to 19841, got %d", got)
+	}
+	if got := config.GetWebPort(); got != 19840 {
+		t.Errorf("web port should be reverted to 19840, got %d", got)
+	}
+}
+
+// Test that config reload does not revert when ports haven't changed.
+func TestDaemonOnConfigReloadNoRevertWhenUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	os.MkdirAll(filepath.Join(tmpDir, ".zen"), 0755)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	d := newTestDaemon()
+	d.proxyPort = 19841
+	d.webPort = 19840
+
+	// Set config ports to same values as daemon
+	config.SetProxyPort(19841)
+	config.SetWebPort(19840)
+
+	// Config reload should be a no-op for ports
+	d.onConfigReload()
+
+	if got := config.GetProxyPort(); got != 19841 {
+		t.Errorf("proxy port should remain 19841, got %d", got)
+	}
+	if got := config.GetWebPort(); got != 19840 {
+		t.Errorf("web port should remain 19840, got %d", got)
+	}
+}
+
 func TestWriteDaemonPidError(t *testing.T) {
 	// Test with invalid path
 	oldHome := os.Getenv("HOME")

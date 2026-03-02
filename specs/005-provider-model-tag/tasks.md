@@ -63,7 +63,7 @@
 
 - [ ] T010 [US1] Write test for non-streaming Anthropic tag injection: enabled → tag prepended to first text block; disabled → body unmodified in `internal/proxy/server_test.go`
 - [ ] T011 [US1] Write test for non-streaming OpenAI tag injection: enabled → tag prepended to `choices[0].message.content`; disabled → body unmodified in `internal/proxy/server_test.go`
-- [ ] T012 [US1] Write test for edge cases: tool-use-only response (no tag), empty content array (no tag), non-2xx response (no tag) in `internal/proxy/server_test.go`
+- [ ] T012 [US1] Write test for edge cases: tool-use-only response (no tag), empty content array (no tag), non-2xx response (no tag), failover scenario (provider A fails → provider B succeeds → tag shows provider B's name and model) in `internal/proxy/server_test.go`
 
 ### Implementation for User Story 1
 
@@ -86,14 +86,15 @@
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
 - [ ] T016 [US2] Write test for Anthropic SSE tag injection: `message_start` → model extracted, first `content_block_delta` with `text_delta` → tag prepended in `internal/proxy/server_test.go`
-- [ ] T017 [US2] Write test for OpenAI SSE tag injection: first chunk → model extracted, first `delta.content` → tag prepended in `internal/proxy/server_test.go`
-- [ ] T018 [US2] Write test for SSE edge cases: tool-use-only stream (no tag), tag disabled (passthrough) in `internal/proxy/server_test.go`
+- [ ] T017 [US2] Write test for OpenAI Chat Completions SSE tag injection: first chunk → model extracted, first `delta.content` → tag prepended in `internal/proxy/server_test.go`
+- [ ] T018 [US2] Write test for OpenAI Responses API SSE tag injection (transformed from Anthropic via StreamTransformer): `response.created` → model extracted, first `response.output_text.delta` → tag prepended to `delta` field in `internal/proxy/server_test.go`
+- [ ] T019 [US2] Write test for SSE edge cases: tool-use-only stream (no tag), tag disabled (passthrough) in `internal/proxy/server_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Implement `tagInjectingReader` struct in `internal/proxy/server.go` — wraps an `io.Reader`, buffers SSE events, extracts model from early events (`message_start` / first OpenAI chunk), prepends tag to first text delta, then passes through remaining data
-- [ ] T020 [US2] Integrate `tagInjectingReader` into `copyResponse()` SSE streaming path in `internal/proxy/server.go` — wrap the reader (after optional StreamTransformer) when `config.GetShowProviderTag()` is enabled and status is 2xx
-- [ ] T021 [US2] Verify all US2 tests pass (T016, T017, T018)
+- [ ] T020 [US2] Implement `tagInjectingReader` struct in `internal/proxy/server.go` — wraps an `io.Reader`, buffers SSE events, extracts model from early events (`message_start` / first OpenAI chunk / `response.created`), prepends tag to first text delta, then passes through remaining data. Must handle three SSE variants: native Anthropic (`content_block_delta`), native OpenAI Chat Completions (`delta.content`), and transformed OpenAI Responses API (`response.output_text.delta`)
+- [ ] T021 [US2] Integrate `tagInjectingReader` into `copyResponse()` SSE streaming path in `internal/proxy/server.go` — wrap the reader AFTER optional StreamTransformer (ensuring FR-010 post-transformation ordering) when `config.GetShowProviderTag()` is enabled and status is 2xx
+- [ ] T022 [US2] Verify all US2 tests pass (T016, T017, T018, T019)
 
 **Checkpoint**: SSE streaming tag injection works for both Anthropic and OpenAI formats, composable with existing StreamTransformer
 
@@ -109,14 +110,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T022 [US3] Write test for GeneralSettings toggle rendering and save behavior in `web/src/hooks/use-settings.test.tsx` (verify API call includes `show_provider_tag`)
+- [ ] T023 [US3] Write test for GeneralSettings component: verify toggle renders with default OFF, toggling ON and saving sends `show_provider_tag: true` to API in `web/src/pages/settings/tabs/GeneralSettings.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] Add `show_provider_tag?: boolean` to `Settings` interface in `web/src/types/api.ts`
-- [ ] T024 [P] [US3] Add translation keys for "Show provider info in responses" label and description in `web/src/i18n/locales/en.json`, `zh-CN.json`, `zh-TW.json`, `es.json`, `ja.json`, `ko.json`
-- [ ] T025 [US3] Add Switch toggle for `show_provider_tag` in `web/src/pages/settings/tabs/GeneralSettings.tsx` — read from settings query, include in save mutation
-- [ ] T026 [US3] Verify US3 tests pass and toggle works in dev Web UI at `http://localhost:29840`
+- [ ] T024 [US3] Add `show_provider_tag?: boolean` to `Settings` interface in `web/src/types/api.ts`
+- [ ] T025 [P] [US3] Add translation keys for "Show provider info in responses" label and description in `web/src/i18n/locales/en.json`, `zh-CN.json`, `zh-TW.json`, `es.json`, `ja.json`, `ko.json`
+- [ ] T026 [US3] Add Switch toggle for `show_provider_tag` in `web/src/pages/settings/tabs/GeneralSettings.tsx` — read from settings query, include in save mutation
+- [ ] T027 [US3] Verify US3 tests pass and toggle works in dev Web UI at `http://localhost:29840`
 
 **Checkpoint**: Web UI toggle controls the tag feature, persists across page reloads, takes effect without daemon restart
 
@@ -124,14 +125,15 @@
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: Coverage verification and full regression
+**Purpose**: Coverage verification, latency validation, and full regression
 
-- [ ] T027 Run full test suite `go test ./...` — all pass
-- [ ] T028 [P] Check coverage for `internal/proxy/` — target ≥80%
-- [ ] T029 [P] Check coverage for `internal/config/` — target ≥80%
-- [ ] T030 [P] Check coverage for `internal/web/` — target ≥80%
-- [ ] T031 Run Web UI tests `cd web && npm run test` — all pass
-- [ ] T032 Run quickstart.md manual verification steps (if dev environment available)
+- [ ] T028 Run full test suite `go test ./...` — all pass
+- [ ] T029 [P] Check coverage for `internal/proxy/` — target ≥80%
+- [ ] T030 [P] Check coverage for `internal/config/` — target ≥80%
+- [ ] T031 [P] Check coverage for `internal/web/` — target ≥80%
+- [ ] T032 Run Web UI tests `cd web && npm run test` — all pass
+- [ ] T033 Verify tag injection latency: add a Go benchmark test for `injectProviderTag()` and `tagInjectingReader` in `internal/proxy/server_test.go` — confirm <5ms per SC-003
+- [ ] T034 Run quickstart.md manual verification steps (if dev environment available)
 
 ---
 
@@ -165,7 +167,7 @@
 - T006, T007, T008 run sequentially (same package, interdependent)
 - US1 and US3 can run in parallel after Foundational (different files)
 - US2 depends on US1 (same file, builds on helper)
-- T028, T029, T030 can run in parallel (read-only coverage checks)
+- T029, T030, T031 can run in parallel (read-only coverage checks)
 
 ---
 
@@ -186,10 +188,10 @@ Task T006 → T007 → T008 → T009 (verify)
 ```bash
 # US1 and US3 can run in parallel (different files):
 Worker A: T010 → T011 → T012 → T013 → T014 → T015 (server.go)
-Worker B: T022 → T023 → T024 → T025 → T026 (web/src/)
+Worker B: T023 → T024 → T025 → T026 → T027 (web/src/)
 
 # US2 follows US1 (same file):
-After Worker A: T016 → T017 → T018 → T019 → T020 → T021
+After Worker A: T016 → T017 → T018 → T019 → T020 → T021 → T022
 ```
 
 ---
@@ -211,7 +213,7 @@ After Worker A: T016 → T017 → T018 → T019 → T020 → T021
 3. US1 → Non-streaming tag injection → Core value delivered (MVP!)
 4. US2 → SSE streaming tag injection → Full proxy coverage (most real-world usage)
 5. US3 → Web UI toggle → User-friendly control
-6. Polish → Coverage verified, full regression clean
+6. Polish → Coverage verified, latency validated, full regression clean
 
 ### Recommended Execution Order
 
@@ -227,11 +229,13 @@ Since US1 and US2 share `server.go`:
 
 ## Notes
 
-- Total: 32 tasks (2 setup, 7 foundational, 6 US1, 6 US2, 5 US3, 6 polish)
+- Total: 34 tasks (2 setup, 7 foundational, 6 US1, 7 US2, 5 US3, 7 polish)
 - All changes in existing files — no new files created
 - ~150-200 lines of production code across ~8 files (5 Go + 3 Web UI)
-- TDD enforced: tests T003-T005, T010-T012, T016-T018, T022 must fail before implementation
+- TDD enforced: tests T003-T005, T010-T012, T016-T019, T023 must fail before implementation
 - Config version bump 10→11 with no-op migration (boolean defaults to false)
 - `*bool` in settingsRequest to distinguish "not sent" from "set to false"
-- FR-010 compliance: tag injection happens AFTER format transformation in `copyResponse()`
-- FR-008 compliance: model extracted from response body (reflects actual upstream model)
+- FR-010 compliance: tag injection happens AFTER format transformation in `copyResponse()` — explicitly stated in T021
+- FR-008 compliance: model extracted from response body (reflects actual upstream model); failover tested in T012
+- Three SSE format variants explicitly covered: native Anthropic, native OpenAI Chat Completions, transformed OpenAI Responses API (T016, T017, T018)
+- SC-003 latency validated via benchmark in T033

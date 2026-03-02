@@ -87,14 +87,19 @@ After format transformation in `copyResponse()`:
 ### SSE Streaming Tag Injection
 
 After optional StreamTransformer in `copyResponse()`:
-1. Wrap the reader with a tag-injecting reader
-2. The wrapper buffers SSE events, extracting the model from early events (`message_start` for Anthropic, first chunk for OpenAI)
+1. Wrap the reader with a tag-injecting reader (AFTER StreamTransformer to comply with FR-010)
+2. The wrapper buffers SSE events, extracting the model from early events (`message_start` for Anthropic, first chunk for OpenAI, `response.created` for Responses API)
 3. On first text delta event, prepend tag to the text content
 4. Pass all subsequent events through unmodified
+5. Must handle three SSE format variants:
+   - **Native Anthropic**: `content_block_delta` with `text_delta` type
+   - **Native OpenAI Chat Completions**: `delta.content` in chunk data
+   - **Transformed OpenAI Responses API**: `response.output_text.delta` with `delta` field
 
 ### Model Extraction
 
 - **Non-streaming**: Extract `model` field from response body JSON (both Anthropic and OpenAI include it)
 - **Streaming Anthropic**: Extract from `message_start` event's `message.model`
-- **Streaming OpenAI**: Extract from first chunk's `model` field
+- **Streaming OpenAI Chat Completions**: Extract from first chunk's `model` field
+- **Streaming OpenAI Responses API**: Extract from `response.created` event's `response.model`
 - Provider name always from `p.Name`

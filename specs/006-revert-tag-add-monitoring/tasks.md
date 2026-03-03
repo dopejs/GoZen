@@ -123,17 +123,17 @@
 
 ### Tests for User Story 3 (TDD - Write First)
 
-- [ ] T043 [P] [US3] Write test in internal/web/api_requests_test.go: TestGetRequestDetail_Success (verify single request detail API)
-- [ ] T044 [P] [US3] Write test in internal/web/api_requests_test.go: TestGetRequestDetail_NotFound (verify 404 for invalid ID)
+- [x] T043 [P] [US3] Write test in internal/web/api_requests_test.go: TestGetRequestDetail_Success (verify single request detail API)
+- [x] T044 [P] [US3] Write test in internal/web/api_requests_test.go: TestGetRequestDetail_NotFound (verify 404 for invalid ID)
 
 ### Implementation for User Story 3
 
-- [ ] T045 [P] [US3] Implement GET /api/v1/monitoring/requests/:id handler in internal/web/api_requests.go
-- [ ] T046 [P] [US3] Add GetByID() method to RequestMonitor in internal/proxy/request_monitor.go
-- [ ] T047 [P] [US3] Create detail modal HTML in internal/web/static/monitoring.html
-- [ ] T048 [P] [US3] Implement detail view rendering in internal/web/static/monitoring.js (show failover chain, token breakdown)
-- [ ] T049 [P] [US3] Add click handler to table rows in internal/web/static/monitoring.js
-- [ ] T050 [US3] Run tests: go test ./internal/proxy ./internal/web
+- [x] T045 [P] [US3] Implement GET /api/v1/monitoring/requests/:id handler in internal/web/api_requests.go
+- [x] T046 [P] [US3] Add GetByID() method to RequestMonitor in internal/proxy/request_monitor.go
+- [x] T047 [P] [US3] Add requestsApi.get() method in web/src/lib/api.ts
+- [x] T048 [P] [US3] Implement detail modal in web/src/pages/monitoring/index.tsx (show failover chain, token breakdown)
+- [x] T049 [P] [US3] Add click handler to table rows and i18n translations
+- [x] T050 [US3] Run tests: go test ./internal/proxy ./internal/web
 - [ ] T051 [US3] Manual verification: click request, verify detail modal shows all fields per quickstart.md scenarios
 
 **Checkpoint**: All P1 and P2 user stories should now be independently functional

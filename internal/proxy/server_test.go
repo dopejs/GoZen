@@ -2307,3 +2307,264 @@ func TestTagInjectionEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+// T016: Test Anthropic SSE tag injection
+func TestStreamingAnthropicTagInjection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+	config.SetShowProviderTag(true)
+
+	// Build Anthropic SSE stream with message_start and content_block_delta
+	sseStream := "" +
+		"event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
+		"event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}` + "\n\n" +
+		"event: content_block_stop\n" +
+		`data: {"type":"content_block_stop","index":0}` + "\n\n" +
+		"event: message_delta\n" +
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}` + "\n\n" +
+		"event: message_stop\n" +
+		`data: {"type":"message_stop"}` + "\n\n"
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		w.Write([]byte(sseStream))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{Name: "my-provider", BaseURL: u, Token: "t", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+
+	// The first content_block_delta should have the tag prepended to the text
+	expectedTag := "[provider: my-provider, model: claude-sonnet-4-20250514]\\n"
+	// Check that tag text appears in the first text_delta
+	if !strings.Contains(body, `[provider: my-provider, model: claude-sonnet-4-20250514]\n`) &&
+		!strings.Contains(body, `[provider: my-provider, model: claude-sonnet-4-20250514]`) {
+		t.Errorf("SSE stream should contain provider tag, got:\n%s\nExpected tag: %s", body, expectedTag)
+	}
+
+	// Second delta should NOT have the tag
+	// Count occurrences of the provider tag
+	tagCount := strings.Count(body, "[provider: my-provider")
+	if tagCount != 1 {
+		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
+	}
+}
+
+// T017: Test OpenAI Chat Completions SSE tag injection
+func TestStreamingOpenAIChatCompletionsTagInjection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+	config.SetShowProviderTag(true)
+
+	// Build OpenAI Chat Completions SSE stream
+	sseStream := "" +
+		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}` + "\n\n" +
+		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}` + "\n\n" +
+		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}` + "\n\n" +
+		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		w.Write([]byte(sseStream))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{Name: "openai-prov", BaseURL: u, Token: "t", Type: "openai", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+
+	// Tag should appear in the first content delta
+	if !strings.Contains(body, "[provider: openai-prov, model: gpt-4]") {
+		t.Errorf("SSE stream should contain provider tag, got:\n%s", body)
+	}
+
+	// Tag should appear exactly once
+	tagCount := strings.Count(body, "[provider: openai-prov")
+	if tagCount != 1 {
+		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
+	}
+}
+
+// T018: Test OpenAI Responses API SSE tag injection (transformed from Anthropic)
+func TestStreamingOpenAIResponsesAPITagInjection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+	config.SetShowProviderTag(true)
+
+	// Backend sends Anthropic SSE, client requests OpenAI Responses API format
+	sseStream := "" +
+		"event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
+		"event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
+		"event: content_block_stop\n" +
+		`data: {"type":"content_block_stop","index":0}` + "\n\n" +
+		"event: message_delta\n" +
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}` + "\n\n" +
+		"event: message_stop\n" +
+		`data: {"type":"message_stop"}` + "\n\n"
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		w.Write([]byte(sseStream))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	// Anthropic provider but client requests OpenAI format via /v1/responses endpoint
+	providers := []*Provider{{Name: "claude-proxy", BaseURL: u, Token: "t", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	// Request using OpenAI Responses API format (triggers Anthropic→OpenAI transformation)
+	req := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"input":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+
+	// After transformation, the output should contain the provider tag
+	if !strings.Contains(body, "[provider: claude-proxy, model: claude-sonnet-4-20250514]") {
+		t.Errorf("Responses API SSE stream should contain provider tag, got:\n%s", body)
+	}
+
+	tagCount := strings.Count(body, "[provider: claude-proxy")
+	if tagCount != 1 {
+		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
+	}
+}
+
+// T019: Test SSE streaming edge cases
+func TestStreamingTagInjectionEdgeCases(t *testing.T) {
+	t.Run("tag disabled (passthrough)", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		config.ResetDefaultStore()
+		t.Cleanup(func() { config.ResetDefaultStore() })
+		config.SetShowProviderTag(false)
+
+		sseStream := "" +
+			"event: message_start\n" +
+			`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514"}}` + "\n\n" +
+			"event: content_block_delta\n" +
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
+			"event: message_stop\n" +
+			`data: {"type":"message_stop"}` + "\n\n"
+
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			w.Write([]byte(sseStream))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		body := w.Body.String()
+		if strings.Contains(body, "[provider:") {
+			t.Errorf("tag should NOT appear when disabled, got:\n%s", body)
+		}
+	})
+
+	t.Run("tool-use-only stream (no tag)", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		config.ResetDefaultStore()
+		t.Cleanup(func() { config.ResetDefaultStore() })
+		config.SetShowProviderTag(true)
+
+		// Stream with only tool_use content blocks, no text deltas
+		sseStream := "" +
+			"event: message_start\n" +
+			`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514"}}` + "\n\n" +
+			"event: content_block_start\n" +
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"get_weather"}}` + "\n\n" +
+			"event: content_block_delta\n" +
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}` + "\n\n" +
+			"event: content_block_stop\n" +
+			`data: {"type":"content_block_stop","index":0}` + "\n\n" +
+			"event: message_stop\n" +
+			`data: {"type":"message_stop"}` + "\n\n"
+
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			w.Write([]byte(sseStream))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		body := w.Body.String()
+		if strings.Contains(body, "[provider:") {
+			t.Errorf("tag should NOT appear for tool-use-only stream, got:\n%s", body)
+		}
+	})
+}

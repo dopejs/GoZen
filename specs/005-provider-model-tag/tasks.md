@@ -85,16 +85,16 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T016 [US2] Write test for Anthropic SSE tag injection: `message_start` → model extracted, first `content_block_delta` with `text_delta` → tag prepended in `internal/proxy/server_test.go`
-- [ ] T017 [US2] Write test for OpenAI Chat Completions SSE tag injection: first chunk → model extracted, first `delta.content` → tag prepended in `internal/proxy/server_test.go`
-- [ ] T018 [US2] Write test for OpenAI Responses API SSE tag injection (transformed from Anthropic via StreamTransformer): `response.created` → model extracted, first `response.output_text.delta` → tag prepended to `delta` field in `internal/proxy/server_test.go`
-- [ ] T019 [US2] Write test for SSE edge cases: tool-use-only stream (no tag), tag disabled (passthrough) in `internal/proxy/server_test.go`
+- [x] T016 [US2] Write test for Anthropic SSE tag injection: `message_start` → model extracted, first `content_block_delta` with `text_delta` → tag prepended in `internal/proxy/server_test.go`
+- [x] T017 [US2] Write test for OpenAI Chat Completions SSE tag injection: first chunk → model extracted, first `delta.content` → tag prepended in `internal/proxy/server_test.go`
+- [x] T018 [US2] Write test for OpenAI Responses API SSE tag injection (transformed from Anthropic via StreamTransformer): `response.created` → model extracted, first `response.output_text.delta` → tag prepended to `delta` field in `internal/proxy/server_test.go`
+- [x] T019 [US2] Write test for SSE edge cases: tool-use-only stream (no tag), tag disabled (passthrough) in `internal/proxy/server_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Implement `tagInjectingReader` struct in `internal/proxy/server.go` — wraps an `io.Reader`, buffers SSE events, extracts model from early events (`message_start` / first OpenAI chunk / `response.created`), prepends tag to first text delta, then passes through remaining data. Must handle three SSE variants: native Anthropic (`content_block_delta`), native OpenAI Chat Completions (`delta.content`), and transformed OpenAI Responses API (`response.output_text.delta`)
-- [ ] T021 [US2] Integrate `tagInjectingReader` into `copyResponse()` SSE streaming path in `internal/proxy/server.go` — wrap the reader AFTER optional StreamTransformer (ensuring FR-010 post-transformation ordering) when `config.GetShowProviderTag()` is enabled and status is 2xx
-- [ ] T022 [US2] Verify all US2 tests pass (T016, T017, T018, T019)
+- [x] T020 [US2] Implement `tagInjectingReader` struct in `internal/proxy/server.go` — wraps an `io.Reader`, buffers SSE events, extracts model from early events (`message_start` / first OpenAI chunk / `response.created`), prepends tag to first text delta, then passes through remaining data. Must handle three SSE variants: native Anthropic (`content_block_delta`), native OpenAI Chat Completions (`delta.content`), and transformed OpenAI Responses API (`response.output_text.delta`)
+- [x] T021 [US2] Integrate `tagInjectingReader` into `copyResponse()` SSE streaming path in `internal/proxy/server.go` — wrap the reader AFTER optional StreamTransformer (ensuring FR-010 post-transformation ordering) when `config.GetShowProviderTag()` is enabled and status is 2xx
+- [x] T022 [US2] Verify all US2 tests pass (T016, T017, T018, T019)
 
 **Checkpoint**: SSE streaming tag injection works for both Anthropic and OpenAI formats, composable with existing StreamTransformer
 

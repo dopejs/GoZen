@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -528,6 +529,11 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 			s.Logger.Printf("[%s] transforming SSE stream: %s → %s", p.Name, providerFormat, requestFormat)
 		}
 
+		// Inject provider/model tag into SSE stream if enabled (AFTER transformation per FR-010)
+		if config.GetShowProviderTag() && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			reader = newTagInjectingReader(reader, p.Name)
+		}
+
 		buf := make([]byte, 4096)
 		for {
 			n, err := reader.Read(buf)
@@ -649,6 +655,180 @@ func injectProviderTag(body []byte, providerName string, clientFormat string) []
 	}
 
 	return nil
+}
+
+// tagInjectingReader wraps an io.Reader of SSE events, extracts the model from
+// early events, and prepends [provider: <name>, model: <model>]\n to the first
+// text delta. Supports Anthropic, OpenAI Chat Completions, and OpenAI Responses
+// API SSE formats. After injection (or when no text delta is found), all
+// remaining data passes through unmodified.
+type tagInjectingReader struct {
+	source       io.Reader
+	scanner      *bufio.Scanner
+	providerName string
+	model        string
+	injected     bool
+	buf          bytes.Buffer
+	done         bool
+}
+
+func newTagInjectingReader(source io.Reader, providerName string) *tagInjectingReader {
+	scanner := bufio.NewScanner(source)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	return &tagInjectingReader{
+		source:       source,
+		scanner:      scanner,
+		providerName: providerName,
+	}
+}
+
+func (t *tagInjectingReader) Read(p []byte) (int, error) {
+	// If we have buffered data, return it
+	if t.buf.Len() > 0 {
+		return t.buf.Read(p)
+	}
+
+	if t.done {
+		return 0, io.EOF
+	}
+
+	// Read and process SSE events line by line
+	for t.buf.Len() == 0 {
+		if !t.scanner.Scan() {
+			t.done = true
+			if err := t.scanner.Err(); err != nil {
+				return 0, err
+			}
+			return 0, io.EOF
+		}
+
+		line := t.scanner.Text()
+
+		if !t.injected {
+			processed := t.processLine(line)
+			t.buf.WriteString(processed)
+			t.buf.WriteString("\n")
+		} else {
+			t.buf.WriteString(line)
+			t.buf.WriteString("\n")
+		}
+	}
+
+	return t.buf.Read(p)
+}
+
+// processLine handles a single SSE line, extracting model info and injecting
+// the tag into the first text delta event.
+func (t *tagInjectingReader) processLine(line string) string {
+	// Extract model from event data lines
+	if strings.HasPrefix(line, "data: ") {
+		data := strings.TrimPrefix(line, "data: ")
+
+		// Skip [DONE] signal
+		if data == "[DONE]" {
+			return line
+		}
+
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			return line
+		}
+
+		// Extract model from various SSE format events
+		t.extractModel(event)
+
+		// Try to inject tag into first text delta
+		if modified := t.tryInjectTag(event); modified != "" {
+			return "data: " + modified
+		}
+	}
+
+	return line
+}
+
+// extractModel extracts the model string from known SSE event formats.
+func (t *tagInjectingReader) extractModel(event map[string]interface{}) {
+	if t.model != "" {
+		return
+	}
+
+	// Anthropic: message_start → message.model
+	if msg, ok := event["message"].(map[string]interface{}); ok {
+		if model, ok := msg["model"].(string); ok && model != "" {
+			t.model = model
+			return
+		}
+	}
+
+	// OpenAI Chat Completions: first chunk → model
+	if model, ok := event["model"].(string); ok && model != "" {
+		t.model = model
+		return
+	}
+
+	// OpenAI Responses API: response.created → response.model
+	if resp, ok := event["response"].(map[string]interface{}); ok {
+		if model, ok := resp["model"].(string); ok && model != "" {
+			t.model = model
+			return
+		}
+	}
+}
+
+// tryInjectTag attempts to inject the tag into a text delta event.
+// Returns the modified JSON string if injection occurred, empty string otherwise.
+func (t *tagInjectingReader) tryInjectTag(event map[string]interface{}) string {
+	if t.injected || t.model == "" {
+		return ""
+	}
+
+	tag := fmt.Sprintf("[provider: %s, model: %s]\\n", t.providerName, t.model)
+
+	// Anthropic: content_block_delta with text_delta
+	if delta, ok := event["delta"].(map[string]interface{}); ok {
+		if deltaType, ok := delta["type"].(string); ok && deltaType == "text_delta" {
+			if text, ok := delta["text"].(string); ok {
+				delta["text"] = tag + text
+				event["delta"] = delta
+				t.injected = true
+				result, _ := json.Marshal(event)
+				return string(result)
+			}
+		}
+	}
+
+	// OpenAI Chat Completions: choices[0].delta.content
+	if choices, ok := event["choices"].([]interface{}); ok && len(choices) > 0 {
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		if content, ok := delta["content"].(string); ok && content != "" {
+			delta["content"] = tag + content
+			choice["delta"] = delta
+			choices[0] = choice
+			event["choices"] = choices
+			t.injected = true
+			result, _ := json.Marshal(event)
+			return string(result)
+		}
+	}
+
+	// OpenAI Responses API: response.output_text.delta
+	if eventType, ok := event["type"].(string); ok && eventType == "response.output_text.delta" {
+		if deltaText, ok := event["delta"].(string); ok {
+			event["delta"] = tag + deltaText
+			t.injected = true
+			result, _ := json.Marshal(event)
+			return string(result)
+		}
+	}
+
+	return ""
 }
 
 // applyModelOverride replaces the model in the request body with the given override.

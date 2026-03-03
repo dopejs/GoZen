@@ -148,18 +148,18 @@
 
 ### Tests for User Story 4 (TDD - Write First)
 
-- [ ] T052 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByProvider
-- [ ] T053 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByStatus
-- [ ] T054 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByTimeRange
-- [ ] T055 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByModel
+- [x] T052 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByProvider (already existed)
+- [x] T053 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByStatus
+- [x] T054 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByTimeRange
+- [x] T055 [P] [US4] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_FilterByModel
 
 ### Implementation for User Story 4
 
-- [ ] T056 [P] [US4] Implement filter logic in GetRecent() method in internal/proxy/request_monitor.go
-- [ ] T057 [P] [US4] Add filter UI controls (dropdowns, date pickers) in internal/web/static/monitoring.html
-- [ ] T058 [P] [US4] Implement filter state management in internal/web/static/monitoring.js
-- [ ] T059 [P] [US4] Update API call to include filter query params in internal/web/static/monitoring.js
-- [ ] T060 [US4] Run tests: go test ./internal/proxy
+- [x] T056 [P] [US4] Implement filter logic in GetRecent() method in internal/proxy/request_monitor.go (already implemented)
+- [x] T057 [P] [US4] Add model filter UI control (dropdown) in web/src/pages/monitoring/index.tsx
+- [x] T058 [P] [US4] Implement filter state management in web/src/pages/monitoring/index.tsx
+- [x] T059 [P] [US4] Update API call to include model filter query param in web/src/pages/monitoring/index.tsx
+- [x] T060 [US4] Run tests: go test ./internal/proxy
 - [ ] T061 [US4] Manual verification: apply filters, verify table updates correctly per quickstart.md test scenarios
 
 **Checkpoint**: All user stories (P1, P2, P3) should now be independently functional

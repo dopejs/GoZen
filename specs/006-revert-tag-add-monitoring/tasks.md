@@ -87,28 +87,28 @@
 
 ### Tests for User Story 2 (TDD - Write First)
 
-- [ ] T023 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_Add (verify buffer append and LRU eviction)
-- [ ] T024 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_GetRecent (verify reverse chronological order)
-- [ ] T025 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_ThreadSafety (concurrent Add/GetRecent)
-- [ ] T026 [P] [US2] Write test in internal/web/api_requests_test.go: TestGetRequests_Success (verify API returns JSON with correct structure)
-- [ ] T027 [P] [US2] Write test in internal/web/api_requests_test.go: TestGetRequests_WithFilters (verify provider/status/time filters work)
+- [x] T023 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_Add (verify buffer append and LRU eviction)
+- [x] T024 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_GetRecent (verify reverse chronological order)
+- [x] T025 [P] [US2] Write test in internal/proxy/request_monitor_test.go: TestRequestMonitor_ThreadSafety (concurrent Add/GetRecent)
+- [x] T026 [P] [US2] Write test in internal/web/api_requests_test.go: TestGetRequests_Success (verify API returns JSON with correct structure)
+- [x] T027 [P] [US2] Write test in internal/web/api_requests_test.go: TestGetRequests_WithFilters (verify provider/status/time filters work)
 
 ### Implementation for User Story 2
 
-- [ ] T028 [P] [US2] Implement NewRequestMonitor() constructor in internal/proxy/request_monitor.go
-- [ ] T029 [P] [US2] Implement Add() method with LRU eviction in internal/proxy/request_monitor.go
-- [ ] T030 [P] [US2] Implement GetRecent() method with filtering in internal/proxy/request_monitor.go
-- [ ] T031 [P] [US2] Implement global request monitor singleton (GetGlobalRequestMonitor, InitGlobalRequestMonitor) in internal/proxy/request_monitor.go
-- [ ] T032 [US2] Add request capture in ServeHTTP() in internal/proxy/server.go: extract session ID, client type, model, request size
-- [ ] T033 [US2] Add request capture in tryProviders() in internal/proxy/server.go: track provider attempts and failures
-- [ ] T034 [US2] Add request finalization in recordUsageAndMetrics() in internal/proxy/server.go: calculate cost, add to monitor
-- [ ] T035 [P] [US2] Implement GET /api/v1/monitoring/requests handler in internal/web/api_requests.go
-- [ ] T036 [P] [US2] Register /api/v1/requests route in internal/web/server.go
-- [ ] T037 [P] [US2] Create monitoring page HTML in internal/web/static/monitoring.html
-- [ ] T038 [P] [US2] Implement request table rendering in internal/web/static/monitoring.js
-- [ ] T039 [P] [US2] Implement polling logic (5s interval) in internal/web/static/monitoring.js
-- [ ] T040 [P] [US2] Add "Requests" navigation link in internal/web/static/index.html or internal/web/static/app.js
-- [ ] T041 [US2] Run all tests: go test ./internal/proxy ./internal/web
+- [x] T028 [P] [US2] Implement NewRequestMonitor() constructor in internal/proxy/request_monitor.go
+- [x] T029 [P] [US2] Implement Add() method with LRU eviction in internal/proxy/request_monitor.go
+- [x] T030 [P] [US2] Implement GetRecent() method with filtering in internal/proxy/request_monitor.go
+- [x] T031 [P] [US2] Implement global request monitor singleton (GetGlobalRequestMonitor, InitGlobalRequestMonitor) in internal/proxy/request_monitor.go
+- [x] T032 [US2] Add request capture in ServeHTTP() in internal/proxy/server.go: extract session ID, client type, model, request size
+- [x] T033 [US2] Add request capture in tryProviders() in internal/proxy/server.go: track provider attempts and failures
+- [x] T034 [US2] Add request finalization in recordUsageAndMetrics() in internal/proxy/server.go: calculate cost, add to monitor
+- [x] T035 [P] [US2] Implement GET /api/v1/monitoring/requests handler in internal/web/api_requests.go
+- [x] T036 [P] [US2] Register /api/v1/requests route in internal/web/server.go
+- [x] T037 [P] [US2] Create monitoring page HTML in internal/web/static/monitoring.html
+- [x] T038 [P] [US2] Implement request table rendering in internal/web/static/monitoring.js
+- [x] T039 [P] [US2] Implement polling logic (5s interval) in internal/web/static/monitoring.js
+- [x] T040 [P] [US2] Add "Requests" navigation link in internal/web/static/index.html or internal/web/static/app.js
+- [x] T041 [US2] Run all tests: go test ./internal/proxy ./internal/web
 - [ ] T042 [US2] Manual verification per quickstart.md Part 2 & 3: send requests, check API, check Web UI, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - tag removed, monitoring page functional

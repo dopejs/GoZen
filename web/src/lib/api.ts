@@ -2,6 +2,7 @@ import type {
   Provider,
   Profile,
   LogsResponse,
+  RequestsResponse,
   UsageSummary,
   HourlyUsage,
   HourlyUsageByDimension,
@@ -132,6 +133,28 @@ export const logsApi = {
     if (params?.limit) searchParams.set('limit', params.limit.toString())
     const query = searchParams.toString()
     return request<LogsResponse>(`/logs${query ? `?${query}` : ''}`)
+  },
+}
+
+// Request monitoring API
+export const requestsApi = {
+  list: (params?: {
+    provider?: string
+    session?: string
+    model?: string
+    status_min?: number
+    status_max?: number
+    limit?: number
+  }) => {
+    const searchParams = new URLSearchParams()
+    if (params?.provider) searchParams.set('provider', params.provider)
+    if (params?.session) searchParams.set('session', params.session)
+    if (params?.model) searchParams.set('model', params.model)
+    if (params?.status_min) searchParams.set('status_min', params.status_min.toString())
+    if (params?.status_max) searchParams.set('status_max', params.status_max.toString())
+    if (params?.limit) searchParams.set('limit', params.limit.toString())
+    const query = searchParams.toString()
+    return request<RequestsResponse>(`/monitoring/requests${query ? `?${query}` : ''}`)
   },
 }
 

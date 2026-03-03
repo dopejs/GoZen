@@ -106,6 +106,40 @@ export interface LogsResponse {
   providers: string[]
 }
 
+// Request monitoring types
+export interface ProviderAttempt {
+  provider: string
+  status_code: number
+  error_message?: string
+  duration_ms: number
+  skipped?: boolean
+  skip_reason?: string
+}
+
+export interface RequestRecord {
+  id: string
+  timestamp: string
+  session_id: string
+  client_type: string
+  provider: string
+  model: string
+  request_format: string
+  status_code: number
+  duration_ms: number
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+  request_size: number
+  failover_chain?: ProviderAttempt[]
+  error_message?: string
+}
+
+export interface RequestsResponse {
+  requests: RequestRecord[]
+  total: number
+  limit: number
+}
+
 // Usage types
 export interface UsageSummary {
   total_requests: number

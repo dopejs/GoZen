@@ -27,6 +27,7 @@
     "providers": "Providers",
     "profiles": "Profiles",
     "logs": "Logs",
+    "monitoring": "Monitoring",
     "usage": "Usage",
     "settings": "Settings",
     "dashboard": "Dashboard",
@@ -149,6 +150,24 @@
     "errorsOnly": "Errors Only",
     "allProviders": "All Providers",
     "clearFilters": "Clear Filters"
+  },
+  "monitoring": {
+    "title": "Request Monitoring",
+    "description": "Monitor API requests in real-time",
+    "requests": "Requests",
+    "timestamp": "Timestamp",
+    "provider": "Provider",
+    "model": "Model",
+    "status": "Status",
+    "duration": "Duration",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "noRequests": "No requests available",
+    "autoRefresh": "Auto Refresh",
+    "allProviders": "All Providers",
+    "allStatus": "All Status",
+    "successOnly": "Success Only",
+    "errorsOnly": "Errors Only"
   },
   "usage": {
     "title": "Usage",

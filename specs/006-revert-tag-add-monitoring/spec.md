@@ -1,6 +1,6 @@
 # Feature Specification: Revert Provider Tag & Add Request Monitoring UI
 
-**Feature Branch**: `001-revert-tag-add-monitoring`
+**Feature Branch**: `006-revert-tag-add-monitoring`
 **Created**: 2026-03-03
 **Status**: Draft
 **Input**: User description: "撤销 005-provider-model-tag 功能（该功能通过在响应内容中注入 provider tag 导致了持久化污染和 Bedrock API 错误），并实现 Web UI 实时请求监控页面，让用户可以在浏览器中查看每个请求使用的 provider、model、耗时、token 等信息，而不修改 API 响应内容。"

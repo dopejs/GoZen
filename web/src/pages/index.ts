@@ -1,6 +1,7 @@
 export { ProvidersPage } from './providers'
 export { ProfilesPage } from './profiles'
 export { LogsPage } from './logs'
+export { MonitoringPage } from './monitoring'
 export { UsagePage } from './usage'
 export { SettingsPage } from './settings'
 export { DashboardPage } from './dashboard'

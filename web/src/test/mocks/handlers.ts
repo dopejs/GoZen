@@ -317,4 +317,43 @@ export const handlers = [
   http.post('/api/v1/sync/push', () => {
     return HttpResponse.json({ success: true })
   }),
+
+  // Monitoring/Requests
+  http.get('/api/v1/monitoring/requests', () => {
+    return HttpResponse.json({
+      requests: [
+        {
+          id: 'req-123',
+          timestamp: new Date().toISOString(),
+          provider: 'anthropic',
+          model: 'claude-sonnet-4',
+          status_code: 200,
+          duration_ms: 1500,
+          input_tokens: 100,
+          output_tokens: 50,
+          cost_usd: 0.005,
+        },
+      ],
+      total: 1,
+    })
+  }),
+
+  http.get('/api/v1/monitoring/requests/:id', ({ params }) => {
+    return HttpResponse.json({
+      id: params.id,
+      timestamp: new Date().toISOString(),
+      provider: 'anthropic',
+      model: 'claude-sonnet-4',
+      status_code: 200,
+      duration_ms: 1500,
+      input_tokens: 100,
+      output_tokens: 50,
+      cost_usd: 0.005,
+      session_id: 'sess-123',
+      client_type: 'claude',
+      request_format: 'anthropic',
+      request_size: 1024,
+      failover_chain: [],
+    })
+  }),
 ]

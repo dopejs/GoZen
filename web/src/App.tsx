@@ -11,6 +11,7 @@ import { ProfileEditPage } from '@/pages/profiles/edit'
 import { BotPage } from '@/pages/bot'
 import { MiddlewarePage } from '@/pages/middleware'
 import { LogsPage } from '@/pages/logs'
+import { MonitoringPage } from '@/pages/monitoring'
 import { UsagePage } from '@/pages/usage'
 import { SettingsPage } from '@/pages/settings'
 import { authApi } from '@/lib/api'
@@ -53,6 +54,7 @@ function App() {
           <Route path="/bot" element={<BotPage />} />
           <Route path="/middleware" element={<MiddlewarePage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/monitoring" element={<MonitoringPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { providersApi, profilesApi, settingsApi, logsApi, usageApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi, botApi } from './api'
+import { providersApi, profilesApi, settingsApi, logsApi, usageApi, syncApi, authApi, healthApi, ApiError, sessionsApi, webhooksApi, middlewareApi, budgetApi, providerHealthApi, botApi, requestsApi } from './api'
 
 describe('API utilities', () => {
   beforeEach(() => {
@@ -389,6 +389,120 @@ describe('API utilities', () => {
       const file = new File(['test'], 'plugin.so', { type: 'application/octet-stream' })
       const result = await middlewareApi.upload(file)
       expect(result.status).toBe('uploaded')
+    })
+  })
+
+  describe('requestsApi', () => {
+    it('lists requests without params', async () => {
+      const result = await requestsApi.list()
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with provider filter', async () => {
+      const result = await requestsApi.list({ provider: 'anthropic' })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with session filter', async () => {
+      const result = await requestsApi.list({ session: 'sess-123' })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with model filter', async () => {
+      const result = await requestsApi.list({ model: 'claude-sonnet-4' })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with status filters', async () => {
+      const result = await requestsApi.list({ status_min: 200, status_max: 299 })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with limit', async () => {
+      const result = await requestsApi.list({ limit: 50 })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('lists requests with all filters', async () => {
+      const result = await requestsApi.list({
+        provider: 'anthropic',
+        session: 'sess-123',
+        model: 'claude-sonnet-4',
+        status_min: 200,
+        status_max: 299,
+        limit: 50,
+      })
+      expect(result.requests).toBeDefined()
+    })
+
+    it('gets a request by id', async () => {
+      const result = await requestsApi.get('req-123')
+      expect(result.id).toBe('req-123')
+    })
+  })
+
+  describe('Error handling', () => {
+    it('handles bot chat SSE error event', async () => {
+      // Mock SSE error response
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: vi.fn()
+              .mockResolvedValueOnce({
+                done: false,
+                value: new TextEncoder().encode('event: error\ndata: {"error":"Test error"}\n\n'),
+              })
+              .mockResolvedValueOnce({ done: true }),
+          }),
+        },
+      } as any)
+
+      await expect(botApi.chat('test')).rejects.toThrow('Test error')
+    })
+
+    it('handles middleware upload text error response', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        text: () => Promise.resolve('Invalid file'),
+      } as any)
+
+      const file = new File(['test'], 'plugin.so')
+      await expect(middlewareApi.upload(file)).rejects.toThrow('Invalid file')
+    })
+
+    it('handles middleware upload with empty text error', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: () => Promise.resolve(''),
+      } as any)
+
+      const file = new File(['test'], 'plugin.so')
+      await expect(middlewareApi.upload(file)).rejects.toThrow('Internal Server Error')
+    })
+
+    it('handles malformed JSON error response in request()', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error('Invalid JSON')),
+      } as any)
+
+      await expect(providersApi.list()).rejects.toThrow('Unknown error')
+    })
+
+    it('handles malformed JSON error response in bot chat', async () => {
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error('Invalid JSON')),
+      } as any)
+
+      await expect(botApi.chat('test')).rejects.toThrow('Unknown error')
     })
   })
 })

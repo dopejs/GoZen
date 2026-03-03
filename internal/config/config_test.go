@@ -1898,128 +1898,47 @@ func TestSkillsConfigFieldPreservation(t *testing.T) {
 	}
 }
 
-func TestShowProviderTagConfigField(t *testing.T) {
-	// T003: Test ShowProviderTag config field — v10→v11 migration, default false, marshal round-trip
-	tests := []struct {
-		name            string
-		json            string
-		expectedVersion int
-		expectedTag     bool
-	}{
-		{
-			name:            "v10 config without show_provider_tag defaults to false",
-			json:            `{"version":10,"providers":{},"profiles":{}}`,
-			expectedVersion: 11,
-			expectedTag:     false,
-		},
-		{
-			name:            "v11 config with show_provider_tag true",
-			json:            `{"version":11,"show_provider_tag":true,"providers":{},"profiles":{}}`,
-			expectedVersion: 11,
-			expectedTag:     true,
-		},
-		{
-			name:            "v11 config with show_provider_tag false",
-			json:            `{"version":11,"show_provider_tag":false,"providers":{},"profiles":{}}`,
-			expectedVersion: 11,
-			expectedTag:     false,
-		},
-		{
-			name:            "v11 config without show_provider_tag field",
-			json:            `{"version":11,"providers":{},"profiles":{}}`,
-			expectedVersion: 11,
-			expectedTag:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			home := setTestHome(t)
-			configDir := filepath.Join(home, ConfigDir)
-			os.MkdirAll(configDir, 0755)
-			os.WriteFile(filepath.Join(configDir, ConfigFile), []byte(tt.json), 0600)
-
-			store := DefaultStore()
-
-			// Check version via proxy port getter pattern — read the config
-			// The store auto-upgrades version on load
-			got := store.GetShowProviderTag()
-			if got != tt.expectedTag {
-				t.Errorf("GetShowProviderTag() = %v, want %v", got, tt.expectedTag)
-			}
-		})
-	}
-}
-
-func TestShowProviderTagMarshalRoundTrip(t *testing.T) {
+func TestConfig_DeprecatedFieldIgnored(t *testing.T) {
 	home := setTestHome(t)
-	configDir := filepath.Join(home, ConfigDir)
-	os.MkdirAll(configDir, 0755)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
 
-	// Create config with ShowProviderTag = true
-	cfg := &OpenCCConfig{
-		Version:         CurrentConfigVersion,
-		ShowProviderTag: true,
-		Providers:       map[string]*ProviderConfig{},
-		Profiles:        map[string]*ProfileConfig{},
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatalf("Marshal error: %v", err)
-	}
-
-	// Verify JSON contains the field
-	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
-	if v, ok := raw["show_provider_tag"]; !ok || v != true {
-		t.Errorf("marshaled JSON missing or incorrect show_provider_tag: %v", raw)
-	}
-
-	// Unmarshal back
-	var cfg2 OpenCCConfig
-	if err := json.Unmarshal(data, &cfg2); err != nil {
-		t.Fatalf("Unmarshal error: %v", err)
-	}
-	if !cfg2.ShowProviderTag {
-		t.Error("ShowProviderTag should be true after round-trip")
-	}
-
-	// Verify false value is omitted from JSON (omitempty)
-	cfgFalse := &OpenCCConfig{
-		Version:         CurrentConfigVersion,
-		ShowProviderTag: false,
-		Providers:       map[string]*ProviderConfig{},
-		Profiles:        map[string]*ProfileConfig{},
-	}
-	dataFalse, _ := json.Marshal(cfgFalse)
-	var rawFalse map[string]interface{}
-	json.Unmarshal(dataFalse, &rawFalse)
-	if _, ok := rawFalse["show_provider_tag"]; ok {
-		t.Error("show_provider_tag should be omitted when false")
-	}
-}
-
-func TestCompatShowProviderTag(t *testing.T) {
-	setTestHome(t)
-
-	// Default should be false
-	if v := GetShowProviderTag(); v {
-		t.Errorf("GetShowProviderTag() default = %v, want false", v)
-	}
-
-	// Set to true
-	if err := SetShowProviderTag(true); err != nil {
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if v := GetShowProviderTag(); !v {
-		t.Errorf("GetShowProviderTag() = %v, want true", v)
-	}
 
-	// Set back to false
-	if err := SetShowProviderTag(false); err != nil {
+	// Write config with deprecated field
+	deprecatedConfig := `{
+		"version": 11,
+		"show_provider_tag": true,
+		"providers": {
+			"test-provider": {
+				"base_url": "https://api.test.com",
+				"auth_token": "test-token"
+			}
+		},
+		"profiles": {}
+	}`
+
+	if err := os.WriteFile(configPath, []byte(deprecatedConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if v := GetShowProviderTag(); v {
-		t.Errorf("GetShowProviderTag() = %v, want false", v)
+
+	// Load config - should not error
+	store := DefaultStore()
+	providers := store.ProviderNames()
+
+	// Verify provider was loaded correctly
+	if len(providers) != 1 {
+		t.Errorf("expected 1 provider, got %d", len(providers))
 	}
+
+	if p := store.GetProvider("test-provider"); p == nil {
+		t.Error("test-provider not found")
+	} else if p.BaseURL != "https://api.test.com" {
+		t.Errorf("provider BaseURL = %s, want https://api.test.com", p.BaseURL)
+	}
+
+	// Verify deprecated field is ignored (no error, field not accessible)
+	// The field should be parsed but not stored or used
 }

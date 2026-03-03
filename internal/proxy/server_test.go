@@ -1956,643 +1956,78 @@ func TestAllProvidersFailConnectionError(t *testing.T) {
 	}
 }
 
-// T010: Test non-streaming Anthropic tag injection
-func TestNonStreamingAnthropicTagInjection(t *testing.T) {
+// TestCopyResponse_NoTagInjection verifies that responses are not modified
+// and no provider tags are injected into the response body.
+func TestCopyResponse_NoTagInjection(t *testing.T) {
 	tests := []struct {
-		name        string
-		tagEnabled  bool
-		wantTagged  bool
+		name           string
+		responseBody   string
+		contentType    string
+		wantUnmodified bool
 	}{
-		{"tag enabled", true, true},
-		{"tag disabled", false, false},
+		{
+			name:           "non-streaming JSON response",
+			responseBody:   `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"model":"claude-sonnet-4"}`,
+			contentType:    "application/json",
+			wantUnmodified: true,
+		},
+		{
+			name: "streaming SSE response",
+			responseBody: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4\"}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n" +
+				"event: message_stop\n" +
+				"data: {\"type\":\"message_stop\"}\n\n",
+			contentType:    "text/event-stream",
+			wantUnmodified: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup test config
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			config.ResetDefaultStore()
-			t.Cleanup(func() { config.ResetDefaultStore() })
-
-			// Set tag enabled/disabled
-			config.SetShowProviderTag(tt.tagEnabled)
-
-			// Mock backend returns Anthropic Messages response
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				resp := map[string]interface{}{
-					"id":      "msg_123",
-					"type":    "message",
-					"role":    "assistant",
-					"model":   "claude-sonnet-4-20250514",
-					"content": []interface{}{
-						map[string]interface{}{
-							"type": "text",
-							"text": "Hello from backend",
-						},
-					},
-				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(200)
+				w.Write([]byte(tt.responseBody))
 			}))
 			defer backend.Close()
 
 			u, _ := url.Parse(backend.URL)
-			providers := []*Provider{{
-				Name: "test-provider", BaseURL: u, Token: "test-token",
-				Healthy: true,
-			}}
-
+			providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
 			srv := NewProxyServer(providers, discardLogger())
-			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hi"}]}`))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("anthropic-version", "2023-06-01")
 			w := httptest.NewRecorder()
 
 			srv.ServeHTTP(w, req)
 
-			if w.Code != 200 {
-				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+			body := w.Body.String()
+
+			// Verify no provider tag is present
+			if strings.Contains(body, "[provider:") || strings.Contains(body, "provider: test-provider") {
+				t.Errorf("response contains provider tag, but should be unmodified:\n%s", body)
 			}
 
-			var resp map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &resp)
-
-			content := resp["content"].([]interface{})
-			firstBlock := content[0].(map[string]interface{})
-			text := firstBlock["text"].(string)
-
-			if tt.wantTagged {
-				expectedPrefix := "[provider: test-provider, model: claude-sonnet-4-20250514]\n"
-				if !strings.HasPrefix(text, expectedPrefix) {
-					t.Errorf("text should start with tag %q, got: %q", expectedPrefix, text)
-				}
-				if !strings.Contains(text, "Hello from backend") {
-					t.Errorf("text should contain original content, got: %q", text)
-				}
-			} else {
-				if strings.Contains(text, "[provider:") {
-					t.Errorf("text should NOT contain tag when disabled, got: %q", text)
-				}
-				if text != "Hello from backend" {
-					t.Errorf("text = %q, want %q", text, "Hello from backend")
-				}
+			// Verify response is identical to backend response
+			if tt.wantUnmodified && body != tt.responseBody {
+				t.Errorf("response was modified\nwant: %s\ngot:  %s", tt.responseBody, body)
 			}
 		})
 	}
 }
 
-// T011: Test non-streaming OpenAI tag injection
-func TestNonStreamingOpenAITagInjection(t *testing.T) {
-	tests := []struct {
-		name        string
-		tagEnabled  bool
-		wantTagged  bool
-	}{
-		{"tag enabled", true, true},
-		{"tag disabled", false, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			config.ResetDefaultStore()
-			t.Cleanup(func() { config.ResetDefaultStore() })
-
-			config.SetShowProviderTag(tt.tagEnabled)
-
-			// Mock backend returns OpenAI Chat Completions response
-			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				resp := map[string]interface{}{
-					"id":      "chatcmpl-123",
-					"object":  "chat.completion",
-					"model":   "gpt-4",
-					"choices": []interface{}{
-						map[string]interface{}{
-							"index": 0,
-							"message": map[string]interface{}{
-								"role":    "assistant",
-								"content": "Hello from OpenAI",
-							},
-							"finish_reason": "stop",
-						},
-					},
-				}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
-			}))
-			defer backend.Close()
-
-			u, _ := url.Parse(backend.URL)
-			providers := []*Provider{{
-				Name: "openai-provider", BaseURL: u, Token: "test-token",
-				Healthy: true,
-			}}
-
-			srv := NewProxyServer(providers, discardLogger())
-			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			srv.ServeHTTP(w, req)
-
-			if w.Code != 200 {
-				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
-			}
-
-			var resp map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &resp)
-
-			choices := resp["choices"].([]interface{})
-			firstChoice := choices[0].(map[string]interface{})
-			message := firstChoice["message"].(map[string]interface{})
-			content := message["content"].(string)
-
-			if tt.wantTagged {
-				expectedPrefix := "[provider: openai-provider, model: gpt-4]\n"
-				if !strings.HasPrefix(content, expectedPrefix) {
-					t.Errorf("content should start with tag %q, got: %q", expectedPrefix, content)
-				}
-				if !strings.Contains(content, "Hello from OpenAI") {
-					t.Errorf("content should contain original text, got: %q", content)
-				}
-			} else {
-				if strings.Contains(content, "[provider:") {
-					t.Errorf("content should NOT contain tag when disabled, got: %q", content)
-				}
-				if content != "Hello from OpenAI" {
-					t.Errorf("content = %q, want %q", content, "Hello from OpenAI")
-				}
-			}
-		})
-	}
-}
-
-// T012: Test edge cases for tag injection
-func TestTagInjectionEdgeCases(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	config.ResetDefaultStore()
-	t.Cleanup(func() { config.ResetDefaultStore() })
-	config.SetShowProviderTag(true)
-
-	t.Run("tool-use-only response (no tag)", func(t *testing.T) {
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"id":      "msg_123",
-				"type":    "message",
-				"role":    "assistant",
-				"model":   "claude-sonnet-4-20250514",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "tool_use",
-						"id":   "tool_123",
-						"name": "get_weather",
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer backend.Close()
-
-		u, _ := url.Parse(backend.URL)
-		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		var resp map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &resp)
-		content := resp["content"].([]interface{})
-		firstBlock := content[0].(map[string]interface{})
-
-		// Tool-use block should not have tag injected
-		if firstBlock["type"] != "tool_use" {
-			t.Errorf("type = %v, want tool_use", firstBlock["type"])
-		}
-		if _, hasText := firstBlock["text"]; hasText {
-			t.Error("tool_use block should not have text field")
-		}
-	})
-
-	t.Run("empty content array (no tag)", func(t *testing.T) {
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"id":      "msg_123",
-				"type":    "message",
-				"role":    "assistant",
-				"model":   "claude-sonnet-4-20250514",
-				"content": []interface{}{},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer backend.Close()
-
-		u, _ := url.Parse(backend.URL)
-		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		var resp map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &resp)
-		content := resp["content"].([]interface{})
-
-		if len(content) != 0 {
-			t.Errorf("content length = %d, want 0", len(content))
-		}
-	})
-
-	t.Run("non-2xx response (no tag)", func(t *testing.T) {
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"error": map[string]interface{}{
-					"type":    "invalid_request_error",
-					"message": "Invalid request",
-				},
-			})
-		}))
-		defer backend.Close()
-
-		u, _ := url.Parse(backend.URL)
-		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		if w.Code != 400 {
-			t.Errorf("status = %d, want 400", w.Code)
-		}
-
-		body := w.Body.String()
-		if strings.Contains(body, "[provider:") {
-			t.Errorf("error response should not contain tag, got: %s", body)
-		}
-	})
-
-	t.Run("failover scenario (tag shows successful provider)", func(t *testing.T) {
-		// First provider fails
-		backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(500)
-		}))
-		defer backend1.Close()
-
-		// Second provider succeeds
-		backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			resp := map[string]interface{}{
-				"id":      "msg_123",
-				"type":    "message",
-				"role":    "assistant",
-				"model":   "claude-sonnet-4-20250514",
-				"content": []interface{}{
-					map[string]interface{}{
-						"type": "text",
-						"text": "Success from backup",
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-		}))
-		defer backend2.Close()
-
-		u1, _ := url.Parse(backend1.URL)
-		u2, _ := url.Parse(backend2.URL)
-		providers := []*Provider{
-			{Name: "provider-A", BaseURL: u1, Token: "t", Healthy: true},
-			{Name: "provider-B", BaseURL: u2, Token: "t", Healthy: true},
-		}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		if w.Code != 200 {
-			t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
-		}
-
-		var resp map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &resp)
-		content := resp["content"].([]interface{})
-		firstBlock := content[0].(map[string]interface{})
-		text := firstBlock["text"].(string)
-
-		// Tag should show provider-B (the one that succeeded)
-		expectedPrefix := "[provider: provider-B, model: claude-sonnet-4-20250514]\n"
-		if !strings.HasPrefix(text, expectedPrefix) {
-			t.Errorf("text should start with tag showing provider-B, got: %q", text)
-		}
-	})
-}
-
-// T016: Test Anthropic SSE tag injection
-func TestStreamingAnthropicTagInjection(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	config.ResetDefaultStore()
-	t.Cleanup(func() { config.ResetDefaultStore() })
-	config.SetShowProviderTag(true)
-
-	// Build Anthropic SSE stream with message_start and content_block_delta
-	sseStream := "" +
-		"event: message_start\n" +
-		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
-		"event: content_block_start\n" +
-		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
-		"event: content_block_delta\n" +
-		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
-		"event: content_block_delta\n" +
-		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}` + "\n\n" +
-		"event: content_block_stop\n" +
-		`data: {"type":"content_block_stop","index":0}` + "\n\n" +
-		"event: message_delta\n" +
-		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}` + "\n\n" +
-		"event: message_stop\n" +
-		`data: {"type":"message_stop"}` + "\n\n"
+// TestCopyResponse_ThinkingBlockPreserved verifies that thinking blocks
+// are not modified and remain valid for Bedrock API validation.
+func TestCopyResponse_ThinkingBlockPreserved(t *testing.T) {
+	thinkingResponse := `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this"},{"type":"text","text":"Here is my response"}],"model":"claude-sonnet-4"}`
 
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
-		w.Write([]byte(sseStream))
-	}))
-	defer backend.Close()
-
-	u, _ := url.Parse(backend.URL)
-	providers := []*Provider{{Name: "my-provider", BaseURL: u, Token: "t", Healthy: true}}
-	srv := NewProxyServer(providers, discardLogger())
-
-	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"stream":true,"messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", "2023-06-01")
-	w := httptest.NewRecorder()
-
-	srv.ServeHTTP(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
-	}
-
-	body := w.Body.String()
-
-	// The first content_block_delta should have the tag prepended to the text
-	expectedTag := "[provider: my-provider, model: claude-sonnet-4-20250514]\\n"
-	// Check that tag text appears in the first text_delta
-	if !strings.Contains(body, `[provider: my-provider, model: claude-sonnet-4-20250514]\n`) &&
-		!strings.Contains(body, `[provider: my-provider, model: claude-sonnet-4-20250514]`) {
-		t.Errorf("SSE stream should contain provider tag, got:\n%s\nExpected tag: %s", body, expectedTag)
-	}
-
-	// Second delta should NOT have the tag
-	// Count occurrences of the provider tag
-	tagCount := strings.Count(body, "[provider: my-provider")
-	if tagCount != 1 {
-		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
-	}
-}
-
-// T017: Test OpenAI Chat Completions SSE tag injection
-func TestStreamingOpenAIChatCompletionsTagInjection(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	config.ResetDefaultStore()
-	t.Cleanup(func() { config.ResetDefaultStore() })
-	config.SetShowProviderTag(true)
-
-	// Build OpenAI Chat Completions SSE stream
-	sseStream := "" +
-		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}` + "\n\n" +
-		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}` + "\n\n" +
-		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}` + "\n\n" +
-		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n" +
-		"data: [DONE]\n\n"
-
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(200)
-		w.Write([]byte(sseStream))
-	}))
-	defer backend.Close()
-
-	u, _ := url.Parse(backend.URL)
-	providers := []*Provider{{Name: "openai-prov", BaseURL: u, Token: "t", Type: "openai", Healthy: true}}
-	srv := NewProxyServer(providers, discardLogger())
-
-	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	srv.ServeHTTP(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
-	}
-
-	body := w.Body.String()
-
-	// Tag should appear in the first content delta
-	if !strings.Contains(body, "[provider: openai-prov, model: gpt-4]") {
-		t.Errorf("SSE stream should contain provider tag, got:\n%s", body)
-	}
-
-	// Tag should appear exactly once
-	tagCount := strings.Count(body, "[provider: openai-prov")
-	if tagCount != 1 {
-		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
-	}
-}
-
-// T018: Test OpenAI Responses API SSE tag injection (transformed from Anthropic)
-func TestStreamingOpenAIResponsesAPITagInjection(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	config.ResetDefaultStore()
-	t.Cleanup(func() { config.ResetDefaultStore() })
-	config.SetShowProviderTag(true)
-
-	// Backend sends Anthropic SSE, client requests OpenAI Responses API format
-	sseStream := "" +
-		"event: message_start\n" +
-		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
-		"event: content_block_start\n" +
-		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
-		"event: content_block_delta\n" +
-		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
-		"event: content_block_stop\n" +
-		`data: {"type":"content_block_stop","index":0}` + "\n\n" +
-		"event: message_delta\n" +
-		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}` + "\n\n" +
-		"event: message_stop\n" +
-		`data: {"type":"message_stop"}` + "\n\n"
-
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(200)
-		w.Write([]byte(sseStream))
-	}))
-	defer backend.Close()
-
-	u, _ := url.Parse(backend.URL)
-	// Anthropic provider but client requests OpenAI format via /v1/responses endpoint
-	providers := []*Provider{{Name: "claude-proxy", BaseURL: u, Token: "t", Healthy: true}}
-	srv := NewProxyServer(providers, discardLogger())
-
-	// Request using OpenAI Responses API format (triggers Anthropic→OpenAI transformation)
-	req := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"input":"hi"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	srv.ServeHTTP(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
-	}
-
-	body := w.Body.String()
-
-	// After transformation, the output should contain the provider tag
-	if !strings.Contains(body, "[provider: claude-proxy, model: claude-sonnet-4-20250514]") {
-		t.Errorf("Responses API SSE stream should contain provider tag, got:\n%s", body)
-	}
-
-	tagCount := strings.Count(body, "[provider: claude-proxy")
-	if tagCount != 1 {
-		t.Errorf("tag should appear exactly once, got %d occurrences", tagCount)
-	}
-}
-
-// T019: Test SSE streaming edge cases
-func TestStreamingTagInjectionEdgeCases(t *testing.T) {
-	t.Run("tag disabled (passthrough)", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		config.ResetDefaultStore()
-		t.Cleanup(func() { config.ResetDefaultStore() })
-		config.SetShowProviderTag(false)
-
-		sseStream := "" +
-			"event: message_start\n" +
-			`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514"}}` + "\n\n" +
-			"event: content_block_delta\n" +
-			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
-			"event: message_stop\n" +
-			`data: {"type":"message_stop"}` + "\n\n"
-
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(200)
-			w.Write([]byte(sseStream))
-		}))
-		defer backend.Close()
-
-		u, _ := url.Parse(backend.URL)
-		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		body := w.Body.String()
-		if strings.Contains(body, "[provider:") {
-			t.Errorf("tag should NOT appear when disabled, got:\n%s", body)
-		}
-	})
-
-	t.Run("tool-use-only stream (no tag)", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		config.ResetDefaultStore()
-		t.Cleanup(func() { config.ResetDefaultStore() })
-		config.SetShowProviderTag(true)
-
-		// Stream with only tool_use content blocks, no text deltas
-		sseStream := "" +
-			"event: message_start\n" +
-			`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514"}}` + "\n\n" +
-			"event: content_block_start\n" +
-			`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"get_weather"}}` + "\n\n" +
-			"event: content_block_delta\n" +
-			`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"SF\"}"}}` + "\n\n" +
-			"event: content_block_stop\n" +
-			`data: {"type":"content_block_stop","index":0}` + "\n\n" +
-			"event: message_stop\n" +
-			`data: {"type":"message_stop"}` + "\n\n"
-
-		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(200)
-			w.Write([]byte(sseStream))
-		}))
-		defer backend.Close()
-
-		u, _ := url.Parse(backend.URL)
-		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
-		srv := NewProxyServer(providers, discardLogger())
-
-		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("anthropic-version", "2023-06-01")
-		w := httptest.NewRecorder()
-
-		srv.ServeHTTP(w, req)
-
-		body := w.Body.String()
-		if strings.Contains(body, "[provider:") {
-			t.Errorf("tag should NOT appear for tool-use-only stream, got:\n%s", body)
-		}
-	})
-}
-
-// TestStreamingNoSpaceSSEFormat tests tag injection with "data:" (no space) SSE format
-// used by some providers instead of the standard "data: " (with space) format.
-func TestStreamingNoSpaceSSEFormat(t *testing.T) {
-	config.ResetDefaultStore()
-	t.Cleanup(func() { config.ResetDefaultStore() })
-	config.SetShowProviderTag(true)
-
-	// SSE stream using "data:" without space (and "event:" without space)
-	sseStream := "" +
-		"event:message_start\n" +
-		`data:{"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
-		"event:content_block_start\n" +
-		`data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
-		"event:content_block_delta\n" +
-		`data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
-		"event:content_block_stop\n" +
-		`data:{"type":"content_block_stop","index":0}` + "\n\n" +
-		"event:message_stop\n" +
-		`data:{"type":"message_stop"}` + "\n\n"
-
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(200)
-		w.Write([]byte(sseStream))
+		w.Write([]byte(thinkingResponse))
 	}))
 	defer backend.Close()
 
@@ -2600,7 +2035,7 @@ func TestStreamingNoSpaceSSEFormat(t *testing.T) {
 	providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
 	srv := NewProxyServer(providers, discardLogger())
 
-	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
 	w := httptest.NewRecorder()
@@ -2608,35 +2043,19 @@ func TestStreamingNoSpaceSSEFormat(t *testing.T) {
 	srv.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	expectedTag := `[provider: test-provider, model: claude-sonnet-4-20250514]\\nHello`
-	if !strings.Contains(body, expectedTag) {
-		t.Errorf("expected tag in streaming response with no-space SSE format, got:\n%s", body)
+
+	// Verify thinking block is preserved exactly
+	if !strings.Contains(body, `"type":"thinking"`) {
+		t.Error("thinking block was removed or modified")
 	}
-}
 
-// Benchmark tests for SC-003 latency validation (<5ms)
-
-func BenchmarkInjectProviderTag(b *testing.B) {
-	body := []byte(`{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello, world!"}],"model":"claude-sonnet-4-20250514","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		injectProviderTag(body, "test-provider", "anthropic")
+	// Verify no tag injection in thinking block
+	if strings.Contains(body, "[provider:") {
+		t.Error("provider tag was injected into response with thinking block")
 	}
-}
 
-func BenchmarkInjectProviderTagOpenAI(b *testing.B) {
-	body := []byte(`{"id":"chatcmpl-123","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"Hello, world!"},"finish_reason":"stop"}],"model":"gpt-4","usage":{"prompt_tokens":10,"completion_tokens":5}}`)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		injectProviderTag(body, "test-provider", "openai")
-	}
-}
-
-func BenchmarkTagInjectingReader(b *testing.B) {
-	sseData := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-20250514\",\"stop_reason\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		reader := newTagInjectingReader(strings.NewReader(sseData), "test-provider")
-		io.ReadAll(reader)
+	// Verify response is byte-for-byte identical
+	if body != thinkingResponse {
+		t.Errorf("response with thinking block was modified\nwant: %s\ngot:  %s", thinkingResponse, body)
 	}
 }

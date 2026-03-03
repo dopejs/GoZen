@@ -4,6 +4,7 @@ import {
   Server,
   Layers,
   ScrollText,
+  Activity,
   BarChart3,
   Settings,
   LayoutDashboard,
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/middleware', icon: Puzzle, labelKey: 'nav.middleware', beta: true },
   { to: '/usage', icon: BarChart3, labelKey: 'nav.usage' },
   { to: '/logs', icon: ScrollText, labelKey: 'nav.logs' },
+  { to: '/monitoring', icon: Activity, labelKey: 'nav.monitoring' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },
 ]
 

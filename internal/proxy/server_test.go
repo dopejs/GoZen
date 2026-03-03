@@ -1955,3 +1955,355 @@ func TestAllProvidersFailConnectionError(t *testing.T) {
 		t.Errorf("502 body should contain elapsed time in ms, got:\n%s", body)
 	}
 }
+
+// T010: Test non-streaming Anthropic tag injection
+func TestNonStreamingAnthropicTagInjection(t *testing.T) {
+	tests := []struct {
+		name        string
+		tagEnabled  bool
+		wantTagged  bool
+	}{
+		{"tag enabled", true, true},
+		{"tag disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test config
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			config.ResetDefaultStore()
+			t.Cleanup(func() { config.ResetDefaultStore() })
+
+			// Set tag enabled/disabled
+			config.SetShowProviderTag(tt.tagEnabled)
+
+			// Mock backend returns Anthropic Messages response
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := map[string]interface{}{
+					"id":      "msg_123",
+					"type":    "message",
+					"role":    "assistant",
+					"model":   "claude-sonnet-4-20250514",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type": "text",
+							"text": "Hello from backend",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer backend.Close()
+
+			u, _ := url.Parse(backend.URL)
+			providers := []*Provider{{
+				Name: "test-provider", BaseURL: u, Token: "test-token",
+				Healthy: true,
+			}}
+
+			srv := NewProxyServer(providers, discardLogger())
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("anthropic-version", "2023-06-01")
+			w := httptest.NewRecorder()
+
+			srv.ServeHTTP(w, req)
+
+			if w.Code != 200 {
+				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+			}
+
+			var resp map[string]interface{}
+			json.Unmarshal(w.Body.Bytes(), &resp)
+
+			content := resp["content"].([]interface{})
+			firstBlock := content[0].(map[string]interface{})
+			text := firstBlock["text"].(string)
+
+			if tt.wantTagged {
+				expectedPrefix := "[provider: test-provider, model: claude-sonnet-4-20250514]\n"
+				if !strings.HasPrefix(text, expectedPrefix) {
+					t.Errorf("text should start with tag %q, got: %q", expectedPrefix, text)
+				}
+				if !strings.Contains(text, "Hello from backend") {
+					t.Errorf("text should contain original content, got: %q", text)
+				}
+			} else {
+				if strings.Contains(text, "[provider:") {
+					t.Errorf("text should NOT contain tag when disabled, got: %q", text)
+				}
+				if text != "Hello from backend" {
+					t.Errorf("text = %q, want %q", text, "Hello from backend")
+				}
+			}
+		})
+	}
+}
+
+// T011: Test non-streaming OpenAI tag injection
+func TestNonStreamingOpenAITagInjection(t *testing.T) {
+	tests := []struct {
+		name        string
+		tagEnabled  bool
+		wantTagged  bool
+	}{
+		{"tag enabled", true, true},
+		{"tag disabled", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			config.ResetDefaultStore()
+			t.Cleanup(func() { config.ResetDefaultStore() })
+
+			config.SetShowProviderTag(tt.tagEnabled)
+
+			// Mock backend returns OpenAI Chat Completions response
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				resp := map[string]interface{}{
+					"id":      "chatcmpl-123",
+					"object":  "chat.completion",
+					"model":   "gpt-4",
+					"choices": []interface{}{
+						map[string]interface{}{
+							"index": 0,
+							"message": map[string]interface{}{
+								"role":    "assistant",
+								"content": "Hello from OpenAI",
+							},
+							"finish_reason": "stop",
+						},
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+			}))
+			defer backend.Close()
+
+			u, _ := url.Parse(backend.URL)
+			providers := []*Provider{{
+				Name: "openai-provider", BaseURL: u, Token: "test-token",
+				Healthy: true,
+			}}
+
+			srv := NewProxyServer(providers, discardLogger())
+			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			srv.ServeHTTP(w, req)
+
+			if w.Code != 200 {
+				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+			}
+
+			var resp map[string]interface{}
+			json.Unmarshal(w.Body.Bytes(), &resp)
+
+			choices := resp["choices"].([]interface{})
+			firstChoice := choices[0].(map[string]interface{})
+			message := firstChoice["message"].(map[string]interface{})
+			content := message["content"].(string)
+
+			if tt.wantTagged {
+				expectedPrefix := "[provider: openai-provider, model: gpt-4]\n"
+				if !strings.HasPrefix(content, expectedPrefix) {
+					t.Errorf("content should start with tag %q, got: %q", expectedPrefix, content)
+				}
+				if !strings.Contains(content, "Hello from OpenAI") {
+					t.Errorf("content should contain original text, got: %q", content)
+				}
+			} else {
+				if strings.Contains(content, "[provider:") {
+					t.Errorf("content should NOT contain tag when disabled, got: %q", content)
+				}
+				if content != "Hello from OpenAI" {
+					t.Errorf("content = %q, want %q", content, "Hello from OpenAI")
+				}
+			}
+		})
+	}
+}
+
+// T012: Test edge cases for tag injection
+func TestTagInjectionEdgeCases(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+	config.SetShowProviderTag(true)
+
+	t.Run("tool-use-only response (no tag)", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"id":      "msg_123",
+				"type":    "message",
+				"role":    "assistant",
+				"model":   "claude-sonnet-4-20250514",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "tool_use",
+						"id":   "tool_123",
+						"name": "get_weather",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		var resp map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		content := resp["content"].([]interface{})
+		firstBlock := content[0].(map[string]interface{})
+
+		// Tool-use block should not have tag injected
+		if firstBlock["type"] != "tool_use" {
+			t.Errorf("type = %v, want tool_use", firstBlock["type"])
+		}
+		if _, hasText := firstBlock["text"]; hasText {
+			t.Error("tool_use block should not have text field")
+		}
+	})
+
+	t.Run("empty content array (no tag)", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"id":      "msg_123",
+				"type":    "message",
+				"role":    "assistant",
+				"model":   "claude-sonnet-4-20250514",
+				"content": []interface{}{},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		var resp map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		content := resp["content"].([]interface{})
+
+		if len(content) != 0 {
+			t.Errorf("content length = %d, want 0", len(content))
+		}
+	})
+
+	t.Run("non-2xx response (no tag)", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(400)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "invalid_request_error",
+					"message": "Invalid request",
+				},
+			})
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{Name: "test", BaseURL: u, Token: "t", Healthy: true}}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		if w.Code != 400 {
+			t.Errorf("status = %d, want 400", w.Code)
+		}
+
+		body := w.Body.String()
+		if strings.Contains(body, "[provider:") {
+			t.Errorf("error response should not contain tag, got: %s", body)
+		}
+	})
+
+	t.Run("failover scenario (tag shows successful provider)", func(t *testing.T) {
+		// First provider fails
+		backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(500)
+		}))
+		defer backend1.Close()
+
+		// Second provider succeeds
+		backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"id":      "msg_123",
+				"type":    "message",
+				"role":    "assistant",
+				"model":   "claude-sonnet-4-20250514",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "text",
+						"text": "Success from backup",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer backend2.Close()
+
+		u1, _ := url.Parse(backend1.URL)
+		u2, _ := url.Parse(backend2.URL)
+		providers := []*Provider{
+			{Name: "provider-A", BaseURL: u1, Token: "t", Healthy: true},
+			{Name: "provider-B", BaseURL: u2, Token: "t", Healthy: true},
+		}
+		srv := NewProxyServer(providers, discardLogger())
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("anthropic-version", "2023-06-01")
+		w := httptest.NewRecorder()
+
+		srv.ServeHTTP(w, req)
+
+		if w.Code != 200 {
+			t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		content := resp["content"].([]interface{})
+		firstBlock := content[0].(map[string]interface{})
+		text := firstBlock["text"].(string)
+
+		// Tag should show provider-B (the one that succeeded)
+		expectedPrefix := "[provider: provider-B, model: claude-sonnet-4-20250514]\n"
+		if !strings.HasPrefix(text, expectedPrefix) {
+			t.Errorf("text should start with tag showing provider-B, got: %q", text)
+		}
+	})
+}

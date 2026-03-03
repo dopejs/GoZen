@@ -563,6 +563,13 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		}
 	}
 
+	// Inject provider/model tag into non-streaming response if enabled
+	if config.GetShowProviderTag() && resp.StatusCode >= 200 && resp.StatusCode < 300 && len(body) > 0 {
+		if tagged := injectProviderTag(body, p.Name, requestFormat); tagged != nil {
+			body = tagged
+		}
+	}
+
 	// Copy headers (except Content-Length which may have changed)
 	for k, vv := range resp.Header {
 		if strings.ToLower(k) == "content-length" {
@@ -575,6 +582,73 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
 	w.WriteHeader(resp.StatusCode)
 	w.Write(body)
+}
+
+// injectProviderTag prepends [provider: <name>, model: <model>]\n to the first
+// text content in a non-streaming response. Supports both Anthropic Messages
+// format (content array with text blocks) and OpenAI Chat Completions format
+// (choices[0].message.content string). Returns nil if injection is not applicable.
+func injectProviderTag(body []byte, providerName string, clientFormat string) []byte {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+
+	// Extract model from response body
+	model, _ := data["model"].(string)
+	if model == "" {
+		return nil
+	}
+
+	tag := fmt.Sprintf("[provider: %s, model: %s]\n", providerName, model)
+
+	// Try Anthropic format: content array with text blocks
+	if content, ok := data["content"].([]interface{}); ok {
+		for i, block := range content {
+			blockMap, ok := block.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if blockMap["type"] == "text" {
+				if text, ok := blockMap["text"].(string); ok {
+					blockMap["text"] = tag + text
+					content[i] = blockMap
+					data["content"] = content
+					result, err := json.Marshal(data)
+					if err != nil {
+						return nil
+					}
+					return result
+				}
+			}
+		}
+		return nil // No text block found (e.g., tool-use only)
+	}
+
+	// Try OpenAI format: choices[0].message.content
+	if choices, ok := data["choices"].([]interface{}); ok && len(choices) > 0 {
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		message, ok := choice["message"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		if content, ok := message["content"].(string); ok {
+			message["content"] = tag + content
+			choice["message"] = message
+			choices[0] = choice
+			data["choices"] = choices
+			result, err := json.Marshal(data)
+			if err != nil {
+				return nil
+			}
+			return result
+		}
+	}
+
+	return nil
 }
 
 // applyModelOverride replaces the model in the request body with the given override.

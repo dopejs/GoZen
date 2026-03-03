@@ -61,15 +61,15 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T010 [US1] Write test for non-streaming Anthropic tag injection: enabled → tag prepended to first text block; disabled → body unmodified in `internal/proxy/server_test.go`
-- [ ] T011 [US1] Write test for non-streaming OpenAI tag injection: enabled → tag prepended to `choices[0].message.content`; disabled → body unmodified in `internal/proxy/server_test.go`
-- [ ] T012 [US1] Write test for edge cases: tool-use-only response (no tag), empty content array (no tag), non-2xx response (no tag), failover scenario (provider A fails → provider B succeeds → tag shows provider B's name and model) in `internal/proxy/server_test.go`
+- [x] T010 [US1] Write test for non-streaming Anthropic tag injection: enabled → tag prepended to first text block; disabled → body unmodified in `internal/proxy/server_test.go`
+- [x] T011 [US1] Write test for non-streaming OpenAI tag injection: enabled → tag prepended to `choices[0].message.content`; disabled → body unmodified in `internal/proxy/server_test.go`
+- [x] T012 [US1] Write test for edge cases: tool-use-only response (no tag), empty content array (no tag), non-2xx response (no tag), failover scenario (provider A fails → provider B succeeds → tag shows provider B's name and model) in `internal/proxy/server_test.go`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement `injectProviderTag()` helper function for non-streaming responses in `internal/proxy/server.go` — parses JSON body, identifies format (Anthropic content array vs OpenAI choices), prepends tag to first text content, re-marshals
-- [ ] T014 [US1] Integrate tag injection into `copyResponse()` non-streaming path in `internal/proxy/server.go` — call `injectProviderTag()` after transformation, before writing body; gate on `config.GetShowProviderTag()` and 2xx status
-- [ ] T015 [US1] Verify all US1 tests pass (T010, T011, T012)
+- [x] T013 [US1] Implement `injectProviderTag()` helper function for non-streaming responses in `internal/proxy/server.go` — parses JSON body, identifies format (Anthropic content array vs OpenAI choices), prepends tag to first text content, re-marshals
+- [x] T014 [US1] Integrate tag injection into `copyResponse()` non-streaming path in `internal/proxy/server.go` — call `injectProviderTag()` after transformation, before writing body; gate on `config.GetShowProviderTag()` and 2xx status
+- [x] T015 [US1] Verify all US1 tests pass (T010, T011, T012)
 
 **Checkpoint**: Non-streaming tag injection works for both Anthropic and OpenAI formats, gated by config setting
 

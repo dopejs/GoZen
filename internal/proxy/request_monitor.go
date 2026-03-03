@@ -53,3 +53,96 @@ type RequestFilter struct {
 	EndTime   time.Time // End of time range (zero = no filter)
 	Model     string    // Filter by model name (empty = all)
 }
+
+// NewRequestMonitor creates a new RequestMonitor with the specified buffer size.
+func NewRequestMonitor(maxRecords int) *RequestMonitor {
+	return &RequestMonitor{
+		records:    make([]RequestRecord, 0, maxRecords),
+		maxRecords: maxRecords,
+	}
+}
+
+// Add appends a new request record to the buffer.
+// If the buffer is full, it evicts the oldest 20% of records (LRU eviction).
+func (rm *RequestMonitor) Add(record RequestRecord) {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	// If buffer is full, evict oldest 20%
+	if len(rm.records) >= rm.maxRecords {
+		evictCount := rm.maxRecords / 5
+		if evictCount < 1 {
+			evictCount = 1
+		}
+		rm.records = rm.records[evictCount:]
+	}
+
+	rm.records = append(rm.records, record)
+}
+
+// GetRecent returns the most recent request records matching the filter criteria,
+// in reverse chronological order (newest first).
+func (rm *RequestMonitor) GetRecent(limit int, filter RequestFilter) []RequestRecord {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
+	// Filter records
+	var filtered []RequestRecord
+	for i := len(rm.records) - 1; i >= 0; i-- {
+		record := rm.records[i]
+
+		// Apply filters
+		if filter.Provider != "" && record.Provider != filter.Provider {
+			continue
+		}
+		if filter.SessionID != "" && record.SessionID != filter.SessionID {
+			continue
+		}
+		if filter.Model != "" && record.Model != filter.Model {
+			continue
+		}
+		if filter.MinStatus > 0 && record.StatusCode < filter.MinStatus {
+			continue
+		}
+		if filter.MaxStatus > 0 && record.StatusCode > filter.MaxStatus {
+			continue
+		}
+		if !filter.StartTime.IsZero() && record.Timestamp.Before(filter.StartTime) {
+			continue
+		}
+		if !filter.EndTime.IsZero() && record.Timestamp.After(filter.EndTime) {
+			continue
+		}
+
+		filtered = append(filtered, record)
+
+		// Apply limit
+		if limit > 0 && len(filtered) >= limit {
+			break
+		}
+	}
+
+	return filtered
+}
+
+// Global request monitor singleton
+var (
+	globalMonitor     *RequestMonitor
+	globalMonitorOnce sync.Once
+)
+
+// GetGlobalRequestMonitor returns the global request monitor singleton.
+func GetGlobalRequestMonitor() *RequestMonitor {
+	globalMonitorOnce.Do(func() {
+		globalMonitor = NewRequestMonitor(1000) // Default buffer size
+	})
+	return globalMonitor
+}
+
+// InitGlobalRequestMonitor initializes the global monitor with a custom buffer size.
+// This should be called before any requests are processed.
+func InitGlobalRequestMonitor(maxRecords int) {
+	globalMonitorOnce.Do(func() {
+		globalMonitor = NewRequestMonitor(maxRecords)
+	})
+}

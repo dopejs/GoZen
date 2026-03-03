@@ -169,7 +169,9 @@
     "passwordChanged": "パスワードが正常に変更されました",
     "passwordMismatch": "パスワードが一致しません",
     "webPort": "Webポート",
-    "proxyPort": "プロキシポート"
+    "proxyPort": "プロキシポート",
+    "showProviderTag": "レスポンスにプロバイダー情報を表示",
+    "showProviderTagDesc": "プロキシレスポンスの最初のテキストコンテンツにプロバイダー名とモデルを付加"
   },
   "auth": {
     "login": "ログイン",

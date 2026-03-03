@@ -110,14 +110,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T023 [US3] Write test for GeneralSettings component: verify toggle renders with default OFF, toggling ON and saving sends `show_provider_tag: true` to API in `web/src/pages/settings/tabs/GeneralSettings.test.tsx`
+- [x] T023 [US3] Write test for GeneralSettings component: verify toggle renders with default OFF, toggling ON and saving sends `show_provider_tag: true` to API in `web/src/pages/settings/tabs/GeneralSettings.test.tsx`
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] Add `show_provider_tag?: boolean` to `Settings` interface in `web/src/types/api.ts`
-- [ ] T025 [P] [US3] Add translation keys for "Show provider info in responses" label and description in `web/src/i18n/locales/en.json`, `zh-CN.json`, `zh-TW.json`, `es.json`, `ja.json`, `ko.json`
-- [ ] T026 [US3] Add Switch toggle for `show_provider_tag` in `web/src/pages/settings/tabs/GeneralSettings.tsx` — read from settings query, include in save mutation
-- [ ] T027 [US3] Verify US3 tests pass and toggle works in dev Web UI at `http://localhost:29840`
+- [x] T024 [US3] Add `show_provider_tag?: boolean` to `Settings` interface in `web/src/types/api.ts`
+- [x] T025 [P] [US3] Add translation keys for "Show provider info in responses" label and description in `web/src/i18n/locales/en.json`, `zh-CN.json`, `zh-TW.json`, `es.json`, `ja.json`, `ko.json`
+- [x] T026 [US3] Add Switch toggle for `show_provider_tag` in `web/src/pages/settings/tabs/GeneralSettings.tsx` — read from settings query, include in save mutation
+- [x] T027 [US3] Verify US3 tests pass and toggle works in dev Web UI at `http://localhost:29840`
 
 **Checkpoint**: Web UI toggle controls the tag feature, persists across page reloads, takes effect without daemon restart
 

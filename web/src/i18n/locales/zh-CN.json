@@ -235,7 +235,9 @@
     "passwordChanged": "密码修改成功",
     "passwordMismatch": "两次输入的密码不一致",
     "webPort": "Web 端口",
-    "proxyPort": "代理端口"
+    "proxyPort": "代理端口",
+    "showProviderTag": "在响应中显示提供商信息",
+    "showProviderTagDesc": "在代理响应的首个文本内容前添加提供商名称和模型信息"
   },
   "auth": {
     "login": "登录",

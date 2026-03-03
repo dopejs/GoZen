@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { settingsApi } from '@/lib/api'
 
 export function GeneralSettings() {
@@ -49,6 +50,10 @@ export function GeneralSettings() {
       default_profile: defaultProfile || settings?.default_profile,
       default_client: defaultClient || settings?.default_client,
     })
+  }
+
+  const handleToggleProviderTag = (checked: boolean) => {
+    updateSettings.mutate({ show_provider_tag: checked })
   }
 
   return (
@@ -93,6 +98,18 @@ export function GeneralSettings() {
           <Label>{t('settings.webPort')}</Label>
           <Input value={settings?.web_port || ''} disabled />
           <p className="text-xs text-muted-foreground">{t('settings.webPortHint')}</p>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="space-y-0.5">
+            <Label>{t('settings.showProviderTag')}</Label>
+            <p className="text-xs text-muted-foreground">{t('settings.showProviderTagDesc')}</p>
+          </div>
+          <Switch
+            checked={settings?.show_provider_tag ?? false}
+            onCheckedChange={handleToggleProviderTag}
+            disabled={updateSettings.isPending}
+          />
         </div>
 
         <Button onClick={handleSave} disabled={updateSettings.isPending}>

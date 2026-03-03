@@ -169,7 +169,9 @@
     "passwordChanged": "Contraseña cambiada exitosamente",
     "passwordMismatch": "Las contraseñas no coinciden",
     "webPort": "Puerto Web",
-    "proxyPort": "Puerto Proxy"
+    "proxyPort": "Puerto Proxy",
+    "showProviderTag": "Mostrar información del proveedor en respuestas",
+    "showProviderTagDesc": "Anteponer el nombre del proveedor y modelo al primer contenido de texto en las respuestas del proxy"
   },
   "auth": {
     "login": "Iniciar Sesión",

@@ -384,7 +384,7 @@ func TestSkillAPIMethodNotAllowed(t *testing.T) {
 func TestSkillUIStaticFiles(t *testing.T) {
 	s := setupTestServerWithSkills(t)
 
-	// Verify index.html is served
+	// Verify index.html is served (built by Vite from web/)
 	w := doRequest(s, "GET", "/", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for /, got %d", w.Code)
@@ -393,29 +393,32 @@ func TestSkillUIStaticFiles(t *testing.T) {
 	if !strings.Contains(body, "GoZen") {
 		t.Error("index.html should contain GoZen")
 	}
-	if !strings.Contains(body, "skills") {
-		t.Error("index.html should reference skills")
-	}
 }
 
 func TestSkillUIAppJS(t *testing.T) {
 	s := setupTestServerWithSkills(t)
 
-	w := doRequest(s, "GET", "/app.js", nil)
+	// Vite build produces hashed JS in assets/, verify index.html references a JS bundle
+	w := doRequest(s, "GET", "/", nil)
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /app.js, got %d", w.Code)
+		t.Fatalf("expected 200 for /, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "/api/v1/bot/skills") {
-		t.Error("app.js should reference the skills API")
+	if !strings.Contains(body, "<script") {
+		t.Error("index.html should include a script tag")
 	}
 }
 
 func TestSkillUIStyleCSS(t *testing.T) {
 	s := setupTestServerWithSkills(t)
 
-	w := doRequest(s, "GET", "/style.css", nil)
+	// Vite build produces hashed CSS in assets/, verify index.html references a stylesheet
+	w := doRequest(s, "GET", "/", nil)
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /style.css, got %d", w.Code)
+		t.Fatalf("expected 200 for /, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "stylesheet") {
+		t.Error("index.html should include a stylesheet link")
 	}
 }

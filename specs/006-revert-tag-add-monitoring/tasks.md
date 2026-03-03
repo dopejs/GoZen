@@ -64,15 +64,15 @@
 - [x] T010 [US1] Remove injectProviderTag() function from internal/proxy/server.go (lines 593-658)
 - [x] T011 [US1] Remove newTagInjectingReader() and tagInjectingReader type from internal/proxy/server.go (lines 660-840)
 - [x] T012 [US1] Remove tag injection calls in copyResponse() from internal/proxy/server.go (lines 533-535 for streaming, 573-577 for non-streaming)
-- [ ] T013 [P] [US1] Remove ShowProviderTag field from OpenCCConfig in internal/config/config.go
-- [ ] T014 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() methods from internal/config/store.go
-- [ ] T015 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() functions from internal/config/compat.go
-- [ ] T016 [P] [US1] Remove ShowProviderTag from settings API in internal/web/api_settings.go
-- [ ] T017 [P] [US1] Remove provider tag toggle from Web UI settings page in internal/web/static/settings.html or internal/web/static/app.js
-- [ ] T018 [P] [US1] Remove show_provider_tag references from Web UI JavaScript in internal/web/static/app.js
-- [ ] T019 [US1] Remove tag injection tests from internal/proxy/server_test.go (search for "tag" or "provider tag")
-- [ ] T020 [US1] Update internal/web/api_settings_test.go to remove ShowProviderTag assertions
-- [ ] T021 [US1] Run all tests: go test ./internal/proxy ./internal/config ./internal/web
+- [x] T013 [P] [US1] Remove ShowProviderTag field from OpenCCConfig in internal/config/config.go
+- [x] T014 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() methods from internal/config/store.go
+- [x] T015 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() functions from internal/config/compat.go
+- [x] T016 [P] [US1] Remove ShowProviderTag from settings API in internal/web/api_settings.go
+- [x] T017 [P] [US1] Remove provider tag toggle from Web UI settings page in internal/web/static/settings.html or internal/web/static/app.js
+- [x] T018 [P] [US1] Remove show_provider_tag references from Web UI JavaScript in internal/web/static/app.js
+- [x] T019 [US1] Remove tag injection tests from internal/proxy/server_test.go (search for "tag" or "provider tag")
+- [x] T020 [US1] Update internal/web/api_settings_test.go to remove ShowProviderTag assertions
+- [x] T021 [US1] Run all tests: go test ./internal/proxy ./internal/config ./internal/web
 - [ ] T022 [US1] Manual verification per quickstart.md Part 1: send thinking block request, verify no tag, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - no tag injection, backward compatible config loading

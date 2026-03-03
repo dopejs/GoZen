@@ -157,8 +157,15 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at `~/.zen/zen.json` (no schema changes needed) (004-fix-proxy-stability)
 - Go 1.21+ + `net/http`, `encoding/json`, `bufio` (SSE parsing), React + TypeScript (Web UI) (005-provider-model-tag)
 - JSON config at `~/.zen/zen.json` (new `show_provider_tag` boolean field, version 10 → 11) (005-provider-model-tag)
-- Go 1.21+ + `net/http`, `encoding/json`, `sync` (for in-memory buffer), Vanilla JS (Web UI) (006-revert-tag-add-monitoring)
+- Go 1.21+ + `net/http`, `encoding/json`, `sync` (for in-memory buffer), React + TypeScript (Web UI) (006-revert-tag-add-monitoring)
 - In-memory ring buffer (default 1000 requests), no database persistence for MVP (006-revert-tag-add-monitoring)
 
 ## Recent Changes
-- 001-provider-proxy: Added Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5)
+- 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering
+  - Removed `show_provider_tag` setting and all tag injection logic from proxy responses
+  - Added RequestMonitor with thread-safe ring buffer (1000 request capacity, LRU eviction)
+  - Added GET /api/v1/monitoring/requests API with filtering (provider, model, status, time range)
+  - Added GET /api/v1/monitoring/requests/:id API for detailed request metadata
+  - Added React-based monitoring page with auto-refresh, filters, and detail modal
+  - Monitoring tracks: timestamp, provider, model, status, duration, tokens, cost, failover chain, errors
+  - Test coverage: 81.6% (proxy), 85.6% (config), 80.3% (web)

@@ -134,7 +134,7 @@
 - [x] T048 [P] [US3] Implement detail modal in web/src/pages/monitoring/index.tsx (show failover chain, token breakdown)
 - [x] T049 [P] [US3] Add click handler to table rows and i18n translations
 - [x] T050 [US3] Run tests: go test ./internal/proxy ./internal/web
-- [ ] T051 [US3] Manual verification: click request, verify detail modal shows all fields per quickstart.md scenarios
+- [x] T051 [US3] Manual verification: click request, verify detail modal shows all fields per quickstart.md scenarios (✅ PASSED via browser automation)
 
 **Checkpoint**: All P1 and P2 user stories should now be independently functional
 
@@ -160,7 +160,7 @@
 - [x] T058 [P] [US4] Implement filter state management in web/src/pages/monitoring/index.tsx
 - [x] T059 [P] [US4] Update API call to include model filter query param in web/src/pages/monitoring/index.tsx
 - [x] T060 [US4] Run tests: go test ./internal/proxy
-- [ ] T061 [US4] Manual verification: apply filters, verify table updates correctly per quickstart.md test scenarios
+- [x] T061 [US4] Manual verification: apply filters, verify table updates correctly per quickstart.md test scenarios (✅ PASSED via browser automation - Model & Status filters working)
 
 **Checkpoint**: All user stories (P1, P2, P3) should now be independently functional
 

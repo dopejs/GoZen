@@ -98,6 +98,7 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 
 	// Request monitoring routes
 	s.mux.HandleFunc("/api/v1/monitoring/requests", s.handleRequests)
+	s.mux.HandleFunc("/api/v1/monitoring/requests/", s.handleRequests)
 
 	// Session routes
 	s.mux.HandleFunc("/api/v1/sessions", s.handleSessions)

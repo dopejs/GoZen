@@ -125,6 +125,21 @@ func (rm *RequestMonitor) GetRecent(limit int, filter RequestFilter) []RequestRe
 	return filtered
 }
 
+// GetByID returns a single request record by ID, or nil if not found.
+func (rm *RequestMonitor) GetByID(id string) *RequestRecord {
+	rm.mu.RLock()
+	defer rm.mu.RUnlock()
+
+	for i := len(rm.records) - 1; i >= 0; i-- {
+		if rm.records[i].ID == id {
+			record := rm.records[i]
+			return &record
+		}
+	}
+
+	return nil
+}
+
 // Global request monitor singleton
 var (
 	globalMonitor     *RequestMonitor

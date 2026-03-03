@@ -157,3 +157,105 @@ func TestGetRequests_WithFilters(t *testing.T) {
 		}
 	})
 }
+
+// TestGetRequestDetail_Success verifies single request detail API
+func TestGetRequestDetail_Success(t *testing.T) {
+	s := setupTestServer(t)
+	monitor := proxy.GetGlobalRequestMonitor()
+	now := time.Now()
+
+	// Add a test record with complete metadata
+	record := proxy.RequestRecord{
+		ID:           "test-req-123",
+		Timestamp:    now,
+		SessionID:    "session-abc",
+		ClientType:   "claude",
+		Provider:     "test-provider",
+		Model:        "claude-sonnet-4",
+		RequestFormat: "anthropic",
+		StatusCode:   200,
+		Duration:     time.Second,
+		InputTokens:  100,
+		OutputTokens: 50,
+		Cost:         0.005,
+		RequestSize:  1024,
+		FailoverChain: []proxy.ProviderAttempt{
+			{
+				Provider:     "failed-provider",
+				StatusCode:   500,
+				ErrorMessage: "Internal server error",
+				Duration:     500 * time.Millisecond,
+			},
+		},
+	}
+	monitor.Add(record)
+
+	// Request the specific record
+	w := doRequest(s, http.MethodGet, "/api/v1/monitoring/requests/test-req-123", nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+
+	// Parse response
+	var resp proxy.RequestRecord
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	// Verify all fields
+	if resp.ID != "test-req-123" {
+		t.Errorf("ID = %s, want test-req-123", resp.ID)
+	}
+	if resp.Provider != "test-provider" {
+		t.Errorf("Provider = %s, want test-provider", resp.Provider)
+	}
+	if resp.Model != "claude-sonnet-4" {
+		t.Errorf("Model = %s, want claude-sonnet-4", resp.Model)
+	}
+	if resp.SessionID != "session-abc" {
+		t.Errorf("SessionID = %s, want session-abc", resp.SessionID)
+	}
+	if resp.ClientType != "claude" {
+		t.Errorf("ClientType = %s, want claude", resp.ClientType)
+	}
+	if resp.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", resp.InputTokens)
+	}
+	if resp.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d, want 50", resp.OutputTokens)
+	}
+	if resp.RequestSize != 1024 {
+		t.Errorf("RequestSize = %d, want 1024", resp.RequestSize)
+	}
+	if len(resp.FailoverChain) != 1 {
+		t.Fatalf("FailoverChain length = %d, want 1", len(resp.FailoverChain))
+	}
+	if resp.FailoverChain[0].Provider != "failed-provider" {
+		t.Errorf("FailoverChain[0].Provider = %s, want failed-provider", resp.FailoverChain[0].Provider)
+	}
+}
+
+// TestGetRequestDetail_NotFound verifies 404 for invalid ID
+func TestGetRequestDetail_NotFound(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Request a non-existent record
+	w := doRequest(s, http.MethodGet, "/api/v1/monitoring/requests/nonexistent-id", nil)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+
+	// Verify error response
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse error response: %v", err)
+	}
+
+	if resp.Error == "" {
+		t.Error("expected error message in response")
+	}
+}

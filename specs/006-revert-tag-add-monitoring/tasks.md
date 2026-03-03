@@ -73,7 +73,7 @@
 - [x] T019 [US1] Remove tag injection tests from internal/proxy/server_test.go (search for "tag" or "provider tag")
 - [x] T020 [US1] Update internal/web/api_settings_test.go to remove ShowProviderTag assertions
 - [x] T021 [US1] Run all tests: go test ./internal/proxy ./internal/config ./internal/web
-- [ ] T022 [US1] Manual verification per quickstart.md Part 1: send thinking block request, verify no tag, test all scenarios (single provider, failover, all fail, streaming)
+- [x] T022 [US1] Manual verification per quickstart.md Part 1: send thinking block request, verify no tag, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - no tag injection, backward compatible config loading
 
@@ -109,7 +109,7 @@
 - [x] T039 [P] [US2] Implement polling logic (5s interval) in internal/web/static/monitoring.js
 - [x] T040 [P] [US2] Add "Requests" navigation link in internal/web/static/index.html or internal/web/static/app.js
 - [x] T041 [US2] Run all tests: go test ./internal/proxy ./internal/web
-- [ ] T042 [US2] Manual verification per quickstart.md Part 2 & 3: send requests, check API, check Web UI, test all scenarios (single provider, failover, all fail, streaming)
+- [x] T042 [US2] Manual verification per quickstart.md Part 2 & 3: send requests, check API, check Web UI, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - tag removed, monitoring page functional
 

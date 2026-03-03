@@ -15,9 +15,8 @@
 
 ## Path Conventions
 
-Based on plan.md structure:
 - Go code: `internal/proxy/`, `internal/config/`, `internal/web/`
-- Web UI: `web/src/pages/`, `web/src/components/`
+- Web UI: `internal/web/static/` (vanilla JS, no frameworks)
 - Tests: `*_test.go` files alongside implementation
 
 ---
@@ -69,12 +68,12 @@ Based on plan.md structure:
 - [ ] T014 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() methods from internal/config/store.go
 - [ ] T015 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() functions from internal/config/compat.go
 - [ ] T016 [P] [US1] Remove ShowProviderTag from settings API in internal/web/api_settings.go
-- [ ] T017 [P] [US1] Remove provider tag toggle from Web UI in web/src/pages/settings/tabs/GeneralSettings.tsx
-- [ ] T018 [P] [US1] Remove show_provider_tag from Settings interface in web/src/types/api.ts
+- [ ] T017 [P] [US1] Remove provider tag toggle from Web UI settings page in internal/web/static/settings.html or internal/web/static/app.js
+- [ ] T018 [P] [US1] Remove show_provider_tag references from Web UI JavaScript in internal/web/static/app.js
 - [ ] T019 [US1] Remove tag injection tests from internal/proxy/server_test.go (search for "tag" or "provider tag")
 - [ ] T020 [US1] Update internal/web/api_settings_test.go to remove ShowProviderTag assertions
 - [ ] T021 [US1] Run all tests: go test ./internal/proxy ./internal/config ./internal/web
-- [ ] T022 [US1] Manual verification per quickstart.md Part 1: send thinking block request, verify no tag
+- [ ] T022 [US1] Manual verification per quickstart.md Part 1: send thinking block request, verify no tag, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - no tag injection, backward compatible config loading
 
@@ -103,14 +102,14 @@ Based on plan.md structure:
 - [ ] T032 [US2] Add request capture in ServeHTTP() in internal/proxy/server.go: extract session ID, client type, model, request size
 - [ ] T033 [US2] Add request capture in tryProviders() in internal/proxy/server.go: track provider attempts and failures
 - [ ] T034 [US2] Add request finalization in recordUsageAndMetrics() in internal/proxy/server.go: calculate cost, add to monitor
-- [ ] T035 [P] [US2] Implement GET /api/v1/requests handler in internal/web/api_requests.go
+- [ ] T035 [P] [US2] Implement GET /api/v1/monitoring/requests handler in internal/web/api_requests.go
 - [ ] T036 [P] [US2] Register /api/v1/requests route in internal/web/server.go
-- [ ] T037 [P] [US2] Create monitoring page HTML/JS in web/src/pages/requests/index.html
-- [ ] T038 [P] [US2] Implement request table rendering in web/src/pages/requests/app.js
-- [ ] T039 [P] [US2] Implement polling logic (5s interval) in web/src/pages/requests/app.js
-- [ ] T040 [P] [US2] Add "Requests" navigation link in web/src/components/Navigation.jsx or web/src/index.html
+- [ ] T037 [P] [US2] Create monitoring page HTML in internal/web/static/monitoring.html
+- [ ] T038 [P] [US2] Implement request table rendering in internal/web/static/monitoring.js
+- [ ] T039 [P] [US2] Implement polling logic (5s interval) in internal/web/static/monitoring.js
+- [ ] T040 [P] [US2] Add "Requests" navigation link in internal/web/static/index.html or internal/web/static/app.js
 - [ ] T041 [US2] Run all tests: go test ./internal/proxy ./internal/web
-- [ ] T042 [US2] Manual verification per quickstart.md Part 2 & 3: send requests, check API, check Web UI
+- [ ] T042 [US2] Manual verification per quickstart.md Part 2 & 3: send requests, check API, check Web UI, test all scenarios (single provider, failover, all fail, streaming)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - tag removed, monitoring page functional
 
@@ -129,13 +128,13 @@ Based on plan.md structure:
 
 ### Implementation for User Story 3
 
-- [ ] T045 [P] [US3] Implement GET /api/v1/requests/:id handler in internal/web/api_requests.go
+- [ ] T045 [P] [US3] Implement GET /api/v1/monitoring/requests/:id handler in internal/web/api_requests.go
 - [ ] T046 [P] [US3] Add GetByID() method to RequestMonitor in internal/proxy/request_monitor.go
-- [ ] T047 [P] [US3] Create detail modal HTML in web/src/pages/requests/index.html
-- [ ] T048 [P] [US3] Implement detail view rendering in web/src/pages/requests/app.js (show failover chain, token breakdown)
-- [ ] T049 [P] [US3] Add click handler to table rows in web/src/pages/requests/app.js
+- [ ] T047 [P] [US3] Create detail modal HTML in internal/web/static/monitoring.html
+- [ ] T048 [P] [US3] Implement detail view rendering in internal/web/static/monitoring.js (show failover chain, token breakdown)
+- [ ] T049 [P] [US3] Add click handler to table rows in internal/web/static/monitoring.js
 - [ ] T050 [US3] Run tests: go test ./internal/proxy ./internal/web
-- [ ] T051 [US3] Manual verification: click request, verify detail modal shows all fields
+- [ ] T051 [US3] Manual verification: click request, verify detail modal shows all fields per quickstart.md scenarios
 
 **Checkpoint**: All P1 and P2 user stories should now be independently functional
 
@@ -157,11 +156,11 @@ Based on plan.md structure:
 ### Implementation for User Story 4
 
 - [ ] T056 [P] [US4] Implement filter logic in GetRecent() method in internal/proxy/request_monitor.go
-- [ ] T057 [P] [US4] Add filter UI controls (dropdowns, date pickers) in web/src/pages/requests/index.html
-- [ ] T058 [P] [US4] Implement filter state management in web/src/pages/requests/app.js
-- [ ] T059 [P] [US4] Update API call to include filter query params in web/src/pages/requests/app.js
+- [ ] T057 [P] [US4] Add filter UI controls (dropdowns, date pickers) in internal/web/static/monitoring.html
+- [ ] T058 [P] [US4] Implement filter state management in internal/web/static/monitoring.js
+- [ ] T059 [P] [US4] Update API call to include filter query params in internal/web/static/monitoring.js
 - [ ] T060 [US4] Run tests: go test ./internal/proxy
-- [ ] T061 [US4] Manual verification: apply filters, verify table updates correctly
+- [ ] T061 [US4] Manual verification: apply filters, verify table updates correctly per quickstart.md test scenarios
 
 **Checkpoint**: All user stories (P1, P2, P3) should now be independently functional
 
@@ -177,7 +176,7 @@ Based on plan.md structure:
 - [ ] T065 Run go test -cover ./internal/proxy ./internal/config ./internal/web to verify coverage
 - [ ] T066 [P] Add error handling for edge cases (daemon restart, buffer overflow) in internal/proxy/request_monitor.go
 - [ ] T067 [P] Add logging for monitoring operations in internal/proxy/request_monitor.go
-- [ ] T068 [P] Optimize Web UI rendering for large request lists in web/src/pages/requests/app.js
+- [ ] T068 [P] Optimize Web UI rendering for large request lists in internal/web/static/monitoring.js
 - [ ] T069 Run full quickstart.md validation (all scenarios)
 - [ ] T070 Update CLAUDE.md to document monitoring feature and tag removal
 - [ ] T071 Code cleanup: remove unused imports, format code with gofmt
@@ -242,12 +241,12 @@ Task: "Implement GetRecent() method in internal/proxy/request_monitor.go"
 Task: "Implement global singleton in internal/proxy/request_monitor.go"
 
 # Launch API and Web UI tasks together:
-Task: "Implement GET /api/v1/requests handler in internal/web/api_requests.go"
+Task: "Implement GET /api/v1/monitoring/requests handler in internal/web/api_requests.go"
 Task: "Register route in internal/web/server.go"
-Task: "Create monitoring page HTML/JS in web/src/pages/requests/index.html"
-Task: "Implement table rendering in web/src/pages/requests/app.js"
-Task: "Implement polling logic in web/src/pages/requests/app.js"
-Task: "Add navigation link in web/src/components/Navigation.jsx"
+Task: "Create monitoring page HTML in internal/web/static/monitoring.html"
+Task: "Implement table rendering in internal/web/static/monitoring.js"
+Task: "Implement polling logic in internal/web/static/monitoring.js"
+Task: "Add navigation link in internal/web/static/index.html or app.js"
 ```
 
 ---

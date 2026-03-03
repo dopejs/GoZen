@@ -17,7 +17,7 @@ Remove the provider tag injection feature (005-provider-model-tag) that causes A
 **Testing**: `go test ./...` (table-driven tests), manual Web UI testing
 **Target Platform**: macOS, Linux (CLI + daemon + Web UI)
 **Project Type**: CLI + daemon (reverse proxy) + Vanilla JS Web UI
-**Performance Goals**: Request metadata capture adds <5ms overhead, Web UI loads history in <2 seconds
+**Performance Goals**: Request metadata capture adds <5ms overhead per request, API response time for 1000 records <500ms (localhost), table rendering <1500ms, total time-to-interactive <2 seconds
 **Constraints**: Must maintain backward compatibility with existing configs containing deprecated `show_provider_tag` field
 **Scale/Scope**: ~8 Go files modified (proxy, config, web API), ~3 Web UI files modified (new page + navigation), ~200-300 lines of production code + tests
 
@@ -70,16 +70,14 @@ internal/web/
 ├── api_settings.go        # Remove ShowProviderTag from settings GET/PUT
 └── api_settings_test.go   # Update tests to remove ShowProviderTag
 
-web/src/
-├── pages/requests/        # NEW: Requests monitoring page
-│   └── RequestsPage.jsx   # NEW: Main monitoring page component
-├── components/            # Existing navigation component
-│   └── Navigation.jsx     # Update to add "Requests" link
-├── types/api.ts           # Remove show_provider_tag from Settings interface
-└── App.jsx                # Add route for /requests page
+web/
+├── static/                # Existing static files directory
+│   ├── monitoring.html    # NEW: Requests monitoring page
+│   ├── monitoring.js      # NEW: Monitoring page JavaScript
+│   └── app.js             # Update to add "Requests" navigation link
 ```
 
-**Structure Decision**: Modifications to existing files for removal, new files for monitoring feature. Request monitoring logic in new `internal/proxy/request_monitor.go`. Web UI adds new page under `web/src/pages/requests/`. No new packages or major architectural changes.
+**Structure Decision**: Modifications to existing files for removal, new files for monitoring feature. Request monitoring logic in new `internal/proxy/request_monitor.go`. Web UI adds new page under `internal/web/static/` following vanilla JS pattern (no frameworks, no build tools). No new packages or major architectural changes.
 
 ## Complexity Tracking
 

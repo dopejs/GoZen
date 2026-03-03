@@ -152,7 +152,7 @@ go test ./internal/web -v
    ```
 
 2. **Navigate to Requests page**
-   - Click "Requests" or "Monitoring" in navigation
+   - Click "Requests" in navigation
    - Or go directly to: http://localhost:29840/requests
 
 3. **Verify table display**
@@ -176,7 +176,7 @@ go test ./internal/web -v
    - Check failover history, token breakdown, timing
 
 **Expected Results:**
-- ✅ Monitoring page loads without errors
+- ✅ Requests page loads without errors
 - ✅ Table displays request data correctly
 - ✅ Auto-refresh works (new requests appear)
 - ✅ Filters work (if implemented)
@@ -283,7 +283,10 @@ tail -f ~/.zen-dev/logs/daemon.log
 tail -f ~/.zen/logs/daemon.log
 ```
 
-### Check SQLite Database
+### Check SQLite Database (Optional Persistence)
+
+If SQLite persistence is enabled, you can query the database directly:
+
 ```bash
 # Dev database
 sqlite3 ~/.zen-dev/logs/zen.db

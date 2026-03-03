@@ -165,6 +165,7 @@
     "noRequests": "No requests available",
     "autoRefresh": "Auto Refresh",
     "allProviders": "All Providers",
+    "allModels": "All Models",
     "allStatus": "All Status",
     "successOnly": "Success Only",
     "errorsOnly": "Errors Only",

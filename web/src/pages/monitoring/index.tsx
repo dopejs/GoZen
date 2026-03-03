@@ -21,6 +21,7 @@ export function MonitoringPage() {
 
   const autoRefresh = searchParams.get('autoRefresh') === 'true'
   const selectedProvider = searchParams.get('provider') || 'all'
+  const selectedModel = searchParams.get('model') || 'all'
   const statusFilter = searchParams.get('status') || 'all'
 
   const updateParams = (updates: Record<string, string | null>) => {
@@ -41,6 +42,9 @@ export function MonitoringPage() {
   }
   if (selectedProvider !== 'all') {
     filterParams.provider = selectedProvider
+  }
+  if (selectedModel !== 'all') {
+    filterParams.model = selectedModel
   }
   if (statusFilter === 'errors') {
     filterParams.status_min = 400
@@ -97,6 +101,11 @@ export function MonitoringPage() {
     ? Array.from(new Set(data.requests.map((r) => r.provider)))
     : []
 
+  // Extract unique models from data
+  const models = data?.requests
+    ? Array.from(new Set(data.requests.map((r) => r.model).filter(Boolean)))
+    : []
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -124,6 +133,23 @@ export function MonitoringPage() {
                 {providers.map((provider) => (
                   <SelectItem key={provider} value={provider}>
                     {provider}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Label htmlFor="model-filter">{t('monitoring.model')}</Label>
+            <Select value={selectedModel} onValueChange={(v) => updateParams({ model: v })}>
+              <SelectTrigger id="model-filter" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('monitoring.allModels')}</SelectItem>
+                {models.map((model) => (
+                  <SelectItem key={model} value={model}>
+                    {model}
                   </SelectItem>
                 ))}
               </SelectContent>

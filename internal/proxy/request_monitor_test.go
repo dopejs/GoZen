@@ -150,3 +150,192 @@ func TestRequestMonitor_ThreadSafety(t *testing.T) {
 		t.Errorf("buffer exceeded max size: got %d records", len(records))
 	}
 }
+
+// TestRequestMonitor_FilterByStatus verifies status code filtering
+func TestRequestMonitor_FilterByStatus(t *testing.T) {
+	monitor := NewRequestMonitor(100)
+	now := time.Now()
+
+	// Add records with different status codes
+	records := []RequestRecord{
+		{ID: "req1", Timestamp: now, Provider: "p1", StatusCode: 200},
+		{ID: "req2", Timestamp: now, Provider: "p1", StatusCode: 400},
+		{ID: "req3", Timestamp: now, Provider: "p1", StatusCode: 500},
+		{ID: "req4", Timestamp: now, Provider: "p1", StatusCode: 201},
+		{ID: "req5", Timestamp: now, Provider: "p1", StatusCode: 429},
+	}
+
+	for _, r := range records {
+		monitor.Add(r)
+	}
+
+	t.Run("filter by min status", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{MinStatus: 400})
+		if len(result) != 3 {
+			t.Errorf("expected 3 records with status >= 400, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.StatusCode < 400 {
+				t.Errorf("expected status >= 400, got %d", r.StatusCode)
+			}
+		}
+	})
+
+	t.Run("filter by max status", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{MaxStatus: 299})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records with status <= 299, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.StatusCode > 299 {
+				t.Errorf("expected status <= 299, got %d", r.StatusCode)
+			}
+		}
+	})
+
+	t.Run("filter by status range", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{MinStatus: 400, MaxStatus: 499})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records with 400 <= status <= 499, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.StatusCode < 400 || r.StatusCode > 499 {
+				t.Errorf("expected 400 <= status <= 499, got %d", r.StatusCode)
+			}
+		}
+	})
+}
+
+// TestRequestMonitor_FilterByTimeRange verifies time range filtering
+func TestRequestMonitor_FilterByTimeRange(t *testing.T) {
+	monitor := NewRequestMonitor(100)
+	now := time.Now()
+
+	// Add records with different timestamps
+	records := []RequestRecord{
+		{ID: "req1", Timestamp: now.Add(-5 * time.Minute), Provider: "p1"},
+		{ID: "req2", Timestamp: now.Add(-3 * time.Minute), Provider: "p1"},
+		{ID: "req3", Timestamp: now.Add(-1 * time.Minute), Provider: "p1"},
+		{ID: "req4", Timestamp: now, Provider: "p1"},
+	}
+
+	for _, r := range records {
+		monitor.Add(r)
+	}
+
+	t.Run("filter by start time", func(t *testing.T) {
+		startTime := now.Add(-2 * time.Minute)
+		result := monitor.GetRecent(10, RequestFilter{StartTime: startTime})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records after start time, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.Timestamp.Before(startTime) {
+				t.Errorf("expected timestamp >= %v, got %v", startTime, r.Timestamp)
+			}
+		}
+	})
+
+	t.Run("filter by end time", func(t *testing.T) {
+		endTime := now.Add(-2 * time.Minute)
+		result := monitor.GetRecent(10, RequestFilter{EndTime: endTime})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records before end time, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.Timestamp.After(endTime) {
+				t.Errorf("expected timestamp <= %v, got %v", endTime, r.Timestamp)
+			}
+		}
+	})
+
+	t.Run("filter by time range", func(t *testing.T) {
+		startTime := now.Add(-4 * time.Minute)
+		endTime := now.Add(-2 * time.Minute)
+		result := monitor.GetRecent(10, RequestFilter{StartTime: startTime, EndTime: endTime})
+		if len(result) != 1 {
+			t.Errorf("expected 1 record in time range, got %d", len(result))
+		}
+		if len(result) > 0 && result[0].ID != "req2" {
+			t.Errorf("expected req2, got %s", result[0].ID)
+		}
+	})
+}
+
+// TestRequestMonitor_FilterByModel verifies model filtering
+func TestRequestMonitor_FilterByModel(t *testing.T) {
+	monitor := NewRequestMonitor(100)
+	now := time.Now()
+
+	// Add records with different models
+	records := []RequestRecord{
+		{ID: "req1", Timestamp: now, Provider: "p1", Model: "claude-sonnet-4"},
+		{ID: "req2", Timestamp: now, Provider: "p1", Model: "claude-opus-4"},
+		{ID: "req3", Timestamp: now, Provider: "p1", Model: "claude-sonnet-4"},
+		{ID: "req4", Timestamp: now, Provider: "p1", Model: "claude-haiku-4"},
+	}
+
+	for _, r := range records {
+		monitor.Add(r)
+	}
+
+	t.Run("filter by model", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{Model: "claude-sonnet-4"})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records for claude-sonnet-4, got %d", len(result))
+		}
+		for _, r := range result {
+			if r.Model != "claude-sonnet-4" {
+				t.Errorf("expected model claude-sonnet-4, got %s", r.Model)
+			}
+		}
+	})
+
+	t.Run("filter by non-existent model", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{Model: "gpt-4"})
+		if len(result) != 0 {
+			t.Errorf("expected 0 records for gpt-4, got %d", len(result))
+		}
+	})
+}
+
+// TestRequestMonitor_FilterCombinations verifies multiple filters work together
+func TestRequestMonitor_FilterCombinations(t *testing.T) {
+	monitor := NewRequestMonitor(100)
+	now := time.Now()
+
+	// Add diverse records
+	records := []RequestRecord{
+		{ID: "req1", Timestamp: now.Add(-5 * time.Minute), Provider: "p1", Model: "claude-sonnet-4", StatusCode: 200},
+		{ID: "req2", Timestamp: now.Add(-3 * time.Minute), Provider: "p2", Model: "claude-opus-4", StatusCode: 500},
+		{ID: "req3", Timestamp: now.Add(-1 * time.Minute), Provider: "p1", Model: "claude-sonnet-4", StatusCode: 200},
+		{ID: "req4", Timestamp: now, Provider: "p1", Model: "claude-haiku-4", StatusCode: 400},
+	}
+
+	for _, r := range records {
+		monitor.Add(r)
+	}
+
+	t.Run("filter by provider and model", func(t *testing.T) {
+		result := monitor.GetRecent(10, RequestFilter{Provider: "p1", Model: "claude-sonnet-4"})
+		if len(result) != 2 {
+			t.Errorf("expected 2 records, got %d", len(result))
+		}
+	})
+
+	t.Run("filter by provider, status, and time", func(t *testing.T) {
+		startTime := now.Add(-4 * time.Minute)
+		result := monitor.GetRecent(10, RequestFilter{
+			Provider:  "p1",
+			MinStatus: 200,
+			MaxStatus: 299,
+			StartTime: startTime,
+		})
+		if len(result) != 1 {
+			t.Errorf("expected 1 record, got %d", len(result))
+		}
+		if len(result) > 0 && result[0].ID != "req3" {
+			t.Errorf("expected req3, got %s", result[0].ID)
+		}
+	})
+}

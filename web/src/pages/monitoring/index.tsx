@@ -1,18 +1,23 @@
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { RefreshCw, Activity, AlertCircle, Clock, Zap } from 'lucide-react'
+import { RefreshCw, Activity, AlertCircle, Clock, Zap, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useRequests } from '@/hooks/use-requests'
+import { requestsApi } from '@/lib/api'
 import type { RequestRecord } from '@/types/api'
 
 export function MonitoringPage() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedRequest, setSelectedRequest] = useState<RequestRecord | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   const autoRefresh = searchParams.get('autoRefresh') === 'true'
   const selectedProvider = searchParams.get('provider') || 'all'
@@ -48,6 +53,18 @@ export function MonitoringPage() {
     filterParams,
     autoRefresh ? 5000 : undefined
   )
+
+  const handleRowClick = async (request: RequestRecord) => {
+    setDetailLoading(true)
+    try {
+      const detail = await requestsApi.get(request.id)
+      setSelectedRequest(detail)
+    } catch (error) {
+      console.error('Failed to load request detail:', error)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   const formatTimestamp = (ts: string) => {
     return new Date(ts).toLocaleString()
@@ -161,7 +178,11 @@ export function MonitoringPage() {
                 </thead>
                 <tbody>
                   {data.requests.map((request: RequestRecord) => (
-                    <tr key={request.id} className="border-b hover:bg-muted/50">
+                    <tr
+                      key={request.id}
+                      className="border-b hover:bg-muted/50 cursor-pointer"
+                      onClick={() => handleRowClick(request)}
+                    >
                       <td className="px-4 py-3 text-muted-foreground">{formatTimestamp(request.timestamp)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -199,6 +220,145 @@ export function MonitoringPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Request Detail Modal */}
+      <Dialog open={!!selectedRequest} onOpenChange={(open) => !open && setSelectedRequest(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>{t('monitoring.requestDetail')}</span>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedRequest(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+
+          {detailLoading ? (
+            <div className="flex justify-center py-8">{t('common.loading')}</div>
+          ) : selectedRequest && (
+            <div className="space-y-6">
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.requestId')}</Label>
+                  <p className="font-mono text-sm">{selectedRequest.id}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.timestamp')}</Label>
+                  <p className="text-sm">{formatTimestamp(selectedRequest.timestamp)}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.provider')}</Label>
+                  <p className="text-sm">{selectedRequest.provider}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.model')}</Label>
+                  <p className="text-sm">{selectedRequest.model}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.status')}</Label>
+                  <div className="mt-1">{getStatusBadge(selectedRequest.status_code)}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.duration')}</Label>
+                  <p className="text-sm">{formatDuration(selectedRequest.duration_ms)}</p>
+                </div>
+              </div>
+
+              {/* Token Breakdown */}
+              <div>
+                <Label className="text-muted-foreground">{t('monitoring.tokenBreakdown')}</Label>
+                <div className="mt-2 grid grid-cols-3 gap-4">
+                  <Card>
+                    <CardContent className="pt-4">
+                      <p className="text-xs text-muted-foreground">{t('monitoring.inputTokens')}</p>
+                      <p className="text-2xl font-bold">{selectedRequest.input_tokens.toLocaleString()}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <p className="text-xs text-muted-foreground">{t('monitoring.outputTokens')}</p>
+                      <p className="text-2xl font-bold">{selectedRequest.output_tokens.toLocaleString()}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-4">
+                      <p className="text-xs text-muted-foreground">{t('monitoring.cost')}</p>
+                      <p className="text-2xl font-bold">{formatCost(selectedRequest.cost_usd)}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Session Info */}
+              {(selectedRequest.session_id || selectedRequest.client_type) && (
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.sessionInfo')}</Label>
+                  <div className="mt-2 grid grid-cols-2 gap-4">
+                    {selectedRequest.session_id && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">{t('monitoring.sessionId')}</p>
+                        <p className="font-mono text-sm">{selectedRequest.session_id}</p>
+                      </div>
+                    )}
+                    {selectedRequest.client_type && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">{t('monitoring.clientType')}</p>
+                        <p className="text-sm">{selectedRequest.client_type}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Failover Chain */}
+              {selectedRequest.failover_chain && selectedRequest.failover_chain.length > 0 && (
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.failoverChain')}</Label>
+                  <div className="mt-2 space-y-2">
+                    {selectedRequest.failover_chain.map((attempt, idx) => (
+                      <Card key={idx}>
+                        <CardContent className="pt-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium">{attempt.provider}</p>
+                              {attempt.error_message && (
+                                <p className="text-xs text-muted-foreground mt-1">{attempt.error_message}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4">
+                              {getStatusBadge(attempt.status_code)}
+                              <span className="text-sm text-muted-foreground">{formatDuration(attempt.duration_ms)}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {selectedRequest.error_message && (
+                <div>
+                  <Label className="text-muted-foreground">{t('monitoring.errorMessage')}</Label>
+                  <Card className="mt-2">
+                    <CardContent className="pt-4">
+                      <p className="text-sm font-mono text-destructive">{selectedRequest.error_message}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* Request Size */}
+              <div>
+                <Label className="text-muted-foreground">{t('monitoring.requestSize')}</Label>
+                <p className="text-sm">{(selectedRequest.request_size / 1024).toFixed(2)} KB</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -167,7 +167,18 @@
     "allProviders": "All Providers",
     "allStatus": "All Status",
     "successOnly": "Success Only",
-    "errorsOnly": "Errors Only"
+    "errorsOnly": "Errors Only",
+    "requestDetail": "Request Detail",
+    "requestId": "Request ID",
+    "tokenBreakdown": "Token Breakdown",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "sessionInfo": "Session Info",
+    "sessionId": "Session ID",
+    "clientType": "Client Type",
+    "failoverChain": "Failover Chain",
+    "errorMessage": "Error Message",
+    "requestSize": "Request Size"
   },
   "usage": {
     "title": "Usage",

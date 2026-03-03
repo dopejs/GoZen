@@ -3,6 +3,7 @@ import type {
   Profile,
   LogsResponse,
   RequestsResponse,
+  RequestRecord,
   UsageSummary,
   HourlyUsage,
   HourlyUsageByDimension,
@@ -156,6 +157,7 @@ export const requestsApi = {
     const query = searchParams.toString()
     return request<RequestsResponse>(`/monitoring/requests${query ? `?${query}` : ''}`)
   },
+  get: (id: string) => request<RequestRecord>(`/monitoring/requests/${id}`),
 }
 
 // Usage API

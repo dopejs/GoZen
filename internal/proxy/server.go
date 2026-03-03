@@ -267,6 +267,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // tryProviders attempts to forward the request to each provider in order.
 // Returns true if a provider successfully handled the request.
 func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure) bool {
+	// Generate request ID for monitoring
+	requestID := generateRequestID()
+	requestStart := time.Now()
+
 	for i, p := range providers {
 		isLast := i == len(providers)-1
 
@@ -369,7 +373,7 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		s.updateSessionCache(sessionID, resp)
 
 		// Record usage and metrics
-		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp)
+		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp, requestID, requestStart, requestFormat, failures)
 
 		s.copyResponse(w, resp, p, requestFormat)
 		return true
@@ -751,13 +755,16 @@ func (s *ProxyServer) updateSessionCache(sessionID string, resp *http.Response) 
 }
 
 // recordUsageAndMetrics records usage data and provider metrics after a successful request.
-func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType string, requestBody []byte, resp *http.Response) {
+func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType string, requestBody []byte, resp *http.Response, requestID string, requestStart time.Time, requestFormat string, failures *[]providerFailure) {
 	// Extract model from request
 	var reqData map[string]interface{}
 	model := ""
 	if err := json.Unmarshal(requestBody, &reqData); err == nil {
 		model, _ = reqData["model"].(string)
 	}
+
+	// Calculate total duration
+	duration := time.Since(requestStart)
 
 	// We need to peek at the response body for usage info
 	// Note: For non-streaming responses, the body was already read by updateSessionCache
@@ -767,12 +774,43 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 		if db := GetGlobalLogDB(); db != nil {
 			db.RecordMetric(providerName, 0, resp.StatusCode, false, false)
 		}
+
+		// Record request to monitor (streaming, no token info yet)
+		monitor := GetGlobalRequestMonitor()
+		monitor.Add(RequestRecord{
+			ID:            requestID,
+			Timestamp:     requestStart,
+			SessionID:     sessionID,
+			ClientType:    clientType,
+			Provider:      providerName,
+			Model:         model,
+			RequestFormat: requestFormat,
+			StatusCode:    resp.StatusCode,
+			Duration:      duration,
+			RequestSize:   len(requestBody),
+			FailoverChain: buildFailoverChain(failures),
+		})
 		return
 	}
 
 	// Get usage from session cache (was just updated by updateSessionCache)
 	usage := GetSessionUsage(sessionID)
 	if usage == nil {
+		// Record request without token info
+		monitor := GetGlobalRequestMonitor()
+		monitor.Add(RequestRecord{
+			ID:            requestID,
+			Timestamp:     requestStart,
+			SessionID:     sessionID,
+			ClientType:    clientType,
+			Provider:      providerName,
+			Model:         model,
+			RequestFormat: requestFormat,
+			StatusCode:    resp.StatusCode,
+			Duration:      duration,
+			RequestSize:   len(requestBody),
+			FailoverChain: buildFailoverChain(failures),
+		})
 		return
 	}
 
@@ -816,6 +854,25 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 	if bridge := GetBotBridge(); bridge != nil {
 		bridge.MarkSessionIdle(sessionID)
 	}
+
+	// Record request to monitor with full details
+	monitor := GetGlobalRequestMonitor()
+	monitor.Add(RequestRecord{
+		ID:            requestID,
+		Timestamp:     requestStart,
+		SessionID:     sessionID,
+		ClientType:    clientType,
+		Provider:      providerName,
+		Model:         model,
+		RequestFormat: requestFormat,
+		StatusCode:    resp.StatusCode,
+		Duration:      duration,
+		InputTokens:   usage.InputTokens,
+		OutputTokens:  usage.OutputTokens,
+		Cost:          cost,
+		RequestSize:   len(requestBody),
+		FailoverChain: buildFailoverChain(failures),
+	})
 }
 
 func singleJoiningSlash(a, b string) string {
@@ -828,6 +885,29 @@ func singleJoiningSlash(a, b string) string {
 		return a + "/" + b
 	}
 	return a + b
+}
+
+// generateRequestID generates a unique request ID for monitoring.
+func generateRequestID() string {
+	return fmt.Sprintf("req_%d", time.Now().UnixNano())
+}
+
+// buildFailoverChain converts providerFailure slice to ProviderAttempt slice for monitoring.
+func buildFailoverChain(failures *[]providerFailure) []ProviderAttempt {
+	if failures == nil || len(*failures) == 0 {
+		return nil
+	}
+
+	chain := make([]ProviderAttempt, len(*failures))
+	for i, f := range *failures {
+		chain[i] = ProviderAttempt{
+			Provider:     f.Name,
+			StatusCode:   f.StatusCode,
+			ErrorMessage: f.Body,
+			Duration:     f.Elapsed,
+		}
+	}
+	return chain
 }
 
 // isRequestRelatedError checks if a 5xx error is caused by the request itself

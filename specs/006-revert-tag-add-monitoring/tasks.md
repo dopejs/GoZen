@@ -25,9 +25,9 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Verify Go 1.21+ and dev environment setup per quickstart.md
-- [ ] T002 Create branch 006-revert-tag-add-monitoring and verify clean working directory
-- [ ] T003 Review existing code structure in internal/proxy/server.go to understand tag injection points
+- [x] T001 Verify Go 1.21+ and dev environment setup per quickstart.md
+- [x] T002 Create branch 006-revert-tag-add-monitoring and verify clean working directory
+- [x] T003 Review existing code structure in internal/proxy/server.go to understand tag injection points
 
 ---
 
@@ -37,9 +37,9 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Define RequestRecord and ProviderAttempt types in internal/proxy/request_monitor.go per data-model.md
-- [ ] T005 Define RequestMonitor struct with sync.RWMutex and buffer in internal/proxy/request_monitor.go
-- [ ] T006 Define RequestFilter struct for query filtering in internal/proxy/request_monitor.go
+- [x] T004 Define RequestRecord and ProviderAttempt types in internal/proxy/request_monitor.go per data-model.md
+- [x] T005 Define RequestMonitor struct with sync.RWMutex and buffer in internal/proxy/request_monitor.go
+- [x] T006 Define RequestFilter struct for query filtering in internal/proxy/request_monitor.go
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -55,15 +55,15 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T007 [P] [US1] Write test in internal/proxy/server_test.go: TestCopyResponse_NoTagInjection (verify no tag in response)
-- [ ] T008 [P] [US1] Write test in internal/proxy/server_test.go: TestCopyResponse_ThinkingBlockPreserved (verify thinking block unchanged)
-- [ ] T009 [P] [US1] Write test in internal/config/config_test.go: TestConfig_DeprecatedFieldIgnored (verify show_provider_tag ignored on load)
+- [x] T007 [P] [US1] Write test in internal/proxy/server_test.go: TestCopyResponse_NoTagInjection (verify no tag in response)
+- [x] T008 [P] [US1] Write test in internal/proxy/server_test.go: TestCopyResponse_ThinkingBlockPreserved (verify thinking block unchanged)
+- [x] T009 [P] [US1] Write test in internal/config/config_test.go: TestConfig_DeprecatedFieldIgnored (verify show_provider_tag ignored on load)
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Remove injectProviderTag() function from internal/proxy/server.go (lines 593-658)
-- [ ] T011 [US1] Remove newTagInjectingReader() and tagInjectingReader type from internal/proxy/server.go (lines 660-840)
-- [ ] T012 [US1] Remove tag injection calls in copyResponse() from internal/proxy/server.go (lines 533-535 for streaming, 573-577 for non-streaming)
+- [x] T010 [US1] Remove injectProviderTag() function from internal/proxy/server.go (lines 593-658)
+- [x] T011 [US1] Remove newTagInjectingReader() and tagInjectingReader type from internal/proxy/server.go (lines 660-840)
+- [x] T012 [US1] Remove tag injection calls in copyResponse() from internal/proxy/server.go (lines 533-535 for streaming, 573-577 for non-streaming)
 - [ ] T013 [P] [US1] Remove ShowProviderTag field from OpenCCConfig in internal/config/config.go
 - [ ] T014 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() methods from internal/config/store.go
 - [ ] T015 [P] [US1] Remove GetShowProviderTag() and SetShowProviderTag() functions from internal/config/compat.go

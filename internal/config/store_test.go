@@ -394,43 +394,5 @@ func TestStoreGetProfileOrderReturnsCopy(t *testing.T) {
 	}
 }
 
-func TestStoreGetSetShowProviderTag(t *testing.T) {
-	// T004: Test GetShowProviderTag() / SetShowProviderTag() in Store
-	tests := []struct {
-		name     string
-		setValue *bool // nil = don't set, just check default
-		expected bool
-	}{
-		{"default is false", nil, false},
-		{"set true", boolPtr(true), true},
-		{"set false", boolPtr(false), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, _ := newTestStore(t)
-			s.Load()
-
-			if tt.setValue != nil {
-				if err := s.SetShowProviderTag(*tt.setValue); err != nil {
-					t.Fatalf("SetShowProviderTag(%v) error: %v", *tt.setValue, err)
-				}
-			}
-			got := s.GetShowProviderTag()
-			if got != tt.expected {
-				t.Errorf("GetShowProviderTag() = %v, want %v", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestStoreGetShowProviderTagNilConfig(t *testing.T) {
-	s, _ := newTestStore(t)
-	// Don't call Load — config stays nil
-	got := s.GetShowProviderTag()
-	if got != false {
-		t.Errorf("GetShowProviderTag() with nil config = %v, want false", got)
-	}
-}
 
 func boolPtr(b bool) *bool { return &b }

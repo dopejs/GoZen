@@ -792,7 +792,6 @@ type OpenCCConfig struct {
 	ProxyPort       int                         `json:"proxy_port,omitempty"`        // proxy port (defaults to 19841)
 	WebPort         int                         `json:"web_port,omitempty"`          // web UI port (defaults to 19840)
 	WebPasswordHash string                      `json:"web_password_hash,omitempty"` // bcrypt hash for Web UI access password
-	ShowProviderTag bool                        `json:"show_provider_tag,omitempty"` // show provider/model tag in proxy responses
 	Providers       map[string]*ProviderConfig  `json:"providers"`                   // provider configurations
 	Profiles        map[string]*ProfileConfig   `json:"profiles"`                    // profile configurations
 	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"`  // directory path -> binding config
@@ -845,7 +844,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.ProxyPort = raw.ProxyPort
 	c.WebPort = raw.WebPort
 	c.WebPasswordHash = raw.WebPasswordHash
-	c.ShowProviderTag = raw.ShowProviderTag
+	// Note: ShowProviderTag is parsed but ignored (deprecated field)
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 	c.Sync = raw.Sync

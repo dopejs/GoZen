@@ -2614,29 +2614,106 @@ func TestStreamingNoSpaceSSEFormat(t *testing.T) {
 	}
 }
 
-// Benchmark tests for SC-003 latency validation (<5ms)
+// TestCopyResponse_NoTagInjection verifies that responses are not modified
+// and no provider tags are injected into the response body.
+func TestCopyResponse_NoTagInjection(t *testing.T) {
+	tests := []struct {
+		name           string
+		responseBody   string
+		contentType    string
+		wantUnmodified bool
+	}{
+		{
+			name:           "non-streaming JSON response",
+			responseBody:   `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"model":"claude-sonnet-4"}`,
+			contentType:    "application/json",
+			wantUnmodified: true,
+		},
+		{
+			name: "streaming SSE response",
+			responseBody: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4\"}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n" +
+				"event: message_stop\n" +
+				"data: {\"type\":\"message_stop\"}\n\n",
+			contentType:    "text/event-stream",
+			wantUnmodified: true,
+		},
+	}
 
-func BenchmarkInjectProviderTag(b *testing.B) {
-	body := []byte(`{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello, world!"}],"model":"claude-sonnet-4-20250514","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		injectProviderTag(body, "test-provider", "anthropic")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(200)
+				w.Write([]byte(tt.responseBody))
+			}))
+			defer backend.Close()
+
+			u, _ := url.Parse(backend.URL)
+			providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
+			srv := NewProxyServer(providers, discardLogger())
+
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("anthropic-version", "2023-06-01")
+			w := httptest.NewRecorder()
+
+			srv.ServeHTTP(w, req)
+
+			body := w.Body.String()
+
+			// Verify no provider tag is present
+			if strings.Contains(body, "[provider:") || strings.Contains(body, "provider: test-provider") {
+				t.Errorf("response contains provider tag, but should be unmodified:\n%s", body)
+			}
+
+			// Verify response is identical to backend response
+			if tt.wantUnmodified && body != tt.responseBody {
+				t.Errorf("response was modified\nwant: %s\ngot:  %s", tt.responseBody, body)
+			}
+		})
 	}
 }
 
-func BenchmarkInjectProviderTagOpenAI(b *testing.B) {
-	body := []byte(`{"id":"chatcmpl-123","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"Hello, world!"},"finish_reason":"stop"}],"model":"gpt-4","usage":{"prompt_tokens":10,"completion_tokens":5}}`)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		injectProviderTag(body, "test-provider", "openai")
-	}
-}
+// TestCopyResponse_ThinkingBlockPreserved verifies that thinking blocks
+// are not modified and remain valid for Bedrock API validation.
+func TestCopyResponse_ThinkingBlockPreserved(t *testing.T) {
+	thinkingResponse := `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this"},{"type":"text","text":"Here is my response"}],"model":"claude-sonnet-4"}`
 
-func BenchmarkTagInjectingReader(b *testing.B) {
-	sseData := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-20250514\",\"stop_reason\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		reader := newTagInjectingReader(strings.NewReader(sseData), "test-provider")
-		io.ReadAll(reader)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(thinkingResponse))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// Verify thinking block is preserved exactly
+	if !strings.Contains(body, `"type":"thinking"`) {
+		t.Error("thinking block was removed or modified")
+	}
+
+	// Verify no tag injection in thinking block
+	if strings.Contains(body, "[provider:") {
+		t.Error("provider tag was injected into response with thinking block")
+	}
+
+	// Verify response is byte-for-byte identical
+	if body != thinkingResponse {
+		t.Errorf("response with thinking block was modified\nwant: %s\ngot:  %s", thinkingResponse, body)
 	}
 }

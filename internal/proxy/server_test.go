@@ -2569,6 +2569,51 @@ func TestStreamingTagInjectionEdgeCases(t *testing.T) {
 	})
 }
 
+// TestStreamingNoSpaceSSEFormat tests tag injection with "data:" (no space) SSE format
+// used by some providers instead of the standard "data: " (with space) format.
+func TestStreamingNoSpaceSSEFormat(t *testing.T) {
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+	config.SetShowProviderTag(true)
+
+	// SSE stream using "data:" without space (and "event:" without space)
+	sseStream := "" +
+		"event:message_start\n" +
+		`data:{"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-20250514","stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n" +
+		"event:content_block_start\n" +
+		`data:{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
+		"event:content_block_delta\n" +
+		`data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` + "\n\n" +
+		"event:content_block_stop\n" +
+		`data:{"type":"content_block_stop","index":0}` + "\n\n" +
+		"event:message_stop\n" +
+		`data:{"type":"message_stop"}` + "\n\n"
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		w.Write([]byte(sseStream))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	expectedTag := `[provider: test-provider, model: claude-sonnet-4-20250514]\\nHello`
+	if !strings.Contains(body, expectedTag) {
+		t.Errorf("expected tag in streaming response with no-space SSE format, got:\n%s", body)
+	}
+}
+
 // Benchmark tests for SC-003 latency validation (<5ms)
 
 func BenchmarkInjectProviderTag(b *testing.B) {

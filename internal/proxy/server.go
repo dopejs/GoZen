@@ -720,27 +720,35 @@ func (t *tagInjectingReader) Read(p []byte) (int, error) {
 // processLine handles a single SSE line, extracting model info and injecting
 // the tag into the first text delta event.
 func (t *tagInjectingReader) processLine(line string) string {
-	// Extract model from event data lines
+	// Extract model from event data lines (handle both "data: " and "data:" formats)
+	var data string
+	var prefix string
 	if strings.HasPrefix(line, "data: ") {
-		data := strings.TrimPrefix(line, "data: ")
+		data = strings.TrimPrefix(line, "data: ")
+		prefix = "data: "
+	} else if strings.HasPrefix(line, "data:") {
+		data = strings.TrimPrefix(line, "data:")
+		prefix = "data:"
+	} else {
+		return line
+	}
 
-		// Skip [DONE] signal
-		if data == "[DONE]" {
-			return line
-		}
+	// Skip [DONE] signal
+	if data == "[DONE]" {
+		return line
+	}
 
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			return line
-		}
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &event); err != nil {
+		return line
+	}
 
-		// Extract model from various SSE format events
-		t.extractModel(event)
+	// Extract model from various SSE format events
+	t.extractModel(event)
 
-		// Try to inject tag into first text delta
-		if modified := t.tryInjectTag(event); modified != "" {
-			return "data: " + modified
-		}
+	// Try to inject tag into first text delta
+	if modified := t.tryInjectTag(event); modified != "" {
+		return prefix + modified
 	}
 
 	return line

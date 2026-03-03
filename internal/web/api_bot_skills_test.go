@@ -153,8 +153,14 @@ func TestSkillAPICreateSkill(t *testing.T) {
 func TestSkillAPICreateSkillValidation(t *testing.T) {
 	s := setupTestServerWithSkills(t)
 
+	// Invalid JSON
+	w := doRequest(s, "POST", "/api/v1/bot/skills", "not-json")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
+	}
+
 	// Missing name
-	w := doRequest(s, "POST", "/api/v1/bot/skills", map[string]interface{}{
+	w = doRequest(s, "POST", "/api/v1/bot/skills", map[string]interface{}{
 		"intent":   "chat",
 		"keywords": map[string][]string{"en": {"test"}},
 	})
@@ -169,6 +175,15 @@ func TestSkillAPICreateSkillValidation(t *testing.T) {
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing intent, got %d", w.Code)
+	}
+
+	// Missing keywords
+	w = doRequest(s, "POST", "/api/v1/bot/skills", map[string]interface{}{
+		"name":   "test",
+		"intent": "chat",
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing keywords, got %d", w.Code)
 	}
 }
 
@@ -250,6 +265,12 @@ func TestSkillAPIUpdateSkill(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for updating nonexistent skill, got %d", w.Code)
 	}
+
+	// Update with invalid JSON
+	w = doRequest(s, "PUT", "/api/v1/bot/skills/test-skill", "not-json")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", w.Code)
+	}
 }
 
 func TestSkillAPIConfig(t *testing.T) {
@@ -275,10 +296,16 @@ func TestSkillAPIConfig(t *testing.T) {
 		t.Errorf("confidence_threshold = %f, want 0.7", cfg.ConfidenceThreshold)
 	}
 
-	// PUT config
+	// PUT config – update all fields
+	newEnabled := false
 	newThreshold := 0.8
+	newLLM := true
+	newBuf := 200
 	w = doRequest(s, "PUT", "/api/v1/bot/skills/config", map[string]interface{}{
+		"enabled":              newEnabled,
 		"confidence_threshold": newThreshold,
+		"llm_fallback":         newLLM,
+		"log_buffer_size":      newBuf,
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("PUT config expected 200, got %d: %s", w.Code, w.Body.String())
@@ -288,6 +315,21 @@ func TestSkillAPIConfig(t *testing.T) {
 	sc := config.GetSkillsConfig()
 	if sc.ConfidenceThreshold != 0.8 {
 		t.Errorf("after update, confidence_threshold = %f, want 0.8", sc.ConfidenceThreshold)
+	}
+	if sc.Enabled != false {
+		t.Error("after update, expected enabled=false")
+	}
+	if sc.LLMFallback != true {
+		t.Error("after update, expected llm_fallback=true")
+	}
+	if sc.LogBufferSize != 200 {
+		t.Errorf("after update, log_buffer_size = %d, want 200", sc.LogBufferSize)
+	}
+
+	// PUT with invalid JSON
+	badReq := doRequest(s, "PUT", "/api/v1/bot/skills/config", "not-json")
+	if badReq.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid JSON, got %d", badReq.Code)
 	}
 }
 
@@ -355,6 +397,17 @@ func TestSkillAPILogs(t *testing.T) {
 	if len(logs) == 0 {
 		t.Error("expected at least some match logs")
 	}
+
+	// Get logs with limit parameter
+	w = doRequest(s, "GET", "/api/v1/bot/skills/logs?limit=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for logs with limit, got %d", w.Code)
+	}
+	var limitedLogs []map[string]interface{}
+	decodeJSON(t, w, &limitedLogs)
+	if len(limitedLogs) > 1 {
+		t.Errorf("expected at most 1 log with limit=1, got %d", len(limitedLogs))
+	}
 }
 
 func TestSkillAPIMethodNotAllowed(t *testing.T) {
@@ -376,6 +429,12 @@ func TestSkillAPIMethodNotAllowed(t *testing.T) {
 	w = doRequest(s, "POST", "/api/v1/bot/skills/logs", nil)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405 for POST on logs endpoint, got %d", w.Code)
+	}
+
+	// DELETE on config endpoint
+	w = doRequest(s, "DELETE", "/api/v1/bot/skills/config", nil)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for DELETE on config endpoint, got %d", w.Code)
 	}
 }
 

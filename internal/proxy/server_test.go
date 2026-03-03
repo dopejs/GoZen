@@ -2568,3 +2568,30 @@ func TestStreamingTagInjectionEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+// Benchmark tests for SC-003 latency validation (<5ms)
+
+func BenchmarkInjectProviderTag(b *testing.B) {
+	body := []byte(`{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello, world!"}],"model":"claude-sonnet-4-20250514","stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5}}`)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		injectProviderTag(body, "test-provider", "anthropic")
+	}
+}
+
+func BenchmarkInjectProviderTagOpenAI(b *testing.B) {
+	body := []byte(`{"id":"chatcmpl-123","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"Hello, world!"},"finish_reason":"stop"}],"model":"gpt-4","usage":{"prompt_tokens":10,"completion_tokens":5}}`)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		injectProviderTag(body, "test-provider", "openai")
+	}
+}
+
+func BenchmarkTagInjectingReader(b *testing.B) {
+	sseData := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_123\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-20250514\",\"stop_reason\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reader := newTagInjectingReader(strings.NewReader(sseData), "test-provider")
+		io.ReadAll(reader)
+	}
+}

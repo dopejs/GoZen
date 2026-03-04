@@ -43,14 +43,15 @@ As a user, when my computer wakes from sleep and the daemon has been killed by t
 
 **Why this priority**: This is the primary cause of "Connection error" disruptions. Users should never need to know that the daemon was killed — recovery must be automatic and transparent.
 
-**Independent Test**: Start a client session through the daemon, simulate daemon death (kill the daemon process), send a new request from the client, verify the daemon is auto-restarted and the request succeeds.
+**Independent Test**: Start a client session through the daemon via `zen`, kill the daemon process, observe that the client exits, and verify that `zen` automatically restarts the daemon and re-launches the client.
 
 **Acceptance Scenarios**:
 
-1. **Given** the daemon has been killed (e.g., by SIGTERM during sleep), **When** the client sends a new request through the proxy, **Then** the system detects the dead daemon, restarts it, and retries the request — all transparently to the user.
-2. **Given** the daemon dies while the client is idle, **When** the client later sends a request, **Then** the request succeeds without the user seeing "Connection error".
+1. **Given** the daemon has been killed (e.g., by SIGTERM during sleep), **When** the client process exits with a connection error, **Then** the `zen` wrapper detects the exit, restarts the daemon, and re-launches the client process so the user can continue their session.
+2. **Given** the daemon dies while the client is idle, **When** the client later sends a request and exits with a connection error, **Then** the `zen` wrapper restarts the daemon and re-launches the client — the user may need to re-send their last message but does not need to manually restart the daemon.
 3. **Given** the daemon cannot be restarted (e.g., port permanently blocked), **When** recovery is attempted, **Then** the user sees a clear diagnostic message explaining why recovery failed and what to do.
 4. **Given** the daemon is auto-restarted after being killed, **When** the restart completes, **Then** the daemon is fully functional within 5 seconds.
+5. **Given** multiple `zen` wrapper processes detect the dead daemon simultaneously, **When** they all attempt to restart the daemon, **Then** only one restart proceeds (coordinated via file lock) and the others wait and verify the daemon is alive.
 
 ---
 
@@ -73,7 +74,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 ### Edge Cases
 
 - What happens when the daemon is killed mid-request (while streaming a response)?
-- What happens when multiple `zen` processes try to auto-restart the daemon simultaneously?
+- What happens when multiple `zen` processes try to auto-restart the daemon simultaneously? (Coordinated via file lock — only one proceeds, others wait and verify.)
 - What happens when the system wakes from sleep but network connectivity is not yet restored?
 - What happens when the configured proxy port is in the ephemeral range and the OS has allocated it to another process?
 - What happens when the daemon is auto-restarted but the config file has been modified during sleep?
@@ -88,14 +89,14 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - **FR-001**: The system MUST use a fixed, deterministic proxy port that does not change across daemon restarts. The default port MUST be 19841 unless explicitly overridden by the user in configuration.
 - **FR-002**: The system MUST persist the proxy port in configuration on first startup so it remains stable across all future restarts.
 - **FR-003**: When the configured proxy port is unavailable, the system MUST identify the process occupying it. If the occupying process is a zen daemon (stale/orphaned), the system MUST kill it and proceed to start. If the occupying process is NOT a zen daemon, the system MUST report the conflicting process name and fail to start — it MUST NOT silently fall back to a random port.
-- **FR-011**: The proxy port MUST be configurable only through the CLI (`zen config`). The Web UI settings page MUST display the current proxy port as read-only, with a message directing the user to use the CLI to change it.
+- **FR-011**: The proxy port MUST be configurable through the CLI via a generic `zen config set <key> <value>` subcommand (e.g., `zen config set proxy_port 29841`). This subcommand should be extensible for other settings in the future. The Web UI settings page MUST display the current proxy port as read-only, with a message directing the user to use the CLI to change it.
 - **FR-012**: When the user changes the proxy port via CLI, the system MUST validate that the port number is within the valid range (1024-65535) before saving.
 - **FR-013**: After a proxy port change via CLI, the system MUST automatically restart the daemon to apply the new port, and MUST display a message telling the user to restart all running `zen` client processes (since their `ANTHROPIC_BASE_URL` still points to the old port).
-- **FR-004**: When a client request fails to connect to the proxy, the system MUST check if the daemon is still running and attempt to restart it automatically.
-- **FR-005**: After automatic daemon restart, the system MUST retry the failed request at least once before reporting an error to the user.
+- **FR-004**: When the client process (e.g., claude) exits with a connection error, the `zen` CLI wrapper MUST detect this, check if the daemon is still running, and attempt to restart the daemon automatically. The recovery mechanism operates at the wrapper level — `zen` monitors the child process exit, not individual HTTP requests.
+- **FR-005**: After automatic daemon restart, the `zen` wrapper MUST re-launch the client process so the user's session continues. The user may need to re-send their last message, but they should not need to manually restart the daemon or reconfigure anything.
 - **FR-006**: Automatic daemon restart MUST complete within 5 seconds, including port binding and readiness verification.
-- **FR-007**: When multiple clients detect a dead daemon simultaneously, only one restart attempt MUST proceed (preventing race conditions and port conflicts).
-- **FR-008**: The monitoring data MUST report request duration in milliseconds as indicated by the field name `duration_ms`, not in nanoseconds or any other unit.
+- **FR-007**: When multiple `zen` wrapper processes detect a dead daemon simultaneously, only one restart attempt MUST proceed. Coordination MUST use a file lock mechanism (e.g., `~/.zen/zend.lock`) so that competing processes wait for the lock, then verify the daemon is already alive before attempting their own start.
+- **FR-008**: The monitoring data MUST report request duration in milliseconds as indicated by the field name `duration_ms`, not in nanoseconds or any other unit. This fix MUST apply to all modules that serialize `duration_ms`, including both the proxy request monitor and the bot matcher.
 - **FR-009**: The duration correction MUST apply to both the main request record and individual provider attempts in the failover chain.
 - **FR-010**: The system SHOULD log daemon restart events so users can audit recovery behavior.
 
@@ -104,7 +105,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 ### Measurable Outcomes
 
 - **SC-001**: The proxy port remains identical across 10 consecutive daemon stop/start cycles.
-- **SC-002**: After a simulated daemon kill, the next client request succeeds automatically within 10 seconds, with zero manual intervention required.
+- **SC-002**: After a simulated daemon kill, the `zen` wrapper detects the client exit, restarts the daemon, and re-launches the client process automatically within 10 seconds, with zero manual intervention required.
 - **SC-003**: 100% of `duration_ms` values in monitoring data are within 2x of the actual wall-clock request duration (i.e., no nanosecond-to-millisecond confusion).
 - **SC-004**: Users experience zero "Connection error" disruptions due to daemon death during a full workday that includes at least one system sleep/wake cycle.
 - **SC-005**: When the proxy port is occupied by a non-zen process, the daemon startup fails with a diagnostic message naming the conflicting process within 3 seconds (no silent fallback to random port).
@@ -114,7 +115,9 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 ## Assumptions
 
 - The daemon will continue to run as a background process (not a system service via launchd) by default. System service integration (launchd KeepAlive) is a future enhancement, not part of this scope.
-- The auto-restart mechanism operates at the client-to-proxy connection layer, not within the daemon itself. The daemon does not need to "self-heal" — the `zen` CLI wrapper handles recovery.
+- The auto-restart mechanism operates at the `zen` CLI wrapper level. When the client process (e.g., claude) exits with a connection error, the wrapper detects the exit, restarts the daemon, and re-launches the client. Individual HTTP request retry is not in scope — the user may need to re-send their last message after the session is re-established.
+- Concurrent daemon restart attempts by multiple `zen` wrapper processes are coordinated via a file lock (`~/.zen/zend.lock`).
+- The `zen config set` subcommand is a new generic mechanism for setting config values from the CLI, starting with `proxy_port` but extensible to other keys.
 - The default proxy port 19841 is outside the ephemeral port range on macOS (49152-65535) and is unlikely to conflict with common services.
 - The monitoring duration fix is a display/serialization concern and does not require changes to the underlying data model or storage.
 
@@ -123,11 +126,10 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 ### In Scope
 
 - Fixed proxy port enforcement
-- User-configurable proxy port via CLI (read-only display in Web UI)
-- Client-side daemon liveness detection and auto-restart
-- Request retry after daemon restart
-- Monitoring duration unit correction (nanoseconds to milliseconds)
-- Race condition prevention for concurrent restart attempts
+- User-configurable proxy port via `zen config set` CLI (read-only display in Web UI)
+- Wrapper-level daemon liveness detection and auto-restart (client process re-launch)
+- Monitoring duration unit correction (nanoseconds to milliseconds) across proxy and bot modules
+- Race condition prevention for concurrent restart attempts via file lock
 
 ### Out of Scope
 

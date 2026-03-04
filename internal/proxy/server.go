@@ -786,7 +786,7 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 			Model:         model,
 			RequestFormat: requestFormat,
 			StatusCode:    resp.StatusCode,
-			Duration:      duration,
+			DurationMs:    duration.Milliseconds(),
 			RequestSize:   len(requestBody),
 			FailoverChain: buildFailoverChain(failures),
 		})
@@ -807,7 +807,7 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 			Model:         model,
 			RequestFormat: requestFormat,
 			StatusCode:    resp.StatusCode,
-			Duration:      duration,
+			DurationMs:    duration.Milliseconds(),
 			RequestSize:   len(requestBody),
 			FailoverChain: buildFailoverChain(failures),
 		})
@@ -866,7 +866,7 @@ func (s *ProxyServer) recordUsageAndMetrics(providerName, sessionID, clientType 
 		Model:         model,
 		RequestFormat: requestFormat,
 		StatusCode:    resp.StatusCode,
-		Duration:      duration,
+		DurationMs:    duration.Milliseconds(),
 		InputTokens:   usage.InputTokens,
 		OutputTokens:  usage.OutputTokens,
 		Cost:          cost,
@@ -904,7 +904,7 @@ func buildFailoverChain(failures *[]providerFailure) []ProviderAttempt {
 			Provider:     f.Name,
 			StatusCode:   f.StatusCode,
 			ErrorMessage: f.Body,
-			Duration:     f.Elapsed,
+			DurationMs:   f.Elapsed.Milliseconds(),
 		}
 	}
 	return chain

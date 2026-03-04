@@ -47,8 +47,8 @@ func TestDetectScenarioThinkDisabled(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
 	}
 }
 
@@ -62,8 +62,8 @@ func TestDetectScenarioThinkEmptyMap(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() = %q, want %q (empty thinking map should not trigger think)", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() = %q, want %q (empty thinking map should not trigger think)", got, config.ScenarioCode)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestDetectScenarioThinkMapWithBudget(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() = %q, want %q (thinking map without type key should not trigger think)", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() = %q, want %q (thinking map without type key should not trigger think)", got, config.ScenarioCode)
 	}
 }
 
@@ -107,8 +107,8 @@ func TestDetectScenarioThinkBoolFalse(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
 	}
 }
 
@@ -189,6 +189,9 @@ func TestDetectScenarioLongContextFromSystem(t *testing.T) {
 }
 
 func TestDetectScenarioDefault(t *testing.T) {
+	// With code scenario, regular non-specialized requests now return ScenarioCode.
+	// ScenarioDefault is only returned when no other scenario matches AND the request
+	// is a background request that somehow doesn't match haiku detection.
 	body := map[string]interface{}{
 		"model": "claude-sonnet-4-5",
 		"messages": []interface{}{
@@ -196,8 +199,8 @@ func TestDetectScenarioDefault(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
 	}
 }
 
@@ -356,10 +359,10 @@ func TestDetectScenarioCustomThreshold(t *testing.T) {
 	if got != config.ScenarioLongContext {
 		t.Errorf("DetectScenario() with threshold 5000 = %q, want %q", got, config.ScenarioLongContext)
 	}
-	// With custom threshold of 20000, should be default
+	// With custom threshold of 20000, should be code (not longContext)
 	got = DetectScenario(body, 20000, "")
-	if got != config.ScenarioDefault {
-		t.Errorf("DetectScenario() with threshold 20000 = %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("DetectScenario() with threshold 20000 = %q, want %q", got, config.ScenarioCode)
 	}
 }
 
@@ -375,10 +378,10 @@ func TestSessionCacheIntegration(t *testing.T) {
 		},
 	}
 
-	// First request: should be default (below threshold of 30000)
+	// First request: should be code (below threshold of 30000, non-specialized)
 	got := DetectScenario(body, 30000, sessionID)
-	if got != config.ScenarioDefault {
-		t.Errorf("first request: got %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("first request: got %q, want %q", got, config.ScenarioCode)
 	}
 
 	// Simulate a large previous request
@@ -394,8 +397,8 @@ func TestSessionCacheIntegration(t *testing.T) {
 		t.Errorf("second request with session history: got %q, want %q", got, config.ScenarioLongContext)
 	}
 
-	// Third request with small content: should be default
-	// (current request < 20000 tokens)
+	// Third request with small content: should be code
+	// (current request < 20000 tokens, non-specialized)
 	smallBody := map[string]interface{}{
 		"model": "claude-sonnet-4-5",
 		"messages": []interface{}{
@@ -403,8 +406,8 @@ func TestSessionCacheIntegration(t *testing.T) {
 		},
 	}
 	got = DetectScenario(smallBody, 30000, sessionID)
-	if got != config.ScenarioDefault {
-		t.Errorf("small request with session history: got %q, want %q", got, config.ScenarioDefault)
+	if got != config.ScenarioCode {
+		t.Errorf("small request with session history: got %q, want %q", got, config.ScenarioCode)
 	}
 }
 

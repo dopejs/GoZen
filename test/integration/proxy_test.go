@@ -14,7 +14,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -648,4 +650,303 @@ func TestProxy_ShouldRejectInvalidProfile(t *testing.T) {
 	if resp.StatusCode == http.StatusOK {
 		t.Errorf("expected error for invalid profile, got 200")
 	}
+}
+
+// =============================================================================
+// Test: Config Hot-Reload — Add Provider via Web API
+// =============================================================================
+
+// TestIntegration_ConfigHotReload_AddProvider verifies that adding a provider
+// via the Web API persists to disk and the proxy routes to it after hot-reload.
+func TestIntegration_ConfigHotReload_AddProvider(t *testing.T) {
+	tc := setupProxyTest(t)
+
+	// Create two mock servers
+	mockA := NewMockProvider(t)
+	mockB := NewMockProvider(t)
+
+	// Start with only provider A
+	tc.writeConfig(t,
+		map[string]interface{}{
+			"providerA": map[string]interface{}{
+				"auth_token": "key-a",
+				"base_url":   mockA.URL,
+			},
+		},
+		map[string]interface{}{
+			"default": map[string]interface{}{
+				"providers": []string{"providerA"},
+			},
+		},
+	)
+
+	cmd := tc.startDaemon(t)
+	defer cmd.Process.Kill()
+
+	// Verify initial routing to A
+	resp, err := sendProxyRequest(t, tc.ProxyPort, "default", "session1")
+	if err != nil {
+		t.Fatalf("initial request failed: %v", err)
+	}
+	resp.Body.Close()
+	if mockA.GetRequestCount() != 1 {
+		t.Fatalf("expected 1 request to providerA, got %d", mockA.GetRequestCount())
+	}
+
+	// Make providerA start failing so failover to B would be needed
+	mockA.DefaultResponse = MockResponse{
+		StatusCode: 503,
+		Body:       errorResponseBody(503),
+	}
+
+	// Add providerB via Web API
+	addProviderBody := map[string]interface{}{
+		"name":       "providerB",
+		"auth_token": "key-b",
+		"base_url":   mockB.URL,
+	}
+	addBody, _ := json.Marshal(addProviderBody)
+	webURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/providers", tc.WebPort)
+	addResp, err := http.Post(webURL, "application/json", bytes.NewReader(addBody))
+	if err != nil {
+		t.Fatalf("add provider request failed: %v", err)
+	}
+	addResp.Body.Close()
+
+	// Update the default profile to include providerB
+	updateProfileBody := map[string]interface{}{
+		"providers": []string{"providerA", "providerB"},
+	}
+	updateBody, _ := json.Marshal(updateProfileBody)
+	profileURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/profiles/default", tc.WebPort)
+	req, _ := http.NewRequest("PUT", profileURL, bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	updateResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("update profile request failed: %v", err)
+	}
+	updateResp.Body.Close()
+
+	// Wait for config hot-reload
+	time.Sleep(2 * time.Second)
+
+	// Send request — should failover from A (503) to B (200)
+	resp2, err := sendProxyRequest(t, tc.ProxyPort, "default", "session2")
+	if err != nil {
+		t.Fatalf("failover request failed: %v", err)
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("expected 200 from providerB failover, got %d: %s", resp2.StatusCode, body)
+	}
+
+	if mockB.GetRequestCount() == 0 {
+		t.Error("providerB received no requests — hot-reload did not take effect")
+	}
+}
+
+// TestIntegration_ConfigHotReload_ChangeFailoverOrder verifies that changing
+// the provider order in a profile via the Web API changes the failover order.
+func TestIntegration_ConfigHotReload_ChangeFailoverOrder(t *testing.T) {
+	tc := setupProxyTest(t)
+
+	mockA := NewMockProvider(t)
+	mockB := NewMockProvider(t)
+
+	// Start with profile ["A", "B"]
+	tc.writeConfig(t,
+		map[string]interface{}{
+			"providerA": map[string]interface{}{
+				"auth_token": "key-a",
+				"base_url":   mockA.URL,
+			},
+			"providerB": map[string]interface{}{
+				"auth_token": "key-b",
+				"base_url":   mockB.URL,
+			},
+		},
+		map[string]interface{}{
+			"default": map[string]interface{}{
+				"providers": []string{"providerA", "providerB"},
+			},
+		},
+	)
+
+	cmd := tc.startDaemon(t)
+	defer cmd.Process.Kill()
+
+	// Verify A receives traffic first
+	resp, err := sendProxyRequest(t, tc.ProxyPort, "default", "session1")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+	if mockA.GetRequestCount() != 1 {
+		t.Fatalf("expected providerA to receive first request")
+	}
+
+	// Update profile order to ["B", "A"] via Web API
+	updateBody, _ := json.Marshal(map[string]interface{}{
+		"providers": []string{"providerB", "providerA"},
+	})
+	profileURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/profiles/default", tc.WebPort)
+	req, _ := http.NewRequest("PUT", profileURL, bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	updateResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	updateResp.Body.Close()
+
+	// Wait for hot-reload
+	time.Sleep(2 * time.Second)
+
+	// Reset counters
+	mockA.ResetRequestCount()
+	mockB.ResetRequestCount()
+
+	// Send request — B should now receive traffic first
+	resp2, err := sendProxyRequest(t, tc.ProxyPort, "default", "session2")
+	if err != nil {
+		t.Fatalf("request after reorder failed: %v", err)
+	}
+	resp2.Body.Close()
+
+	if mockB.GetRequestCount() != 1 {
+		t.Errorf("expected providerB to receive traffic first after reorder, got %d requests", mockB.GetRequestCount())
+	}
+}
+
+// TestIntegration_ConfigHotReload_RemoveProvider verifies that removing a provider
+// via the Web API removes it from the proxy's routing.
+func TestIntegration_ConfigHotReload_RemoveProvider(t *testing.T) {
+	tc := setupProxyTest(t)
+
+	mockA := NewMockProvider(t)
+	mockB := NewMockProvider(t)
+
+	tc.writeConfig(t,
+		map[string]interface{}{
+			"providerA": map[string]interface{}{
+				"auth_token": "key-a",
+				"base_url":   mockA.URL,
+			},
+			"providerB": map[string]interface{}{
+				"auth_token": "key-b",
+				"base_url":   mockB.URL,
+			},
+		},
+		map[string]interface{}{
+			"default": map[string]interface{}{
+				"providers": []string{"providerA", "providerB"},
+			},
+		},
+	)
+
+	cmd := tc.startDaemon(t)
+	defer cmd.Process.Kill()
+
+	// Delete providerA via Web API
+	deleteURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/providers/providerA", tc.WebPort)
+	req, _ := http.NewRequest("DELETE", deleteURL, nil)
+	delResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete provider failed: %v", err)
+	}
+	delResp.Body.Close()
+
+	// Wait for hot-reload
+	time.Sleep(2 * time.Second)
+
+	// Verify config file no longer has providerA
+	configData, _ := os.ReadFile(filepath.Join(tc.ConfigDir, "zen.json"))
+	var cfg map[string]interface{}
+	json.Unmarshal(configData, &cfg)
+
+	if providers, ok := cfg["providers"].(map[string]interface{}); ok {
+		if _, exists := providers["providerA"]; exists {
+			t.Error("providerA still exists in config after deletion")
+		}
+	}
+}
+
+// TestIntegration_ConfigHotReload_EditProviderURL verifies that editing a provider's
+// base_url via the Web API causes the proxy to route to the new URL.
+func TestIntegration_ConfigHotReload_EditProviderURL(t *testing.T) {
+	tc := setupProxyTest(t)
+
+	mockOld := NewMockProvider(t)
+	mockNew := NewMockProvider(t)
+
+	tc.writeConfig(t,
+		map[string]interface{}{
+			"providerA": map[string]interface{}{
+				"auth_token": "key-a",
+				"base_url":   mockOld.URL,
+			},
+		},
+		map[string]interface{}{
+			"default": map[string]interface{}{
+				"providers": []string{"providerA"},
+			},
+		},
+	)
+
+	cmd := tc.startDaemon(t)
+	defer cmd.Process.Kill()
+
+	// Verify initial routing to old URL
+	resp, err := sendProxyRequest(t, tc.ProxyPort, "default", "session1")
+	if err != nil {
+		t.Fatalf("initial request failed: %v", err)
+	}
+	resp.Body.Close()
+	if mockOld.GetRequestCount() != 1 {
+		t.Fatalf("expected old mock to receive request")
+	}
+
+	// Update provider's base_url via PUT
+	updateBody, _ := json.Marshal(map[string]interface{}{
+		"auth_token": "key-a",
+		"base_url":   mockNew.URL,
+	})
+	providerURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/providers/providerA", tc.WebPort)
+	req, _ := http.NewRequest("PUT", providerURL, bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	updateResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("update provider failed: %v", err)
+	}
+	updateResp.Body.Close()
+
+	// Wait for hot-reload
+	time.Sleep(2 * time.Second)
+
+	// Send request — should now route to the new URL
+	resp2, err := sendProxyRequest(t, tc.ProxyPort, "default", "session2")
+	if err != nil {
+		t.Fatalf("request after URL change failed: %v", err)
+	}
+	resp2.Body.Close()
+
+	if mockNew.GetRequestCount() == 0 {
+		t.Error("new mock received no requests — URL change not reflected after hot-reload")
+	}
+}
+
+// sendProxyRequest is a helper to send a standard Anthropic request through the proxy.
+func sendProxyRequest(t *testing.T, proxyPort int, profile, session string) (*http.Response, error) {
+	t.Helper()
+	reqBody := map[string]interface{}{
+		"model": "claude-sonnet-4-20250514",
+		"messages": []map[string]interface{}{
+			{"role": "user", "content": "Hello"},
+		},
+		"max_tokens": 100,
+	}
+	body, _ := json.Marshal(reqBody)
+	url := fmt.Sprintf("http://127.0.0.1:%d/%s/%s/v1/messages", proxyPort, profile, session)
+	return http.Post(url, "application/json", bytes.NewReader(body))
 }

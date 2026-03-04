@@ -701,9 +701,11 @@ func TestIntegration_ConfigHotReload_AddProvider(t *testing.T) {
 
 	// Add providerB via Web API
 	addProviderBody := map[string]interface{}{
-		"name":       "providerB",
-		"auth_token": "key-b",
-		"base_url":   mockB.URL,
+		"name": "providerB",
+		"config": map[string]interface{}{
+			"auth_token": "key-b",
+			"base_url":   mockB.URL,
+		},
 	}
 	addBody, _ := json.Marshal(addProviderBody)
 	webURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/providers", tc.WebPort)

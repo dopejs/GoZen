@@ -1,24 +1,26 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 1.1.0 (MINOR — new principle added)
+Version change: 1.1.0 → 1.2.0 (MINOR — updated web frontend constraint, tooling reference)
 
 Modified principles: none
 
-Added sections:
-  - Principle VI: Test Coverage Enforcement
+Modified sections:
+  - Technology & Architecture Constraints: Web frontend updated from
+    "Vanilla JS" to "React + TypeScript + Vite" to reflect migration
+    completed in feature 006-revert-tag-add-monitoring.
+  - Principle VI: Changed `npm run test:coverage` to
+    `pnpm run test:coverage` to match project tooling (CLAUDE.md).
+
+Added sections: none
 
 Removed sections: none
 
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
-    (Constitution Check section references constitution generically)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (spec template is requirement-focused)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task template already includes test tasks and checkpoints)
   - .specify/templates/checklist-template.md ✅ no changes needed
-    (checklist is generated dynamically per feature)
 
 Follow-up TODOs: none
 -->
@@ -113,7 +115,7 @@ Follow-up TODOs: none
   the PR is opened.
 - Coverage MUST be verified locally before pushing by running:
   `go test -cover ./internal/<pkg>` for affected Go packages, and
-  `npm run test:coverage` in `web/` for frontend changes.
+  `pnpm run test:coverage` in `web/` for frontend changes.
 - Rationale: CI coverage gates exist to prevent regression. Fixing
   coverage after merge is more expensive and blocks other PRs. Each
   feature owner is responsible for maintaining the coverage bar.
@@ -125,8 +127,9 @@ Follow-up TODOs: none
   in `cmd/`.
 - **TUI**: Bubble Tea + Lip Gloss. TUI models MUST follow the
   `newXxxModel()` / `Init()` / `Update()` / `View()` convention.
-- **Web frontend**: Vanilla JS with embedded static files
-  (`internal/web/static/`). No build tools, no JS frameworks.
+- **Web frontend**: React + TypeScript with Vite build tooling
+  (`web/src/`). Built output is embedded in Go binary via
+  `internal/web/dist/`. Uses pnpm as package manager.
 - **Config store**: JSON at `~/.zen/zen.json`. Schema changes follow
   Principle III.
 - **Dev/Prod isolation**: Dev daemon uses ports 29840/29841 and
@@ -164,4 +167,4 @@ Follow-up TODOs: none
 - Compliance review: at the start of each feature branch, verify the
   plan's Constitution Check section against current principles.
 
-**Version**: 1.1.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-02-28
+**Version**: 1.2.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-04

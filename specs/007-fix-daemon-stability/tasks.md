@@ -67,7 +67,7 @@
 - [ ] T014 [US1] Call `config.EnsureProxyPort()` at the start of `Daemon.Start()` in `internal/daemon/server.go` (before `config.GetProxyPort()`) to ensure port is persisted on first run
 - [ ] T015 [P] [US1] Implement `GetProcessOnPort(port int) (pid int, name string, err error)` in `internal/daemon/process_unix.go` — shell out to `lsof -i :PORT -sTCP:LISTEN -t` then `ps -p PID -o comm=`
 - [ ] T016 [P] [US1] Implement `IsZenProcess(processName string) bool` in `internal/daemon/process_unix.go` — check if name contains "zen" or "gozen"
-- [ ] T017 [US1] Add smart port conflict handling to `startProxy()` in `internal/daemon/server.go` — on `net.Listen` failure: call `GetProcessOnPort()`, if zen process then kill it and retry bind, if non-zen then return error with process name and port
+- [ ] T017 [US1] Add smart port conflict handling to `startProxy()` in `internal/daemon/server.go` — on `net.Listen` failure: call `GetProcessOnPort()`, if zen process then kill it and retry bind (if kill fails with EPERM, report "Cannot kill process PID (permission denied). Try: sudo kill PID"), if non-zen then return error with process name and port
 - [ ] T018 [US1] Integrate file lock into `ensureDaemonRunning()` in `cmd/root.go` — acquire lock before starting daemon, release after `waitForDaemonReady()`; if lock contended, wait then check if daemon is alive
 - [ ] T019 [US1] Integrate file lock into `startDaemonBackground()` in `cmd/daemon.go` — same pattern as T018 for the `zen daemon start` code path
 - [ ] T020 [US1] Add `configSetCmd` Cobra subcommand in `cmd/config.go` — accepts `<key> <value>`, whitelist: `proxy_port`; validates port 1024-65535; saves via `config.SetProxyPort()`; if daemon running, stop & restart; print warning about restarting client processes
@@ -98,10 +98,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T028 [US2] Extract client process execution from `startViaDaemon()` into a `runClient()` helper in `cmd/root.go` — takes cliPath, args, env; returns exit code, stderr output, and error; captures stderr via `bytes.Buffer` while still passing it to os.Stderr
+- [ ] T028 [US2] Extract client process execution from `startViaDaemon()` into a `runClient()` helper in `cmd/root.go` — takes cliPath, args, env; returns exit code, stderr output, and error; captures stderr via `io.MultiWriter(os.Stderr, &stderrBuf)` to tee output to both the terminal and a buffer for connection error detection
 - [ ] T029 [US2] Implement `isConnectionError(stderr string) bool` in `cmd/root.go` — check for patterns: "connection refused", "connection reset", "connection error", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT" (case-insensitive)
 - [ ] T030 [US2] Add retry loop to `startViaDaemon()` in `cmd/root.go` — after `runClient()` returns non-zero with connection error: check `daemon.IsDaemonRunning()`, if dead then log recovery message, call `ensureDaemonRunning()` (which uses file lock from T018), re-run `runClient()`; limit to 1 retry
 - [ ] T031 [US2] Add recovery logging — when daemon restart is triggered, log "Daemon connection lost. Restarting daemon..." to stderr so user sees recovery in progress
+- [ ] T031b [US2] Add daemon-side restart audit logging in `internal/daemon/server.go` — when the daemon starts and detects it replaced a stale process (via port conflict kill in T017), log "Daemon restarted (replaced stale process PID)" to `zend.log` for auditability (FR-010)
 - [ ] T032 [US2] Verify all T026-T027 tests pass: `go test ./cmd/... -run TestConnectionError -run TestRunClientWithRetry`
 
 **Checkpoint**: After daemon death, `zen` wrapper auto-restarts daemon and re-launches client with single retry.

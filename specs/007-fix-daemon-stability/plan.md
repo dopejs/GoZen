@@ -66,7 +66,7 @@ internal/
 │   ├── server.go         # MODIFY: call EnsureProxyPort() on Start(), smart port binding
 │   └── process_unix.go   # MODIFY: add process identification for port conflict detection
 ├── proxy/
-│   └── request_monitor.go # MODIFY: fix Duration serialization (custom MarshalJSON or int64 ms field)
+│   └── request_monitor.go # MODIFY: fix Duration serialization (int64 ms field)
 └── bot/
     └── matcher.go         # MODIFY: fix Duration serialization (same pattern)
 

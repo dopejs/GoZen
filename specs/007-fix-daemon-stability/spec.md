@@ -29,11 +29,11 @@ As a user, when the daemon restarts (whether manually or automatically), the pro
 
 1. **Given** the daemon is running on port P, **When** the daemon is stopped and restarted, **Then** it binds to the same port P.
 2. **Given** the proxy port is occupied by a stale zen daemon process (e.g., from a previous crash or orphaned instance), **When** the daemon tries to start, **Then** it detects the occupying process is a zen daemon, kills it, and starts the new daemon on that port successfully.
-7. **Given** the proxy port is occupied by a non-zen process (e.g., another application), **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process name and fails to start — it MUST NOT silently choose a different port.
-3. **Given** a fresh installation with no prior configuration, **When** the daemon starts for the first time, **Then** the proxy port is set to a well-known default value (19841) and persisted in configuration.
-4. **Given** the user has explicitly configured a custom proxy port, **When** the daemon starts, **Then** it uses the user-configured port, not a random one.
-5. **Given** a user whose default port 19841 is occupied by another important application, **When** the user sets a custom proxy port via CLI (`zen config`), **Then** the daemon is automatically restarted on the new port and the user is told to restart all running `zen` client processes.
-6. **Given** a user opens the Web UI settings page, **When** they view the proxy port setting, **Then** the port is displayed as read-only with a message: "To change the proxy port, use `zen config` in the terminal."
+3. **Given** the proxy port is occupied by a non-zen process (e.g., another application), **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process name and fails to start — it MUST NOT silently choose a different port.
+4. **Given** a fresh installation with no prior configuration, **When** the daemon starts for the first time, **Then** the proxy port is set to a well-known default value (19841) and persisted in configuration.
+5. **Given** the user has explicitly configured a custom proxy port, **When** the daemon starts, **Then** it uses the user-configured port, not a random one.
+6. **Given** a user whose default port 19841 is occupied by another important application, **When** the user sets a custom proxy port via CLI (`zen config set proxy_port <port>`), **Then** the daemon is automatically restarted on the new port and the user is told to restart all running `zen` client processes.
+7. **Given** a user opens the Web UI settings page, **When** they view the proxy port setting, **Then** the port is displayed as read-only with a message: "To change the proxy port, use `zen config set proxy_port <port>` in the terminal."
 
 ---
 
@@ -109,8 +109,8 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - **SC-003**: 100% of `duration_ms` values in monitoring data are within 2x of the actual wall-clock request duration (i.e., no nanosecond-to-millisecond confusion).
 - **SC-004**: Users experience zero "Connection error" disruptions due to daemon death during a full workday that includes at least one system sleep/wake cycle.
 - **SC-005**: When the proxy port is occupied by a non-zen process, the daemon startup fails with a diagnostic message naming the conflicting process within 3 seconds (no silent fallback to random port).
-- **SC-007**: When the proxy port is occupied by a stale zen daemon, the system automatically kills it and starts successfully within 5 seconds.
-- **SC-006**: User can set a custom proxy port via CLI, the daemon auto-restarts on the new port, and the user is informed to restart running client processes.
+- **SC-006**: When the proxy port is occupied by a stale zen daemon, the system automatically kills it and starts successfully within 5 seconds.
+- **SC-007**: User can set a custom proxy port via CLI, the daemon auto-restarts on the new port, and the user is informed to restart running client processes.
 
 ## Assumptions
 

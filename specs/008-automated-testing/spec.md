@@ -87,7 +87,25 @@ As a server operator running GoZen on an always-on machine, I need the daemon (i
 
 ---
 
-### User Story 4 - Frontend Page Component Testing (Priority: P2)
+### User Story 4 - Testing Skills for Development Workflow (Priority: P1)
+
+As a developer working on GoZen features, I need Claude Code slash commands (skills) that guide me through writing and running automated tests, so that every future feature branch maintains test quality without relying on tribal knowledge of the test infrastructure.
+
+**Why this priority**: The testing infrastructure built in US1-US3 is only valuable if developers actually use it consistently. Without process-level guidance, new feature development may skip integration/e2e tests or run them incorrectly. Skills encode the testing workflow as repeatable, discoverable commands that enforce quality gates during development.
+
+**Independent Test**: Invoke each skill from the Claude Code CLI and verify it produces the correct output (runs the right tests, generates the right reports, identifies the right coverage gaps).
+
+**Acceptance Scenarios**:
+
+1. **Given** a developer has modified Go code in a feature branch, **When** they invoke `/test.run`, **Then** the skill runs unit tests, checks coverage thresholds, and reports pass/fail with specific failing test names and uncovered packages.
+2. **Given** a developer has made changes to proxy, daemon, or web API code, **When** they invoke `/test.integration`, **Then** the skill builds the binary, starts isolated test daemons, runs integration and e2e tests with the `integration` build tag, and reports results.
+3. **Given** a developer has modified frontend code in `web/`, **When** they invoke `/test.web`, **Then** the skill runs `pnpm test` with coverage, reports page-level and hook-level results, and flags coverage drops below the 70% threshold.
+4. **Given** a developer is about to create a commit or PR, **When** they invoke `/test.all`, **Then** the skill runs all test tiers (unit, integration, e2e, web) in sequence and produces a consolidated pass/fail report suitable for a pre-commit quality gate.
+5. **Given** a developer is starting a new feature, **When** they invoke `/test.write` with a description of what they changed, **Then** the skill analyzes the modified files, identifies which test files and test patterns to follow, and generates skeleton test cases following the project's TDD conventions.
+
+---
+
+### User Story 5 - Frontend Page Component Testing (Priority: P2)
 
 As a developer maintaining the GoZen Web UI, I need page-level component tests for critical UI pages to catch regressions when modifying the frontend code, especially for pages with complex state management like monitoring, providers, and profiles.
 
@@ -154,16 +172,27 @@ As a developer maintaining the GoZen Web UI, I need page-level component tests f
 - **FR-019**: The Web UI MUST have page-level component tests for the settings page (`web/src/pages/settings/`) covering: general tab rendering with read-only proxy port, password change flow.
 - **FR-020**: Frontend test coverage MUST remain above 70% (current CI threshold) after adding page tests.
 
+#### Testing Skills (Claude Code Slash Commands)
+
+- **FR-021**: A `/test.run` skill MUST exist as a Claude Code command (`.claude/commands/test.run.md`) that: (a) detects which Go packages have been modified on the current branch, (b) runs `go test` for those packages with race detection and coverage, (c) compares coverage against CI thresholds (80% for core, 50% for supporting), (d) reports pass/fail with specific test names and uncovered lines.
+- **FR-022**: A `/test.integration` skill MUST exist that: (a) builds the `zen` binary, (b) runs integration tests (`go test -tags=integration ./test/integration/...`) and e2e tests (`go test -tags=integration ./tests/...`), (c) reports results including daemon startup/shutdown status and mock provider interactions.
+- **FR-023**: A `/test.web` skill MUST exist that: (a) runs `pnpm test` in `web/` with coverage, (b) reports page-level and hook-level test results, (c) flags coverage drops below the 70% threshold.
+- **FR-024**: A `/test.all` skill MUST exist that runs all test tiers in sequence (unit, integration, e2e, web) and produces a consolidated pass/fail summary. This skill SHOULD be recommended as a pre-commit/pre-PR quality gate.
+- **FR-025**: A `/test.write` skill MUST exist that: (a) analyzes files modified on the current branch (`git diff` against base), (b) identifies corresponding test files and existing test patterns, (c) generates skeleton test cases following the project's conventions (table-driven Go tests, vitest+testing-library for frontend), (d) respects the TDD principle from the constitution (Principle I).
+- **FR-026**: All testing skills MUST follow the existing Claude Code command format: a Markdown file in `.claude/commands/` with YAML frontmatter (`description` field) and a structured body with `$ARGUMENTS` support.
+- **FR-027**: Testing skills SHOULD include `handoffs` in their frontmatter to suggest logical next steps (e.g., `/test.run` suggests `/test.integration` on success; `/test.all` suggests `/commit` on full pass).
+
 #### Test Tooling
 
-- **FR-021**: A `Makefile` target or script MUST exist to run all test tiers: `make test-unit` (Go unit tests), `make test-integration` (Go integration tests), `make test-e2e` (Go e2e tests), `make test-web` (frontend tests), `make test-all` (everything).
-- **FR-022**: Integration and E2E tests MUST use mock HTTP servers (Go `httptest.Server`) as provider backends to avoid dependency on real API providers.
+- **FR-028**: A `Makefile` target or script MUST exist to run all test tiers: `make test-unit` (Go unit tests), `make test-integration` (Go integration tests), `make test-e2e` (Go e2e tests), `make test-web` (frontend tests), `make test-all` (everything).
+- **FR-029**: Integration and E2E tests MUST use mock HTTP servers (Go `httptest.Server`) as provider backends to avoid dependency on real API providers.
 
 ### Key Entities
 
 - **Mock Provider Server**: An `httptest.Server` that simulates an Anthropic/OpenAI API provider — responds to `/v1/messages` and `/v1/chat/completions` with configurable responses (success, failure, delay, rate-limit).
 - **Test Daemon**: A real `zen` binary running against an isolated config directory with ephemeral ports, started/stopped programmatically by integration tests.
 - **Test Web Client**: An HTTP client that calls the Web API endpoints and verifies responses, used by integration tests to simulate Web UI interactions.
+- **Testing Skill**: A Claude Code slash command (`.claude/commands/test.*.md`) that automates a specific testing workflow — running tests, checking coverage, generating test skeletons, or orchestrating all tiers as a quality gate.
 
 ## Success Criteria *(mandatory)*
 
@@ -177,6 +206,8 @@ As a developer maintaining the GoZen Web UI, I need page-level component tests f
 - **SC-006**: Frontend page component test coverage covers monitoring, providers, profiles, and settings pages, with overall web UI coverage remaining above 70%.
 - **SC-007**: A single command (`make test-all` or equivalent) runs all test tiers and produces a pass/fail result suitable for CI.
 - **SC-008**: All integration and e2e tests complete within 3 minutes on a standard development machine.
+- **SC-009**: All five testing skills (`/test.run`, `/test.integration`, `/test.web`, `/test.all`, `/test.write`) are installable as `.claude/commands/test.*.md` files and invocable from the Claude Code CLI.
+- **SC-010**: A developer following the `/test.write` → `/test.run` → `/test.integration` → `/test.all` workflow produces feature branches that pass CI on the first push 90% of the time.
 
 ## Assumptions
 
@@ -198,6 +229,7 @@ As a developer maintaining the GoZen Web UI, I need page-level component tests f
 - Frontend page component tests for monitoring, providers, profiles, and settings
 - Test runner script/Makefile for all test tiers
 - Mock provider server infrastructure for integration tests
+- Claude Code testing skills (`/test.run`, `/test.integration`, `/test.web`, `/test.all`, `/test.write`) as `.claude/commands/` files
 
 ### Out of Scope
 

@@ -85,7 +85,7 @@
 - [x] T020 [P] [US3] Add `TestE2E_ProcessStability_KillRecovery` in `tests/e2e_proxy_test.go` — send SIGKILL, verify restart succeeds: stale PID cleaned, lock acquired, same ports (FR-013, SC-005)
 - [x] T021 [US3] Add `TestE2E_ProcessStability_IdempotentStart` in `tests/e2e_proxy_test.go` — start daemon, attempt second start, verify detection of existing instance and no duplicate (FR-014)
 - [x] T022 [US3] Add `TestE2E_ProcessStability_ConfigReloadUnderLoad` in `tests/e2e_proxy_test.go` — start daemon, send requests while config watcher triggers reload, verify no dropped connections and web UI remains accessible (acceptance scenario 4)
-- [ ] T023 [US3] Add reference process supervisor configurations in `docs/server-deployment.md` — include launchd plist (macOS) and systemd unit (Linux) examples demonstrating how to run GoZen as a server-mode service (FR-015, documentation only)
+- [x] T023 [US3] Add reference process supervisor configurations in `docs/server-deployment.md` — include launchd plist (macOS) and systemd unit (Linux) examples demonstrating how to run GoZen as a server-mode service (FR-015, documentation only)
 
 **Checkpoint**: Daemon is supervisor-friendly — clean PID handling, idempotent startup, no port conflicts on restart.
 

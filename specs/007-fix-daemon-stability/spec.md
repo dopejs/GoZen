@@ -1,0 +1,125 @@
+# Feature Specification: Fix Daemon Proxy Stability
+
+**Feature Branch**: `007-fix-daemon-stability`
+**Created**: 2026-03-04
+**Status**: Draft
+**Input**: User description: "根据上面的分析结果，解决 daemon proxy 的稳定性问题。另外上面的结果中的P2我不认可，这个应该是P0，我们要保证Proxy port一定不能变化。"
+
+## Problem Statement
+
+GoZen's daemon proxy suffers from three critical stability issues that make the tool unreliable for daily use:
+
+1. **Proxy port changes on every restart**: The proxy port is not pinned to a stable value. Each daemon restart may allocate a different port, breaking client sessions that were configured with the previous port.
+
+2. **Daemon dies after system sleep/wake cycles**: macOS sends SIGTERM to the background daemon process during sleep/wake transitions. When the daemon stops, all connected clients (e.g., Claude Code) immediately lose connectivity with "Connection error", requiring manual intervention to recover.
+
+3. **Monitoring data shows incorrect durations**: The request monitoring displays duration values in nanoseconds but labels them as milliseconds, making the monitoring dashboard unusable for performance analysis.
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Stable Proxy Port Across Restarts (Priority: P0)
+
+As a user, when the daemon restarts (whether manually or automatically), the proxy server must always bind to the same port so that connected clients are not broken by port changes.
+
+**Why this priority**: If the proxy port changes, all existing client sessions break immediately. Even if the daemon survives sleep/wake, a port change makes recovery impossible without restarting the client. The proxy port is embedded in the client's `ANTHROPIC_BASE_URL` — any change to it is catastrophic.
+
+**Independent Test**: Start the daemon, note the proxy port, stop and restart the daemon, verify the proxy port is identical.
+
+**Acceptance Scenarios**:
+
+1. **Given** the daemon is running on port P, **When** the daemon is stopped and restarted, **Then** it binds to the same port P.
+2. **Given** the daemon is running on port P and another process occupies that port, **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process rather than silently choosing a different port.
+3. **Given** a fresh installation with no prior configuration, **When** the daemon starts for the first time, **Then** the proxy port is set to a well-known default value (19841) and persisted in configuration.
+4. **Given** the user has explicitly configured a custom proxy port, **When** the daemon starts, **Then** it uses the user-configured port, not a random one.
+
+---
+
+### User Story 2 - Automatic Daemon Recovery After System Sleep (Priority: P0)
+
+As a user, when my computer wakes from sleep and the daemon has been killed by the operating system, any subsequent request from the client should automatically detect the dead daemon and restart it, so my workflow continues without manual intervention.
+
+**Why this priority**: This is the primary cause of "Connection error" disruptions. Users should never need to know that the daemon was killed — recovery must be automatic and transparent.
+
+**Independent Test**: Start a client session through the daemon, simulate daemon death (kill the daemon process), send a new request from the client, verify the daemon is auto-restarted and the request succeeds.
+
+**Acceptance Scenarios**:
+
+1. **Given** the daemon has been killed (e.g., by SIGTERM during sleep), **When** the client sends a new request through the proxy, **Then** the system detects the dead daemon, restarts it, and retries the request — all transparently to the user.
+2. **Given** the daemon dies while the client is idle, **When** the client later sends a request, **Then** the request succeeds without the user seeing "Connection error".
+3. **Given** the daemon cannot be restarted (e.g., port permanently blocked), **When** recovery is attempted, **Then** the user sees a clear diagnostic message explaining why recovery failed and what to do.
+4. **Given** the daemon is auto-restarted after being killed, **When** the restart completes, **Then** the daemon is fully functional within 5 seconds.
+
+---
+
+### User Story 3 - Accurate Request Duration in Monitoring (Priority: P1)
+
+As a user viewing the monitoring dashboard, I should see correct request durations (in milliseconds) so I can assess provider performance and diagnose slow requests.
+
+**Why this priority**: Incorrect duration data (showing hundreds of hours instead of seconds) makes the entire monitoring feature useless, but it does not block active usage of the proxy.
+
+**Independent Test**: Make a request through the proxy, query the monitoring endpoint, verify the duration value is a reasonable number in milliseconds (e.g., 500-5000ms for a typical request, not billions).
+
+**Acceptance Scenarios**:
+
+1. **Given** a request that took approximately 2 seconds, **When** the monitoring data is queried, **Then** the `duration_ms` field shows a value between 1500 and 3000 (milliseconds), not nanoseconds.
+2. **Given** multiple requests with varying durations, **When** the monitoring dashboard displays them, **Then** all durations are human-readable and correctly represent actual elapsed time.
+3. **Given** a request that involved failover (multiple provider attempts), **When** the monitoring data is queried, **Then** each provider attempt in the failover chain also shows correct duration in milliseconds.
+
+---
+
+### Edge Cases
+
+- What happens when the daemon is killed mid-request (while streaming a response)?
+- What happens when multiple `zen` processes try to auto-restart the daemon simultaneously?
+- What happens when the system wakes from sleep but network connectivity is not yet restored?
+- What happens when the configured proxy port is in the ephemeral range and the OS has allocated it to another process?
+- What happens when the daemon is auto-restarted but the config file has been modified during sleep?
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001**: The system MUST use a fixed, deterministic proxy port that does not change across daemon restarts. The default port MUST be 19841 unless explicitly overridden by the user in configuration.
+- **FR-002**: The system MUST persist the proxy port in configuration on first startup so it remains stable across all future restarts.
+- **FR-003**: The system MUST NOT silently fall back to a random port when the configured port is unavailable. It MUST report the conflict clearly and fail to start.
+- **FR-004**: When a client request fails to connect to the proxy, the system MUST check if the daemon is still running and attempt to restart it automatically.
+- **FR-005**: After automatic daemon restart, the system MUST retry the failed request at least once before reporting an error to the user.
+- **FR-006**: Automatic daemon restart MUST complete within 5 seconds, including port binding and readiness verification.
+- **FR-007**: When multiple clients detect a dead daemon simultaneously, only one restart attempt MUST proceed (preventing race conditions and port conflicts).
+- **FR-008**: The monitoring data MUST report request duration in milliseconds as indicated by the field name `duration_ms`, not in nanoseconds or any other unit.
+- **FR-009**: The duration correction MUST apply to both the main request record and individual provider attempts in the failover chain.
+- **FR-010**: The system SHOULD log daemon restart events so users can audit recovery behavior.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: The proxy port remains identical across 10 consecutive daemon stop/start cycles.
+- **SC-002**: After a simulated daemon kill, the next client request succeeds automatically within 10 seconds, with zero manual intervention required.
+- **SC-003**: 100% of `duration_ms` values in monitoring data are within 2x of the actual wall-clock request duration (i.e., no nanosecond-to-millisecond confusion).
+- **SC-004**: Users experience zero "Connection error" disruptions due to daemon death during a full workday that includes at least one system sleep/wake cycle.
+- **SC-005**: When the proxy port is occupied by another process, the daemon startup fails with a diagnostic message within 3 seconds (no silent fallback to random port).
+
+## Assumptions
+
+- The daemon will continue to run as a background process (not a system service via launchd) by default. System service integration (launchd KeepAlive) is a future enhancement, not part of this scope.
+- The auto-restart mechanism operates at the client-to-proxy connection layer, not within the daemon itself. The daemon does not need to "self-heal" — the `zen` CLI wrapper handles recovery.
+- The default proxy port 19841 is outside the ephemeral port range on macOS (49152-65535) and is unlikely to conflict with common services.
+- The monitoring duration fix is a display/serialization concern and does not require changes to the underlying data model or storage.
+
+## Scope
+
+### In Scope
+
+- Fixed proxy port enforcement
+- Client-side daemon liveness detection and auto-restart
+- Request retry after daemon restart
+- Monitoring duration unit correction (nanoseconds to milliseconds)
+- Race condition prevention for concurrent restart attempts
+
+### Out of Scope
+
+- launchd/systemd service integration (future enhancement)
+- Daemon self-monitoring/watchdog process
+- Automatic recovery of in-flight streaming requests interrupted by daemon death
+- Changes to the Web UI dashboard rendering (only the data source is fixed)

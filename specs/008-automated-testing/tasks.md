@@ -15,10 +15,10 @@
 
 **Purpose**: Consolidate duplicated test helpers and create the reusable mock provider server that all user stories depend on.
 
-- [ ] T001 Create shared test helpers by extracting `findProjectRoot()`, `findFreePort()`, and `setupBaseTest()` into `test/integration/helpers_test.go` — consolidating duplicates from `proxy_test.go`, `web_test.go`, and `daemon_test.go` (R1)
-- [ ] T002 [P] Refactor `ProxyTestConfig` in `test/integration/proxy_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
-- [ ] T003 [P] Refactor `WebTestConfig` in `test/integration/web_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
-- [ ] T004 [P] Refactor `TestConfig` in `test/integration/daemon_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [x] T001 Create shared test helpers by extracting `findProjectRoot()`, `findFreePort()`, and `setupBaseTest()` into `test/integration/helpers_test.go` — consolidating duplicates from `proxy_test.go`, `web_test.go`, and `daemon_test.go` (R1)
+- [x] T002 [P] Refactor `ProxyTestConfig` in `test/integration/proxy_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [x] T003 [P] Refactor `WebTestConfig` in `test/integration/web_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [x] T004 [P] Refactor `TestConfig` in `test/integration/daemon_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
 
 ---
 
@@ -28,8 +28,8 @@
 
 **⚠️ CRITICAL**: No Go integration/e2e user story work (US1–US3) can begin until this phase is complete. US4 (skills) and US5 (frontend tests) have no dependency on this phase.
 
-- [ ] T005 Create configurable `MockProvider` and `MockResponse` structs in `test/integration/mock_provider_test.go` — wraps `httptest.Server` with FIFO response queue, default response, request counting, latency injection, and Anthropic `/v1/messages` response format (R2, data-model.md entities 2–3)
-- [ ] T006 Create shared e2e test helpers in `tests/helpers_test.go` — extract `MockProvider` usage patterns into functions that `e2e_proxy_test.go` and `e2e_stress_test.go` can share with the `testEnv` struct from `e2e_daemon_test.go`
+- [x] T005 Create configurable `MockProvider` and `MockResponse` structs in `test/integration/mock_provider_test.go` — wraps `httptest.Server` with FIFO response queue, default response, request counting, latency injection, and Anthropic `/v1/messages` response format (R2, data-model.md entities 2–3)
+- [x] T006 Create shared e2e test helpers in `tests/helpers_test.go` — extract `MockProvider` usage patterns into functions that `e2e_proxy_test.go` and `e2e_stress_test.go` can share with the `testEnv` struct from `e2e_daemon_test.go`
 
 **Checkpoint**: Foundation ready — mock provider and shared helpers available for all user story phases.
 
@@ -43,11 +43,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Add `TestIntegration_ConfigHotReload_AddProvider` in `test/integration/proxy_test.go` — start daemon with provider A (mock), add provider B via `POST /api/v1/providers`, verify proxy routes to B when A is unavailable (FR-004, SC-001)
-- [ ] T008 [US1] Add `TestIntegration_ConfigHotReload_ChangeFailoverOrder` in `test/integration/proxy_test.go` — start daemon with profile ["A","B"], update to ["B","A"] via `PUT /api/v1/profiles/default`, verify B receives traffic first (FR-005, SC-001)
-- [ ] T009 [US1] Add `TestIntegration_ConfigHotReload_RemoveProvider` in `test/integration/proxy_test.go` — remove provider via `DELETE /api/v1/providers/:name`, verify proxy no longer routes to it (FR-006)
-- [ ] T010 [US1] Add `TestIntegration_ConfigHotReload_EditProviderURL` in `test/integration/proxy_test.go` — edit provider A's base_url to point to a different mock server via `PUT /api/v1/providers/A`, verify proxy routes to new URL (R4, acceptance scenario 5)
-- [ ] T011 [US1] Add `TestIntegration_ConfigPersistence_SettingsUpdate` in `test/integration/web_test.go` — update settings via `PUT /api/v1/settings`, verify `zen.json` reflects changes and proxy picks them up (FR-007)
+- [x] T007 [US1] Add `TestIntegration_ConfigHotReload_AddProvider` in `test/integration/proxy_test.go` — start daemon with provider A (mock), add provider B via `POST /api/v1/providers`, verify proxy routes to B when A is unavailable (FR-004, SC-001)
+- [x] T008 [US1] Add `TestIntegration_ConfigHotReload_ChangeFailoverOrder` in `test/integration/proxy_test.go` — start daemon with profile ["A","B"], update to ["B","A"] via `PUT /api/v1/profiles/default`, verify B receives traffic first (FR-005, SC-001)
+- [x] T009 [US1] Add `TestIntegration_ConfigHotReload_RemoveProvider` in `test/integration/proxy_test.go` — remove provider via `DELETE /api/v1/providers/:name`, verify proxy no longer routes to it (FR-006)
+- [x] T010 [US1] Add `TestIntegration_ConfigHotReload_EditProviderURL` in `test/integration/proxy_test.go` — edit provider A's base_url to point to a different mock server via `PUT /api/v1/providers/A`, verify proxy routes to new URL (R4, acceptance scenario 5)
+- [x] T011 [US1] Add `TestIntegration_ConfigPersistence_SettingsUpdate` in `test/integration/web_test.go` — update settings via `PUT /api/v1/settings`, verify `zen.json` reflects changes and proxy picks them up (FR-007)
 
 **Checkpoint**: Config hot-reload flow verified end-to-end. All 5 acceptance scenarios covered.
 
@@ -61,13 +61,13 @@
 
 ### Implementation for User Story 2
 
-- [ ] T012 [P] [US2] Add `TestE2E_ProviderFailover_TwoProviders` in `tests/e2e_proxy_test.go` — daemon with providers [A(503), B(200)], send request, verify failover A→B returns success (FR-008, SC-002)
-- [ ] T013 [P] [US2] Add `TestE2E_ProviderFailover_ThreeProviders` in `tests/e2e_proxy_test.go` — daemon with [A(503), B(503), C(200)], verify full chain A→B→C (FR-008, SC-002)
-- [ ] T014 [US2] Add `TestE2E_ProviderFailover_AllDown` in `tests/e2e_proxy_test.go` — all providers return 500, verify proxy returns error (not hang/crash) and daemon stays running (acceptance scenario 3)
-- [ ] T015 [US2] Add `TestE2E_ProviderFailover_RateLimited` in `tests/e2e_proxy_test.go` — provider returns 429, verify proxy fails over to next provider without crashing (acceptance scenario 6)
-- [ ] T016 [US2] Add `TestE2E_ScenarioRouting_ThinkingMode` in `tests/e2e_proxy_test.go` — configure think-capable and standard providers with scenario routing, send request with extended thinking params, verify routing to think-capable provider (FR-009, SC-003)
-- [ ] T017 [US2] Add `TestE2E_ClientDisconnect` in `tests/e2e_proxy_test.go` — send request, cancel context mid-flight, verify daemon stays stable for subsequent requests (FR-011, acceptance scenario 7)
-- [ ] T018 [US2] Add `TestE2E_StressTest` in `tests/e2e_stress_test.go` — send 500+ requests with mixed success/failure patterns, monitor memory via `ps -o rss= -p <PID>`, verify no >50MB growth (FR-010, SC-004, R5)
+- [x] T012 [P] [US2] Add `TestE2E_ProviderFailover_TwoProviders` in `tests/e2e_proxy_test.go` — daemon with providers [A(503), B(200)], send request, verify failover A→B returns success (FR-008, SC-002)
+- [x] T013 [P] [US2] Add `TestE2E_ProviderFailover_ThreeProviders` in `tests/e2e_proxy_test.go` — daemon with [A(503), B(503), C(200)], verify full chain A→B→C (FR-008, SC-002)
+- [x] T014 [US2] Add `TestE2E_ProviderFailover_AllDown` in `tests/e2e_proxy_test.go` — all providers return 500, verify proxy returns error (not hang/crash) and daemon stays running (acceptance scenario 3)
+- [x] T015 [US2] Add `TestE2E_ProviderFailover_RateLimited` in `tests/e2e_proxy_test.go` — provider returns 429, verify proxy fails over to next provider without crashing (acceptance scenario 6)
+- [x] T016 [US2] Add `TestE2E_ScenarioRouting_ThinkingMode` in `tests/e2e_proxy_test.go` — configure think-capable and standard providers with scenario routing, send request with extended thinking params, verify routing to think-capable provider (FR-009, SC-003)
+- [x] T017 [US2] Add `TestE2E_ClientDisconnect` in `tests/e2e_proxy_test.go` — send request, cancel context mid-flight, verify daemon stays stable for subsequent requests (FR-011, acceptance scenario 7)
+- [x] T018 [US2] Add `TestE2E_StressTest` in `tests/e2e_stress_test.go` — send 500+ requests with mixed success/failure patterns, monitor memory via `ps -o rss= -p <PID>`, verify no >50MB growth (FR-010, SC-004, R5)
 
 **Checkpoint**: Proxy stability verified — failover, scenario routing, client disconnect, and stress resilience all pass.
 
@@ -81,10 +81,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T019 [P] [US3] Add `TestE2E_ProcessStability_GracefulShutdown` in `tests/e2e_proxy_test.go` — send SIGTERM, verify in-flight requests complete, PID file removed, port released, clean exit (FR-012, SC-005)
-- [ ] T020 [P] [US3] Add `TestE2E_ProcessStability_KillRecovery` in `tests/e2e_proxy_test.go` — send SIGKILL, verify restart succeeds: stale PID cleaned, lock acquired, same ports (FR-013, SC-005)
-- [ ] T021 [US3] Add `TestE2E_ProcessStability_IdempotentStart` in `tests/e2e_proxy_test.go` — start daemon, attempt second start, verify detection of existing instance and no duplicate (FR-014)
-- [ ] T022 [US3] Add `TestE2E_ProcessStability_ConfigReloadUnderLoad` in `tests/e2e_proxy_test.go` — start daemon, send requests while config watcher triggers reload, verify no dropped connections and web UI remains accessible (acceptance scenario 4)
+- [x] T019 [P] [US3] Add `TestE2E_ProcessStability_GracefulShutdown` in `tests/e2e_proxy_test.go` — send SIGTERM, verify in-flight requests complete, PID file removed, port released, clean exit (FR-012, SC-005)
+- [x] T020 [P] [US3] Add `TestE2E_ProcessStability_KillRecovery` in `tests/e2e_proxy_test.go` — send SIGKILL, verify restart succeeds: stale PID cleaned, lock acquired, same ports (FR-013, SC-005)
+- [x] T021 [US3] Add `TestE2E_ProcessStability_IdempotentStart` in `tests/e2e_proxy_test.go` — start daemon, attempt second start, verify detection of existing instance and no duplicate (FR-014)
+- [x] T022 [US3] Add `TestE2E_ProcessStability_ConfigReloadUnderLoad` in `tests/e2e_proxy_test.go` — start daemon, send requests while config watcher triggers reload, verify no dropped connections and web UI remains accessible (acceptance scenario 4)
 - [ ] T023 [US3] Add reference process supervisor configurations in `docs/server-deployment.md` — include launchd plist (macOS) and systemd unit (Linux) examples demonstrating how to run GoZen as a server-mode service (FR-015, documentation only)
 
 **Checkpoint**: Daemon is supervisor-friendly — clean PID handling, idempotent startup, no port conflicts on restart.

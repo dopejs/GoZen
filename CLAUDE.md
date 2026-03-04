@@ -159,6 +159,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at `~/.zen/zen.json` (new `show_provider_tag` boolean field, version 10 → 11) (005-provider-model-tag)
 - Go 1.21+ + `net/http`, `encoding/json`, `sync` (for in-memory buffer), React + TypeScript (Web UI) (006-revert-tag-add-monitoring)
 - In-memory ring buffer (default 1000 requests), no database persistence for MVP (006-revert-tag-add-monitoring)
+- Go 1.21+ + Cobra (CLI), net/http (proxy/web), syscall (file lock, process management), React+TypeScript (Web UI) (007-fix-daemon-stability)
+- JSON config at `~/.zen/zen.json`, SQLite for proxy logs (007-fix-daemon-stability)
 
 ## Recent Changes
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering

@@ -93,7 +93,7 @@ Users can configure the `code` scenario route through the Web UI profile editor,
 ## Assumptions
 
 - The `code` scenario acts as a "catch-all" for non-specialized requests. It is only active when explicitly configured in the profile's routing map.
-- The priority position of `code` is just above `default` — all other specialized scenarios (think, image, webSearch, longContext, background) take precedence.
+- The priority position of `code` is between `longContext` and `background`. All other specialized scenarios (think, image, webSearch, longContext) are checked first; `code` explicitly excludes Haiku requests so `background` is never captured by it.
 - The existing `background` scenario detection (Haiku model requests) remains unchanged. `code` does NOT capture Haiku background tasks even though they could be considered "coding."
 - No config version migration is needed because the `routing` map already uses `Scenario` (string) keys — adding a new scenario key `"code"` is fully backward compatible.
 

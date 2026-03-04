@@ -37,7 +37,7 @@
 
 > **Write these tests FIRST, verify they FAIL, then implement.**
 
-- [ ] T002 [US1] Write TDD tests for `code` scenario detection in `internal/proxy/scenario_test.go`. Table-driven tests covering: (1) regular non-specialized request → `ScenarioCode`, (2) Haiku model request → `ScenarioBackground` not `ScenarioCode`, (3) thinking-enabled request → `ScenarioThink` not `ScenarioCode`, (4) image request → `ScenarioImage` not `ScenarioCode`, (5) webSearch request → `ScenarioWebSearch` not `ScenarioCode`, (6) backward compat: when detection returns `code` but no route configured, server falls through to default providers
+- [ ] T002 [US1] Write TDD tests for `code` scenario detection in `internal/proxy/scenario_test.go`. Table-driven tests covering: (1) regular non-specialized request → `ScenarioCode`, (2) Haiku model request → `ScenarioBackground` not `ScenarioCode`, (3) thinking-enabled request → `ScenarioThink` not `ScenarioCode`, (4) image request → `ScenarioImage` not `ScenarioCode`, (5) webSearch request → `ScenarioWebSearch` not `ScenarioCode`, (6) backward compat: `DetectScenario` returns `ScenarioCode` for a regular request (routing fallback to default providers when no code route is configured is already handled by existing server logic in `server.go`)
 
 ### Implementation for User Story 1
 

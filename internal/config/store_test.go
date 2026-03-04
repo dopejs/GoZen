@@ -396,3 +396,45 @@ func TestStoreGetProfileOrderReturnsCopy(t *testing.T) {
 
 
 func boolPtr(b bool) *bool { return &b }
+
+func TestEnsureProxyPort(t *testing.T) {
+	t.Run("persists DefaultProxyPort when ProxyPort is 0", func(t *testing.T) {
+		s, home := newTestStore(t)
+		s.Load()
+
+		if err := s.EnsureProxyPort(); err != nil {
+			t.Fatalf("EnsureProxyPort() error: %v", err)
+		}
+
+		// Verify it's set in memory
+		if s.config.ProxyPort != DefaultProxyPort {
+			t.Errorf("config.ProxyPort = %d, want %d", s.config.ProxyPort, DefaultProxyPort)
+		}
+
+		// Verify it's persisted to disk
+		data, err := os.ReadFile(filepath.Join(home, ConfigDir, ConfigFile))
+		if err != nil {
+			t.Fatalf("ReadFile error: %v", err)
+		}
+		var parsed map[string]interface{}
+		json.Unmarshal(data, &parsed)
+		if port, ok := parsed["proxy_port"].(float64); !ok || int(port) != DefaultProxyPort {
+			t.Errorf("proxy_port in file = %v, want %d", parsed["proxy_port"], DefaultProxyPort)
+		}
+	})
+
+	t.Run("no-op when ProxyPort is already set", func(t *testing.T) {
+		s, _ := newTestStore(t)
+		s.Load()
+		s.config.ProxyPort = 29841
+		s.saveLocked() // save custom port
+
+		if err := s.EnsureProxyPort(); err != nil {
+			t.Fatalf("EnsureProxyPort() error: %v", err)
+		}
+
+		if s.config.ProxyPort != 29841 {
+			t.Errorf("config.ProxyPort = %d, want 29841 (unchanged)", s.config.ProxyPort)
+		}
+	})
+}

@@ -280,10 +280,9 @@
     "webPort": "Web Port",
     "webPortHint": "Change via CLI: zen config set web_port <port>",
     "proxyPort": "Proxy Port",
+    "proxyPortHint": "Change via CLI: zen config set proxy_port <port>",
     "defaultProfile": "Default Profile",
-    "defaultClient": "Default Client",
-    "showProviderTag": "Show Provider Info in Responses",
-    "showProviderTagDesc": "Prepend provider name and model to the first text content in proxy responses"
+    "defaultClient": "Default Client"
   },
   "auth": {
     "login": "Login",

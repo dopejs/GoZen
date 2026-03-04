@@ -170,8 +170,7 @@
     "passwordMismatch": "パスワードが一致しません",
     "webPort": "Webポート",
     "proxyPort": "プロキシポート",
-    "showProviderTag": "レスポンスにプロバイダー情報を表示",
-    "showProviderTagDesc": "プロキシレスポンスの最初のテキストコンテンツにプロバイダー名とモデルを付加"
+    "proxyPortHint": "CLIで変更: zen config set proxy_port <ポート>"
   },
   "auth": {
     "login": "ログイン",

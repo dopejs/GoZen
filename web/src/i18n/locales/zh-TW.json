@@ -236,8 +236,7 @@
     "passwordMismatch": "兩次輸入的密碼不一致",
     "webPort": "Web 連接埠",
     "proxyPort": "代理連接埠",
-    "showProviderTag": "在回應中顯示提供商資訊",
-    "showProviderTagDesc": "在代理回應的首個文字內容前加上提供商名稱和模型資訊"
+    "proxyPortHint": "透過命令列變更：zen config set proxy_port <連接埠>"
   },
   "auth": {
     "login": "登入",

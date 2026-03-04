@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -445,8 +446,8 @@ func TestSkillMatcherMatchLogging(t *testing.T) {
 	if log.LLMUsed {
 		t.Error("log.LLMUsed should be false for local match")
 	}
-	if log.Duration <= 0 {
-		t.Error("log.Duration should be positive")
+	if log.DurationMs < 0 {
+		t.Error("log.DurationMs should be non-negative")
 	}
 
 	// Should have at least one log (local match succeeded)
@@ -508,8 +509,8 @@ func TestSkillMatcherMatchLoggingLLMFallback(t *testing.T) {
 	if !llmLog.LLMUsed {
 		t.Error("llmLog.LLMUsed should be true")
 	}
-	if llmLog.Duration <= 0 {
-		t.Error("llmLog.Duration should be positive")
+	if llmLog.DurationMs < 0 {
+		t.Error("llmLog.DurationMs should be non-negative")
 	}
 }
 
@@ -1013,4 +1014,47 @@ func TestLocalMatchLatency(t *testing.T) {
 		t.Errorf("local match latency = %v, want ≤500ms", maxDuration)
 	}
 	t.Logf("Max local match latency: %v", maxDuration)
+}
+
+// TestMatchLog_DurationMs_JSON verifies that MatchLog.DurationMs serializes as
+// actual milliseconds (int64), not nanoseconds (time.Duration default).
+func TestMatchLog_DurationMs_JSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		durationMs int64
+	}{
+		{"typical match", 1500},
+		{"fast match", 50},
+		{"slow LLM match", 5000},
+		{"zero duration", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			log := MatchLog{
+				Timestamp:  time.Now(),
+				Input:      "test input",
+				DurationMs: tt.durationMs,
+				LLMUsed:    false,
+			}
+
+			data, err := json.Marshal(log)
+			if err != nil {
+				t.Fatalf("failed to marshal: %v", err)
+			}
+
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
+			}
+
+			got, ok := parsed["duration_ms"].(float64)
+			if !ok {
+				t.Fatalf("duration_ms not found or not a number in JSON output")
+			}
+			if int64(got) != tt.durationMs {
+				t.Errorf("duration_ms = %v, want %d", got, tt.durationMs)
+			}
+		})
+	}
 }

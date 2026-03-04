@@ -16,7 +16,7 @@ type RequestRecord struct {
 	Model         string            `json:"model"`
 	RequestFormat string            `json:"request_format"`
 	StatusCode    int               `json:"status_code"`
-	Duration      time.Duration     `json:"duration_ms"`
+	DurationMs    int64             `json:"duration_ms"`
 	InputTokens   int               `json:"input_tokens"`
 	OutputTokens  int               `json:"output_tokens"`
 	Cost          float64           `json:"cost_usd"`
@@ -28,12 +28,12 @@ type RequestRecord struct {
 // ProviderAttempt represents a single attempt to forward a request to a provider
 // (part of failover chain).
 type ProviderAttempt struct {
-	Provider     string        `json:"provider"`
-	StatusCode   int           `json:"status_code"`
-	ErrorMessage string        `json:"error_message,omitempty"`
-	Duration     time.Duration `json:"duration_ms"`
-	Skipped      bool          `json:"skipped"`
-	SkipReason   string        `json:"skip_reason,omitempty"`
+	Provider     string `json:"provider"`
+	StatusCode   int    `json:"status_code"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	DurationMs   int64  `json:"duration_ms"`
+	Skipped      bool   `json:"skipped"`
+	SkipReason   string `json:"skip_reason,omitempty"`
 }
 
 // RequestMonitor is a thread-safe ring buffer for storing recent request records.

@@ -625,7 +625,36 @@ func discardLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
 
-// --- Proxy port address formatting tests (002-fix-proxy-port) ---
+// --- Connection error detection tests (US2) ---
+
+func TestIsConnectionError(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{"connection refused", "Error: dial tcp 127.0.0.1:19841: connection refused", true},
+		{"connection reset", "Error: read tcp: connection reset by peer", true},
+		{"ECONNREFUSED", "Error: ECONNREFUSED connecting to proxy", true},
+		{"ECONNRESET", "Error: ECONNRESET during request", true},
+		{"ETIMEDOUT", "Error: ETIMEDOUT waiting for response", true},
+		{"connection error mixed case", "CONNECTION REFUSED by server", true},
+		{"normal error output", "Error: invalid API key", false},
+		{"empty stderr", "", false},
+		{"exit code only", "exit status 1", false},
+		{"partial match - connect", "connected successfully", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isConnectionError(tt.stderr)
+			if got != tt.want {
+				t.Errorf("isConnectionError(%q) = %v, want %v", tt.stderr, got, tt.want)
+			}
+		})
+	}
+}
+
 
 func TestProxyListenAddress(t *testing.T) {
 	tests := []struct {

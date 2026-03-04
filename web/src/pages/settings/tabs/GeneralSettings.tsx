@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { settingsApi } from '@/lib/api'
 
 export function GeneralSettings() {
@@ -52,10 +51,6 @@ export function GeneralSettings() {
     })
   }
 
-  const handleToggleProviderTag = (checked: boolean) => {
-    updateSettings.mutate({ show_provider_tag: checked })
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -95,21 +90,15 @@ export function GeneralSettings() {
         </div>
 
         <div className="grid gap-2">
+          <Label>{t('settings.proxyPort')}</Label>
+          <Input value={settings?.proxy_port || ''} disabled />
+          <p className="text-xs text-muted-foreground">{t('settings.proxyPortHint')}</p>
+        </div>
+
+        <div className="grid gap-2">
           <Label>{t('settings.webPort')}</Label>
           <Input value={settings?.web_port || ''} disabled />
           <p className="text-xs text-muted-foreground">{t('settings.webPortHint')}</p>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label>{t('settings.showProviderTag')}</Label>
-            <p className="text-xs text-muted-foreground">{t('settings.showProviderTagDesc')}</p>
-          </div>
-          <Switch
-            checked={settings?.show_provider_tag ?? false}
-            onCheckedChange={handleToggleProviderTag}
-            disabled={updateSettings.isPending}
-          />
         </div>
 
         <Button onClick={handleSave} disabled={updateSettings.isPending}>

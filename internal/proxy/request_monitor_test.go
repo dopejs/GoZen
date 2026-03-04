@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -338,4 +339,77 @@ func TestRequestMonitor_FilterCombinations(t *testing.T) {
 			t.Errorf("expected req3, got %s", result[0].ID)
 		}
 	})
+}
+
+// TestRequestRecord_DurationMs_JSON verifies that DurationMs serializes as
+// actual milliseconds (int64), not nanoseconds (time.Duration default).
+func TestRequestRecord_DurationMs_JSON(t *testing.T) {
+	tests := []struct {
+		name       string
+		durationMs int64
+	}{
+		{"typical request", 2500},
+		{"fast request", 150},
+		{"slow request", 30000},
+		{"zero duration", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			record := RequestRecord{
+				ID:         "req_test",
+				Timestamp:  time.Now(),
+				Provider:   "test",
+				Model:      "claude-sonnet-4",
+				StatusCode: 200,
+				DurationMs: tt.durationMs,
+			}
+
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatalf("failed to marshal: %v", err)
+			}
+
+			var parsed map[string]interface{}
+			if err := json.Unmarshal(data, &parsed); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
+			}
+
+			got, ok := parsed["duration_ms"].(float64)
+			if !ok {
+				t.Fatalf("duration_ms not found or not a number in JSON output")
+			}
+			if int64(got) != tt.durationMs {
+				t.Errorf("duration_ms = %v, want %d", got, tt.durationMs)
+			}
+		})
+	}
+}
+
+// TestProviderAttempt_DurationMs_JSON verifies that ProviderAttempt.DurationMs
+// serializes as actual milliseconds.
+func TestProviderAttempt_DurationMs_JSON(t *testing.T) {
+	attempt := ProviderAttempt{
+		Provider:   "test-provider",
+		StatusCode: 200,
+		DurationMs: 1200,
+	}
+
+	data, err := json.Marshal(attempt)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	got, ok := parsed["duration_ms"].(float64)
+	if !ok {
+		t.Fatalf("duration_ms not found or not a number in JSON output")
+	}
+	if int64(got) != 1200 {
+		t.Errorf("duration_ms = %v, want 1200", got)
+	}
 }

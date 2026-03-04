@@ -31,14 +31,14 @@ type SkillScore struct {
 
 // MatchLog records a match attempt for debugging.
 type MatchLog struct {
-	Timestamp time.Time `json:"timestamp"`
-	Input     string    `json:"input"`
-	Platform  string    `json:"platform"`
-	UserID    string    `json:"user_id"`
-	Scores    []SkillScore `json:"scores,omitempty"`
-	Result    *MatchResult `json:"result"`
-	Duration  time.Duration `json:"duration_ms"`
-	LLMUsed   bool        `json:"llm_used"`
+	Timestamp  time.Time    `json:"timestamp"`
+	Input      string       `json:"input"`
+	Platform   string       `json:"platform"`
+	UserID     string       `json:"user_id"`
+	Scores     []SkillScore `json:"scores,omitempty"`
+	Result     *MatchResult `json:"result"`
+	DurationMs int64        `json:"duration_ms"`
+	LLMUsed    bool         `json:"llm_used"`
 }
 
 // LLMClassifier interface for LLM-based classification and parameter extraction.
@@ -298,11 +298,11 @@ func (m *SkillMatcher) recordMatchLog(message string, result *MatchResult, durat
 		return
 	}
 	log := &MatchLog{
-		Timestamp: time.Now(),
-		Input:     message,
-		Result:    result,
-		Duration:  duration,
-		LLMUsed:   llmUsed,
+		Timestamp:  time.Now(),
+		Input:      message,
+		Result:     result,
+		DurationMs: duration.Milliseconds(),
+		LLMUsed:    llmUsed,
 	}
 	m.logBuffer.Add(log)
 }

@@ -15,6 +15,12 @@ GoZen has extensive unit test coverage (80%+ for core modules) but lacks compreh
 
 3. **Process stability for server deployments**: GoZen is increasingly deployed on always-on servers where the Web UI and bot processes must remain accessible 24/7. There is no mechanism to ensure these processes auto-restart after unexpected termination, and no tests validate long-running process resilience.
 
+## Clarifications
+
+### Session 2026-03-04
+
+- Q: Should new integration and e2e tests be added to the CI pipeline, and if so, should e2e test failures block merge? → A: Add both `test/integration/` and `tests/` (e2e) to CI. Integration tests are blocking (failures block merge). E2E tests run as a separate non-blocking job (failures are reported but do not block merge).
+
 ## Current Testing Landscape
 
 | Area | Unit Tests | Integration Tests | E2E Tests | Gap |
@@ -186,6 +192,7 @@ As a developer maintaining the GoZen Web UI, I need page-level component tests f
 
 - **FR-028**: A `Makefile` target or script MUST exist to run all test tiers: `make test-unit` (Go unit tests), `make test-integration` (Go integration tests), `make test-e2e` (Go e2e tests), `make test-web` (frontend tests), `make test-all` (everything).
 - **FR-029**: Integration and E2E tests MUST use mock HTTP servers (Go `httptest.Server`) as provider backends to avoid dependency on real API providers.
+- **FR-030**: The CI pipeline (`.github/workflows/ci.yml`) MUST be updated to run both integration tests (`test/integration/`) and e2e tests (`tests/`). Integration test failures MUST block merge (existing behavior). E2E test failures MUST be reported but MUST NOT block merge (non-blocking separate job).
 
 ### Key Entities
 

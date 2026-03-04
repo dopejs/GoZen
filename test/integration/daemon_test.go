@@ -10,7 +10,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,83 +21,19 @@ import (
 	"time"
 )
 
-// TestConfig holds test configuration
-type TestConfig struct {
-	BinaryPath string
-	ConfigDir  string
-	ProxyPort  int
-	WebPort    int
+// DaemonTestConfig holds test configuration for daemon lifecycle tests.
+type DaemonTestConfig struct {
+	*BaseTestConfig
 }
 
-func setupTest(t *testing.T) *TestConfig {
+func setupDaemonTest(t *testing.T) *DaemonTestConfig {
 	t.Helper()
-
-	// Find project root (where go.mod is)
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		t.Fatalf("failed to find project root: %v", err)
-	}
-
-	// Build the binary
-	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "zen")
-
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	cmd.Dir = projectRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed to build binary: %v\n%s", err, out)
-	}
-
-	// Use unique ports to avoid conflicts
-	proxyPort := findFreePort(t)
-	webPort := findFreePort(t)
-
-	// Create config directory
-	configDir := filepath.Join(tmpDir, ".zen")
-	os.MkdirAll(configDir, 0755)
-
-	// Write minimal config
-	configPath := filepath.Join(configDir, "zen.json")
-	config := fmt.Sprintf(`{"version":6,"proxy_port":%d,"web_port":%d,"providers":{},"profiles":{}}`, proxyPort, webPort)
-	os.WriteFile(configPath, []byte(config), 0644)
-
-	return &TestConfig{
-		BinaryPath: binaryPath,
-		ConfigDir:  configDir,
-		ProxyPort:  proxyPort,
-		WebPort:    webPort,
-	}
+	base := setupBaseTest(t)
+	base.writeMinimalConfig(t)
+	return &DaemonTestConfig{BaseTestConfig: base}
 }
 
-func findFreePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to find free port: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
-	return port
-}
-
-func findProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("go.mod not found")
-		}
-		dir = parent
-	}
-}
-
-func (tc *TestConfig) runDaemon(t *testing.T, args ...string) *exec.Cmd {
+func (tc *DaemonTestConfig) runDaemon(t *testing.T, args ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(tc.BinaryPath, args...)
 	cmd.Env = append(os.Environ(),
@@ -108,7 +43,7 @@ func (tc *TestConfig) runDaemon(t *testing.T, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func (tc *TestConfig) readPID(t *testing.T) (int, error) {
+func (tc *DaemonTestConfig) readPID(t *testing.T) (int, error) {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(tc.ConfigDir, "zend.pid"))
 	if err != nil {
@@ -117,28 +52,7 @@ func (tc *TestConfig) readPID(t *testing.T) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(string(data)))
 }
 
-func (tc *TestConfig) isPortListening(port int) bool {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	conn.Close()
-	return true
-}
-
-func (tc *TestConfig) waitForDaemonReady(t *testing.T, timeout time.Duration) error {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if tc.isPortListening(tc.ProxyPort) && tc.isPortListening(tc.WebPort) {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("daemon not ready after %v", timeout)
-}
-
-func (tc *TestConfig) waitForDaemonStop(t *testing.T, pid int, timeout time.Duration, cmd *exec.Cmd) error {
+func (tc *DaemonTestConfig) waitForDaemonStop(t *testing.T, pid int, timeout time.Duration, cmd *exec.Cmd) error {
 	t.Helper()
 
 	// If we have the cmd, use Wait() which properly reaps the process
@@ -178,7 +92,7 @@ func (tc *TestConfig) waitForDaemonStop(t *testing.T, pid int, timeout time.Dura
 // TestDaemonStart_ShouldCreatePIDFile verifies that starting the daemon
 // creates a PID file with the correct process ID.
 func TestDaemonStart_ShouldCreatePIDFile(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
 	if err := cmd.Start(); err != nil {
@@ -203,7 +117,7 @@ func TestDaemonStart_ShouldCreatePIDFile(t *testing.T) {
 // TestDaemonStart_ShouldListenOnConfiguredPorts verifies that the daemon
 // listens on the ports specified in the configuration.
 func TestDaemonStart_ShouldListenOnConfiguredPorts(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
 	if err := cmd.Start(); err != nil {
@@ -215,11 +129,11 @@ func TestDaemonStart_ShouldListenOnConfiguredPorts(t *testing.T) {
 		t.Fatalf("daemon not ready: %v", err)
 	}
 
-	if !tc.isPortListening(tc.ProxyPort) {
+	if !isPortListening(tc.ProxyPort) {
 		t.Errorf("daemon not listening on proxy port %d", tc.ProxyPort)
 	}
 
-	if !tc.isPortListening(tc.WebPort) {
+	if !isPortListening(tc.WebPort) {
 		t.Errorf("daemon not listening on web port %d", tc.WebPort)
 	}
 }
@@ -227,7 +141,7 @@ func TestDaemonStart_ShouldListenOnConfiguredPorts(t *testing.T) {
 // TestDaemonStart_ShouldRespondToStatusAPI verifies that the daemon's
 // status API endpoint returns valid information.
 func TestDaemonStart_ShouldRespondToStatusAPI(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
 	if err := cmd.Start(); err != nil {
@@ -258,7 +172,7 @@ func TestDaemonStart_ShouldRespondToStatusAPI(t *testing.T) {
 // TestDaemonStop_ShouldTerminateProcess verifies that stopping the daemon
 // actually terminates the process.
 func TestDaemonStop_ShouldTerminateProcess(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start daemon
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -286,7 +200,7 @@ func TestDaemonStop_ShouldTerminateProcess(t *testing.T) {
 // TestDaemonStop_ShouldRemovePIDFile verifies that stopping the daemon
 // removes the PID file.
 func TestDaemonStop_ShouldRemovePIDFile(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start daemon
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -327,7 +241,7 @@ func TestDaemonStop_ShouldRemovePIDFile(t *testing.T) {
 // TestDaemonStop_ShouldReleasePort verifies that stopping the daemon
 // releases the ports it was listening on.
 func TestDaemonStop_ShouldReleasePort(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start daemon
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -354,11 +268,11 @@ func TestDaemonStop_ShouldReleasePort(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Verify ports are free
-	if tc.isPortListening(tc.ProxyPort) {
+	if isPortListening(tc.ProxyPort) {
 		t.Errorf("proxy port %d still in use after daemon stop", tc.ProxyPort)
 	}
 
-	if tc.isPortListening(tc.WebPort) {
+	if isPortListening(tc.WebPort) {
 		t.Errorf("web port %d still in use after daemon stop", tc.WebPort)
 	}
 }
@@ -370,7 +284,7 @@ func TestDaemonStop_ShouldReleasePort(t *testing.T) {
 // TestDaemonRestart_ShouldStopOldProcess verifies that restarting the daemon
 // properly stops the old process before starting a new one.
 func TestDaemonRestart_ShouldStopOldProcess(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start first daemon
 	cmd1 := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -422,7 +336,7 @@ func TestDaemonRestart_ShouldStopOldProcess(t *testing.T) {
 // TestDaemonRestart_ShouldUpdatePIDFile verifies that restarting the daemon
 // updates the PID file with the new process ID.
 func TestDaemonRestart_ShouldUpdatePIDFile(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start first daemon
 	cmd1 := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -477,7 +391,7 @@ func TestDaemonRestart_ShouldUpdatePIDFile(t *testing.T) {
 // This is the bug that was fixed: when port check failed, the PID file was
 // removed, making it impossible to stop the daemon.
 func TestDaemonUpgrade_ShouldStopOldDaemonEvenIfPortCheckFails(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Start daemon
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
@@ -527,7 +441,7 @@ func TestDaemonUpgrade_ShouldStopOldDaemonEvenIfPortCheckFails(t *testing.T) {
 // TestDaemonStart_ShouldHandleStalePIDFile verifies that the daemon can
 // start even if there's a stale PID file from a crashed daemon.
 func TestDaemonStart_ShouldHandleStalePIDFile(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	// Create a stale PID file with a non-existent process
 	pidPath := filepath.Join(tc.ConfigDir, "zend.pid")
@@ -562,7 +476,7 @@ func TestDaemonStart_ShouldHandleStalePIDFile(t *testing.T) {
 // TestDaemonShutdown_ShouldWaitForActiveRequests verifies that the daemon
 // waits for active requests to complete before shutting down.
 func TestDaemonShutdown_ShouldWaitForActiveRequests(t *testing.T) {
-	tc := setupTest(t)
+	tc := setupDaemonTest(t)
 
 	cmd := tc.runDaemon(t, "daemon", "start", "--foreground")
 	if err := cmd.Start(); err != nil {

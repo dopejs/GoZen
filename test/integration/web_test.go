@@ -12,9 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,49 +20,18 @@ import (
 
 // WebTestConfig holds test configuration for web tests
 type WebTestConfig struct {
-	BinaryPath string
-	ConfigDir  string
-	ProxyPort  int
-	WebPort    int
+	*BaseTestConfig
 }
 
 func setupWebTest(t *testing.T) *WebTestConfig {
 	t.Helper()
-
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		t.Fatalf("failed to find project root: %v", err)
-	}
-
-	tmpDir := t.TempDir()
-	binaryPath := filepath.Join(tmpDir, "zen")
-
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	cmd.Dir = projectRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("failed to build binary: %v\n%s", err, out)
-	}
-
-	proxyPort := findFreePort(t)
-	webPort := findFreePort(t)
-
-	configDir := filepath.Join(tmpDir, ".zen")
-	os.MkdirAll(configDir, 0755)
-
-	return &WebTestConfig{
-		BinaryPath: binaryPath,
-		ConfigDir:  configDir,
-		ProxyPort:  proxyPort,
-		WebPort:    webPort,
-	}
+	base := setupBaseTest(t)
+	return &WebTestConfig{BaseTestConfig: base}
 }
 
 func (tc *WebTestConfig) writeConfig(t *testing.T, extra map[string]interface{}) {
 	t.Helper()
 	config := map[string]interface{}{
-		"version":    6,
-		"proxy_port": tc.ProxyPort,
-		"web_port":   tc.WebPort,
 		"providers": map[string]interface{}{
 			"test-provider": map[string]interface{}{
 				"auth_token": "test-token",
@@ -80,21 +47,12 @@ func (tc *WebTestConfig) writeConfig(t *testing.T, extra map[string]interface{})
 	for k, v := range extra {
 		config[k] = v
 	}
-	data, _ := json.Marshal(config)
-	configPath := filepath.Join(tc.ConfigDir, "zen.json")
-	os.WriteFile(configPath, data, 0644)
+	tc.writeJSONConfig(t, config)
 }
 
 func (tc *WebTestConfig) startDaemon(t *testing.T) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(tc.BinaryPath, "daemon", "start", "--foreground")
-	cmd.Env = append(os.Environ(),
-		"HOME="+filepath.Dir(tc.ConfigDir),
-		"GOZEN_DAEMON=1",
-	)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("failed to start daemon: %v", err)
-	}
+	cmd := tc.startDaemonCmd(t)
 
 	// Wait for web server to be ready
 	deadline := time.Now().Add(5 * time.Second)

@@ -136,7 +136,7 @@
 
 - [x] T037 Add Makefile test targets: `test-unit` (go test ./...), `test-integration` (go test -tags=integration ./test/integration/...), `test-e2e` (go test -tags=integration -timeout 180s ./tests/...), `test-web` (cd web && pnpm test), `test-all` (all tiers in sequence) in `Makefile` (FR-028, SC-007)
 - [x] T038 Update CI pipeline in `.github/workflows/ci.yml` — add new `e2e` job that runs `go test -tags=integration -timeout 180s ./tests/...` with `continue-on-error: true` (non-blocking), keeping existing integration tests in `go` job as blocking (FR-030, R7)
-- [ ] T039 Run quickstart.md validation — execute all 7 manual verification scenarios from `specs/008-automated-testing/quickstart.md` and verify expected outcomes (SC-007, SC-008)
+- [x] T039 Run quickstart.md validation — execute all 7 manual verification scenarios from `specs/008-automated-testing/quickstart.md` and verify expected outcomes (SC-007, SC-008)
 
 ---
 

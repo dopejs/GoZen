@@ -117,14 +117,14 @@
 
 ### Implementation for User Story 5
 
-- [ ] T029 [P] [US5] Create monitoring page tests in `web/src/pages/monitoring/index.test.tsx` — render with MSW mock data, verify request table rendering (timestamps, durations, status), auto-refresh toggle, filter interactions, detail modal display (FR-016, SC-006)
-- [ ] T030 [P] [US5] Create providers list page tests in `web/src/pages/providers/index.test.tsx` — render with mock providers, verify list rendering, add button interaction (FR-017, SC-006)
-- [ ] T031 [P] [US5] Create provider edit page tests in `web/src/pages/providers/edit.test.tsx` — render edit form, verify form validation, submit flow with correct API payload (FR-017, SC-006)
-- [ ] T032 [P] [US5] Create profiles list page tests in `web/src/pages/profiles/index.test.tsx` — render with mock profiles, verify list rendering (FR-018, SC-006)
-- [ ] T033 [P] [US5] Create profile edit page tests in `web/src/pages/profiles/edit.test.tsx` — render edit form, verify provider reordering, routing config (FR-018, SC-006)
-- [ ] T034 [P] [US5] Create general settings tab tests in `web/src/pages/settings/tabs/GeneralSettings.test.tsx` — render general tab, verify proxy port displayed read-only with correct value from settings API (FR-019, SC-006)
-- [ ] T035 [P] [US5] Create password settings tab tests in `web/src/pages/settings/tabs/PasswordSettings.test.tsx` — render password tab, verify password change form validation and submit flow (FR-019, SC-006)
-- [ ] T036 [US5] Verify frontend coverage remains above 70% threshold after adding all page tests — run `pnpm test:coverage` in `web/` (FR-020, SC-006)
+- [x] T029 [P] [US5] Create monitoring page tests in `web/src/pages/monitoring/index.test.tsx` — render with MSW mock data, verify request table rendering (timestamps, durations, status), auto-refresh toggle, filter interactions, detail modal display (FR-016, SC-006)
+- [x] T030 [P] [US5] Create providers list page tests in `web/src/pages/providers/index.test.tsx` — render with mock providers, verify list rendering, add button interaction (FR-017, SC-006)
+- [x] T031 [P] [US5] Create provider edit page tests in `web/src/pages/providers/edit.test.tsx` — render edit form, verify form validation, submit flow with correct API payload (FR-017, SC-006)
+- [x] T032 [P] [US5] Create profiles list page tests in `web/src/pages/profiles/index.test.tsx` — render with mock profiles, verify list rendering (FR-018, SC-006)
+- [x] T033 [P] [US5] Create profile edit page tests in `web/src/pages/profiles/edit.test.tsx` — render edit form, verify provider reordering, routing config (FR-018, SC-006)
+- [x] T034 [P] [US5] Create general settings tab tests in `web/src/pages/settings/tabs/GeneralSettings.test.tsx` — render general tab, verify proxy port displayed read-only with correct value from settings API (FR-019, SC-006)
+- [x] T035 [P] [US5] Create password settings tab tests in `web/src/pages/settings/tabs/PasswordSettings.test.tsx` — render password tab, verify password change form validation and submit flow (FR-019, SC-006)
+- [x] T036 [US5] Verify frontend coverage remains above 70% threshold after adding all page tests — run `pnpm test:coverage` in `web/` (FR-020, SC-006)
 
 **Checkpoint**: All critical page components have test coverage. Overall web UI coverage stays above 70%.
 

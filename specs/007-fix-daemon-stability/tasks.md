@@ -93,17 +93,17 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T026 [P] [US2] Write test for `isConnectionError()` helper in `cmd/root_test.go` — test: returns true for stderr containing "connection refused", "connection reset", "ECONNREFUSED"; returns false for other error text; returns false for empty stderr
-- [ ] T027 [P] [US2] Write test for `runClientWithRetry()` logic in `cmd/root_test.go` — test: on connection error with dead daemon, restarts daemon and retries (mock daemon check and exec); on non-connection error, forwards exit code immediately; on second failure, forwards exit code without further retry; on exit code 0, returns success
+- [X] T026 [P] [US2] Write test for `isConnectionError()` helper in `cmd/root_test.go` — test: returns true for stderr containing "connection refused", "connection reset", "ECONNREFUSED"; returns false for other error text; returns false for empty stderr
+- [X] T027 [P] [US2] Write test for `runClientWithRetry()` logic in `cmd/root_test.go` — test: on connection error with dead daemon, restarts daemon and retries (mock daemon check and exec); on non-connection error, forwards exit code immediately; on second failure, forwards exit code without further retry; on exit code 0, returns success
 
 ### Implementation for User Story 2
 
-- [ ] T028 [US2] Extract client process execution from `startViaDaemon()` into a `runClient()` helper in `cmd/root.go` — takes cliPath, args, env; returns exit code, stderr output, and error; captures stderr via `io.MultiWriter(os.Stderr, &stderrBuf)` to tee output to both the terminal and a buffer for connection error detection
-- [ ] T029 [US2] Implement `isConnectionError(stderr string) bool` in `cmd/root.go` — check for patterns: "connection refused", "connection reset", "connection error", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT" (case-insensitive)
-- [ ] T030 [US2] Add retry loop to `startViaDaemon()` in `cmd/root.go` — after `runClient()` returns non-zero with connection error: check `daemon.IsDaemonRunning()`, if dead then log recovery message, call `ensureDaemonRunning()` (which uses file lock from T018), re-run `runClient()`; limit to 1 retry
-- [ ] T031 [US2] Add recovery logging — when daemon restart is triggered, log "Daemon connection lost. Restarting daemon..." to stderr so user sees recovery in progress
-- [ ] T031b [US2] Add daemon-side restart audit logging in `internal/daemon/server.go` — when the daemon starts and detects it replaced a stale process (via port conflict kill in T017), log "Daemon restarted (replaced stale process PID)" to `zend.log` for auditability (FR-010)
-- [ ] T032 [US2] Verify all T026-T027 tests pass: `go test ./cmd/... -run TestConnectionError -run TestRunClientWithRetry`
+- [X] T028 [US2] Extract client process execution from `startViaDaemon()` into a `runClient()` helper in `cmd/root.go` — takes cliPath, args, env; returns exit code, stderr output, and error; captures stderr via `io.MultiWriter(os.Stderr, &stderrBuf)` to tee output to both the terminal and a buffer for connection error detection
+- [X] T029 [US2] Implement `isConnectionError(stderr string) bool` in `cmd/root.go` — check for patterns: "connection refused", "connection reset", "connection error", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT" (case-insensitive)
+- [X] T030 [US2] Add retry loop to `startViaDaemon()` in `cmd/root.go` — after `runClient()` returns non-zero with connection error: check `daemon.IsDaemonRunning()`, if dead then log recovery message, call `ensureDaemonRunning()` (which uses file lock from T018), re-run `runClient()`; limit to 1 retry
+- [X] T031 [US2] Add recovery logging — when daemon restart is triggered, log "Daemon connection lost. Restarting daemon..." to stderr so user sees recovery in progress
+- [X] T031b [US2] Add daemon-side restart audit logging in `internal/daemon/server.go` — when the daemon starts and detects it replaced a stale process (via port conflict kill in T017), log "Daemon restarted (replaced stale process PID)" to `zend.log` for auditability (FR-010)
+- [X] T032 [US2] Verify all T026-T027 tests pass: `go test ./cmd/... -run TestConnectionError -run TestRunClientWithRetry`
 
 **Checkpoint**: After daemon death, `zen` wrapper auto-restarts daemon and re-launches client with single retry.
 
@@ -144,10 +144,10 @@
 
 **Purpose**: Final validation, coverage checks, and build verification
 
-- [ ] T044 Run full test suite: `go test ./...` — all tests must pass
-- [ ] T045 Verify test coverage meets thresholds: `go test -cover ./internal/daemon/` (≥50%), `go test -cover ./internal/proxy/` (≥80%), `go test -cover ./internal/config/` (≥80%), `go test -cover ./internal/bot/` (≥80%), `go test -cover ./internal/web/` (≥80%)
-- [ ] T046 Build web UI and verify: `cd web && pnpm install && pnpm test && pnpm build`
-- [ ] T047 Run `go build ./...` to verify clean compilation
+- [X] T044 Run full test suite: `go test ./...` — all tests must pass
+- [X] T045 Verify test coverage meets thresholds: `go test -cover ./internal/daemon/` (≥50%), `go test -cover ./internal/proxy/` (≥80%), `go test -cover ./internal/config/` (≥80%), `go test -cover ./internal/bot/` (≥80%), `go test -cover ./internal/web/` (≥80%)
+- [X] T046 Build web UI and verify: `cd web && pnpm install && pnpm test && pnpm build`
+- [X] T047 Run `go build ./...` to verify clean compilation
 - [ ] T048 Run quickstart.md manual test scenarios against dev daemon to validate end-to-end behavior
 
 ---

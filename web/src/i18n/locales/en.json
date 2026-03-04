@@ -127,6 +127,7 @@
     "scenarioThink": "Extended Thinking",
     "scenarioImage": "Image Processing",
     "scenarioLongContext": "Long Context",
+    "scenarioCode": "Code",
     "scenarioWebSearch": "Web Search",
     "scenarioBackground": "Background Tasks",
     "scenarioProviders": "Scenario Providers",

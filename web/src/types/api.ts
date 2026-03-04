@@ -41,15 +41,16 @@ export const CLIENT_ENV_HINTS: Record<ClientType, string[]> = {
 }
 
 // Scenarios
-export type Scenario = 'think' | 'image' | 'longContext' | 'webSearch' | 'background' | 'default'
+export type Scenario = 'think' | 'image' | 'longContext' | 'webSearch' | 'code' | 'background' | 'default'
 
-export const SCENARIOS: Scenario[] = ['default', 'think', 'image', 'longContext', 'webSearch', 'background']
+export const SCENARIOS: Scenario[] = ['default', 'think', 'image', 'longContext', 'code', 'webSearch', 'background']
 
 export const SCENARIO_LABELS: Record<Scenario, string> = {
   default: 'Default',
   think: 'Extended Thinking',
   image: 'Image Processing',
   longContext: 'Long Context',
+  code: 'Code',
   webSearch: 'Web Search',
   background: 'Background Tasks',
 }

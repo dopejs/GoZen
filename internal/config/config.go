@@ -241,6 +241,7 @@ const (
 	ScenarioLongContext Scenario = "longContext"
 	ScenarioWebSearch   Scenario = "webSearch"
 	ScenarioBackground  Scenario = "background"
+	ScenarioCode        Scenario = "code"
 	ScenarioDefault     Scenario = "default"
 )
 

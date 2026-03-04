@@ -148,7 +148,7 @@
 - [X] T045 Verify test coverage meets thresholds: `go test -cover ./internal/daemon/` (≥50%), `go test -cover ./internal/proxy/` (≥80%), `go test -cover ./internal/config/` (≥80%), `go test -cover ./internal/bot/` (≥80%), `go test -cover ./internal/web/` (≥80%)
 - [X] T046 Build web UI and verify: `cd web && pnpm install && pnpm test && pnpm build`
 - [X] T047 Run `go build ./...` to verify clean compilation
-- [ ] T048 Run quickstart.md manual test scenarios against dev daemon to validate end-to-end behavior
+- [X] T048 Run quickstart.md test scenarios via automated e2e integration tests (`go test -tags integration ./tests/`)
 
 ---
 

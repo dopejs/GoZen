@@ -161,6 +161,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - In-memory ring buffer (default 1000 requests), no database persistence for MVP (006-revert-tag-add-monitoring)
 - Go 1.21+ + Cobra (CLI), net/http (proxy/web), syscall (file lock, process management), React+TypeScript (Web UI) (007-fix-daemon-stability)
 - JSON config at `~/.zen/zen.json`, SQLite for proxy logs (007-fix-daemon-stability)
+- Go 1.21+ (backend), TypeScript (frontend, React 18) + `net/http`, `net/http/httptest`, `os/exec`, `encoding/json` (Go tests); vitest 4, @testing-library/react, MSW (frontend tests) (008-automated-testing)
+- JSON config at `~/.zen/zen.json` (test isolation via `GOZEN_CONFIG_DIR` and ephemeral ports) (008-automated-testing)
 
 ## Recent Changes
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering

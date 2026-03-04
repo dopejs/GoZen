@@ -150,7 +150,30 @@ func runDaemonForeground() error {
 }
 
 // startDaemonBackground forks a child process to run the daemon.
+// Uses a file lock to coordinate concurrent startup attempts.
 func startDaemonBackground() error {
+	// Acquire daemon lock
+	lockFile, err := daemon.AcquireDaemonLock()
+	if err == daemon.ErrLockContention {
+		// Another process is starting — wait for it
+		fmt.Println("Another process is starting zend, waiting...")
+		lockPath := daemon.DaemonLockPath()
+		f, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+		if openErr != nil {
+			return fmt.Errorf("daemon lock contention and cannot wait: %w", openErr)
+		}
+		syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		if _, running := daemon.IsDaemonRunning(); running {
+			fmt.Println("zend is now running (started by another process).")
+			return nil
+		}
+	} else if err != nil {
+		return fmt.Errorf("cannot acquire daemon lock: %w", err)
+	}
+	defer daemon.ReleaseDaemonLock(lockFile)
+
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot determine executable path: %w", err)

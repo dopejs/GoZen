@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/dopejs/gozen/internal/agent"
@@ -93,6 +94,12 @@ func NewDaemon(version string, logger *log.Logger) *Daemon {
 // Start initializes and starts both the proxy and web servers.
 func (d *Daemon) Start() error {
 	d.startTime = time.Now()
+
+	// Ensure proxy port is persisted on first run
+	if err := config.EnsureProxyPort(); err != nil {
+		d.logger.Printf("Warning: failed to persist proxy port: %v", err)
+	}
+
 	d.proxyPort = config.GetProxyPort()
 	d.webPort = config.GetWebPort()
 
@@ -199,7 +206,39 @@ func (d *Daemon) startProxy() error {
 	addr := fmt.Sprintf("127.0.0.1:%d", d.proxyPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("port %d is already in use: %w", d.proxyPort, err)
+		// Port is busy — identify who's using it
+		pid, procName, identErr := GetProcessOnPort(d.proxyPort)
+		if identErr != nil {
+			return fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)
+		}
+
+		if IsZenProcess(procName) {
+			// Stale zen daemon — kill it and retry
+			d.logger.Printf("Port %d occupied by stale zen process (PID %d: %s), killing...", d.proxyPort, pid, procName)
+			proc, findErr := os.FindProcess(pid)
+			if findErr != nil {
+				return fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)
+			}
+			if killErr := proc.Signal(syscall.SIGTERM); killErr != nil {
+				return fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)
+			}
+			// Wait briefly for process to die
+			for i := 0; i < 10; i++ {
+				time.Sleep(300 * time.Millisecond)
+				if proc.Signal(syscall.Signal(0)) != nil {
+					break // process is dead
+				}
+			}
+			d.logger.Printf("Daemon restarted (replaced stale process %d)", pid)
+
+			// Retry bind
+			ln, err = net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)
+			}
+		} else {
+			return fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)
+		}
 	}
 
 	d.proxyServer = &http.Server{

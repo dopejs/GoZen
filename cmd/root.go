@@ -282,10 +282,41 @@ func registerSession(proxyPort int, profile, sessionID, clientType string) {
 }
 
 // ensureDaemonRunning checks if zend is running and starts it if not.
+// Uses a file lock to coordinate concurrent startup attempts.
 func ensureDaemonRunning() error {
 	if _, running := daemon.IsDaemonRunning(); running {
 		return nil
 	}
+
+	// Acquire daemon lock to prevent concurrent startups
+	lockFile, err := daemon.AcquireDaemonLock()
+	if err == daemon.ErrLockContention {
+		// Another process is starting the daemon — wait for it
+		lockPath := daemon.DaemonLockPath()
+		f, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+		if openErr != nil {
+			// Can't open lock file — fall through and check if daemon is up
+			time.Sleep(2 * time.Second)
+			if _, running := daemon.IsDaemonRunning(); running {
+				return nil
+			}
+			return fmt.Errorf("daemon lock contention and cannot wait: %w", openErr)
+		}
+		// Block until lock is available (other process finished startup)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		// Check if daemon is now alive
+		if _, running := daemon.IsDaemonRunning(); running {
+			return nil
+		}
+		// Daemon still not running — fall through to start it ourselves
+	} else if err != nil {
+		return fmt.Errorf("cannot acquire daemon lock: %w", err)
+	}
+
+	// We hold the lock — start the daemon
+	defer daemon.ReleaseDaemonLock(lockFile)
 
 	// Auto-start the daemon
 	exe, err := os.Executable()

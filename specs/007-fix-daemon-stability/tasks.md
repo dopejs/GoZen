@@ -121,20 +121,20 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T033 [P] [US3] Write test for `RequestRecord` JSON serialization in `internal/proxy/request_monitor_test.go` — create a record with DurationMs=2500, marshal to JSON, verify `duration_ms` field is 2500 (not nanoseconds)
-- [ ] T034 [P] [US3] Write test for `ProviderAttempt` JSON serialization in `internal/proxy/request_monitor_test.go` — same pattern, verify `duration_ms` is milliseconds
-- [ ] T035 [P] [US3] Write test for `MatchLog` JSON serialization in `internal/bot/matcher_test.go` — create a MatchLog with DurationMs=1500, marshal to JSON, verify `duration_ms` field is 1500
+- [X] T033 [P] [US3] Write test for `RequestRecord` JSON serialization in `internal/proxy/request_monitor_test.go` — create a record with DurationMs=2500, marshal to JSON, verify `duration_ms` field is 2500 (not nanoseconds)
+- [X] T034 [P] [US3] Write test for `ProviderAttempt` JSON serialization in `internal/proxy/request_monitor_test.go` — same pattern, verify `duration_ms` is milliseconds
+- [X] T035 [P] [US3] Write test for `MatchLog` JSON serialization in `internal/bot/matcher_test.go` — create a MatchLog with DurationMs=1500, marshal to JSON, verify `duration_ms` field is 1500
 
 ### Implementation for User Story 3
 
-- [ ] T036 [P] [US3] Change `RequestRecord.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/proxy/request_monitor.go`
-- [ ] T037 [P] [US3] Change `ProviderAttempt.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/proxy/request_monitor.go`
-- [ ] T038 [P] [US3] Change `MatchLog.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/bot/matcher.go`
-- [ ] T039 [US3] Update all `RequestRecord` creation sites in `internal/proxy/server.go` — change `Duration: duration` to `DurationMs: duration.Milliseconds()` at lines ~789, ~810, ~869
-- [ ] T040 [US3] Update `buildFailoverChain()` in `internal/proxy/server.go` — change `Duration: f.Elapsed` to `DurationMs: f.Elapsed.Milliseconds()`
-- [ ] T041 [US3] Update `recordMatchLog()` in `internal/bot/matcher.go` — change `log.Duration = duration` to `log.DurationMs = duration.Milliseconds()`
-- [ ] T042 [US3] Fix any compilation errors from the field rename — search for all references to `.Duration` on RequestRecord, ProviderAttempt, and MatchLog types and update to `.DurationMs`
-- [ ] T043 [US3] Verify all T033-T035 tests pass: `go test ./internal/proxy/... ./internal/bot/... -run TestDuration -run TestMatchLog`
+- [X] T036 [P] [US3] Change `RequestRecord.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/proxy/request_monitor.go`
+- [X] T037 [P] [US3] Change `ProviderAttempt.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/proxy/request_monitor.go`
+- [X] T038 [P] [US3] Change `MatchLog.Duration` field from `time.Duration` to `DurationMs int64` (keep JSON tag `duration_ms`) in `internal/bot/matcher.go`
+- [X] T039 [US3] Update all `RequestRecord` creation sites in `internal/proxy/server.go` — change `Duration: duration` to `DurationMs: duration.Milliseconds()` at lines ~789, ~810, ~869
+- [X] T040 [US3] Update `buildFailoverChain()` in `internal/proxy/server.go` — change `Duration: f.Elapsed` to `DurationMs: f.Elapsed.Milliseconds()`
+- [X] T041 [US3] Update `recordMatchLog()` in `internal/bot/matcher.go` — change `log.Duration = duration` to `log.DurationMs = duration.Milliseconds()`
+- [X] T042 [US3] Fix any compilation errors from the field rename — search for all references to `.Duration` on RequestRecord, ProviderAttempt, and MatchLog types and update to `.DurationMs`
+- [X] T043 [US3] Verify all T033-T035 tests pass: `go test ./internal/proxy/... ./internal/bot/... -run TestDuration -run TestMatchLog`
 
 **Checkpoint**: All `duration_ms` values in monitoring data are actual milliseconds. Monitoring dashboard shows human-readable durations.
 

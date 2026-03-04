@@ -774,3 +774,99 @@ func TestEstimateJSONTokens(t *testing.T) {
 		t.Errorf("expected 5 tokens for number, got %d", tokens)
 	}
 }
+
+func TestDetectScenarioCode(t *testing.T) {
+	tests := []struct {
+		name string
+		body map[string]interface{}
+		want config.Scenario
+	}{
+		{
+			name: "regular request returns code",
+			body: map[string]interface{}{
+				"model": "claude-sonnet-4-20250514",
+				"messages": []interface{}{
+					map[string]interface{}{"role": "user", "content": "Write a function"},
+				},
+			},
+			want: config.ScenarioCode,
+		},
+		{
+			name: "haiku request returns background not code",
+			body: map[string]interface{}{
+				"model": "claude-3-5-haiku-20241022",
+				"messages": []interface{}{
+					map[string]interface{}{"role": "user", "content": "quick task"},
+				},
+			},
+			want: config.ScenarioBackground,
+		},
+		{
+			name: "thinking request returns think not code",
+			body: map[string]interface{}{
+				"model":    "claude-sonnet-4-20250514",
+				"thinking": map[string]interface{}{"type": "enabled"},
+				"messages": []interface{}{
+					map[string]interface{}{"role": "user", "content": "analyze this"},
+				},
+			},
+			want: config.ScenarioThink,
+		},
+		{
+			name: "image request returns image not code",
+			body: map[string]interface{}{
+				"model": "claude-sonnet-4-20250514",
+				"messages": []interface{}{
+					map[string]interface{}{
+						"role": "user",
+						"content": []interface{}{
+							map[string]interface{}{"type": "image", "source": map[string]interface{}{}},
+						},
+					},
+				},
+			},
+			want: config.ScenarioImage,
+		},
+		{
+			name: "web search request returns webSearch not code",
+			body: map[string]interface{}{
+				"model": "claude-sonnet-4-20250514",
+				"tools": []interface{}{
+					map[string]interface{}{"type": "web_search_20241111"},
+				},
+				"messages": []interface{}{
+					map[string]interface{}{"role": "user", "content": "search for X"},
+				},
+			},
+			want: config.ScenarioWebSearch,
+		},
+		{
+			name: "regular request with tool_use returns code",
+			body: map[string]interface{}{
+				"model": "claude-sonnet-4-20250514",
+				"tools": []interface{}{
+					map[string]interface{}{
+						"name":        "read_file",
+						"description": "Read a file",
+						"input_schema": map[string]interface{}{
+							"type": "object",
+						},
+					},
+				},
+				"messages": []interface{}{
+					map[string]interface{}{"role": "user", "content": "read file.go"},
+				},
+			},
+			want: config.ScenarioCode,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DetectScenario(tt.body, 0, "")
+			if got != tt.want {
+				t.Errorf("DetectScenario() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

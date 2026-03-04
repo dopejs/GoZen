@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useSettings, useUpdateSettings, useBindings, useCreateBinding, useDeleteBinding, useSyncConfig, useSyncStatus } from './use-settings'
+import { useSettings, useUpdateSettings, useChangePassword, useBindings, useCreateBinding, useDeleteBinding, useSyncConfig, useUpdateSyncConfig, useSyncStatus, useSyncPull, useSyncPush } from './use-settings'
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -84,6 +84,17 @@ describe('useSyncConfig', () => {
   })
 })
 
+describe('useChangePassword', () => {
+  it('changes password', async () => {
+    const { result } = renderHook(() => useChangePassword(), { wrapper: createWrapper() })
+
+    await act(async () => {
+      const response = await result.current.mutateAsync({ currentPassword: 'old', newPassword: 'new' })
+      expect(response).toBeDefined()
+    })
+  })
+})
+
 describe('useSyncStatus', () => {
   it('fetches sync status', async () => {
     const { result } = renderHook(() => useSyncStatus(), { wrapper: createWrapper() })
@@ -91,5 +102,40 @@ describe('useSyncStatus', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(result.current.data).toBeDefined()
+  })
+})
+
+describe('useUpdateSyncConfig', () => {
+  it('updates sync config', async () => {
+    const { result } = renderHook(() => useUpdateSyncConfig(), { wrapper: createWrapper() })
+
+    await act(async () => {
+      const response = await result.current.mutateAsync({ enabled: true, backend: 'gist' })
+      expect(response).toBeDefined()
+    })
+  })
+})
+
+describe('useSyncPull', () => {
+  it('triggers sync pull', async () => {
+    const { result } = renderHook(() => useSyncPull(), { wrapper: createWrapper() })
+
+    await act(async () => {
+      await result.current.mutateAsync()
+    })
+
+    expect(result.current.isSuccess).toBe(true)
+  })
+})
+
+describe('useSyncPush', () => {
+  it('triggers sync push', async () => {
+    const { result } = renderHook(() => useSyncPush(), { wrapper: createWrapper() })
+
+    await act(async () => {
+      await result.current.mutateAsync()
+    })
+
+    expect(result.current.isSuccess).toBe(true)
   })
 })

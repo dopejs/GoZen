@@ -87,7 +87,9 @@ web/src/pages/
     ├── index.tsx           # EXISTING
     └── tabs/
         ├── GeneralSettings.tsx      # EXISTING
-        └── GeneralSettings.test.tsx # NEW: read-only proxy port, settings display
+        ├── GeneralSettings.test.tsx # NEW: read-only proxy port, settings display
+        ├── PasswordSettings.tsx     # EXISTING
+        └── PasswordSettings.test.tsx # NEW: password change flow
 
 # Claude Code testing skills (new files)
 .claude/commands/

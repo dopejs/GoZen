@@ -16,9 +16,9 @@
 **Purpose**: Consolidate duplicated test helpers and create the reusable mock provider server that all user stories depend on.
 
 - [ ] T001 Create shared test helpers by extracting `findProjectRoot()`, `findFreePort()`, and `setupBaseTest()` into `test/integration/helpers_test.go` — consolidating duplicates from `proxy_test.go`, `web_test.go`, and `daemon_test.go` (R1)
-- [ ] T002 Refactor `ProxyTestConfig` in `test/integration/proxy_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
-- [ ] T003 Refactor `WebTestConfig` in `test/integration/web_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
-- [ ] T004 Refactor `TestConfig` in `test/integration/daemon_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [ ] T002 [P] Refactor `ProxyTestConfig` in `test/integration/proxy_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [ ] T003 [P] Refactor `WebTestConfig` in `test/integration/web_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
+- [ ] T004 [P] Refactor `TestConfig` in `test/integration/daemon_test.go` to embed the new `BaseTestConfig` from `helpers_test.go`, removing duplicated helper functions
 
 ---
 
@@ -26,7 +26,7 @@
 
 **Purpose**: Mock provider server and shared e2e helpers that MUST be complete before any user story tests can be written.
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete.
+**⚠️ CRITICAL**: No Go integration/e2e user story work (US1–US3) can begin until this phase is complete. US4 (skills) and US5 (frontend tests) have no dependency on this phase.
 
 - [ ] T005 Create configurable `MockProvider` and `MockResponse` structs in `test/integration/mock_provider_test.go` — wraps `httptest.Server` with FIFO response queue, default response, request counting, latency injection, and Anthropic `/v1/messages` response format (R2, data-model.md entities 2–3)
 - [ ] T006 Create shared e2e test helpers in `tests/helpers_test.go` — extract `MockProvider` usage patterns into functions that `e2e_proxy_test.go` and `e2e_stress_test.go` can share with the `testEnv` struct from `e2e_daemon_test.go`
@@ -85,6 +85,7 @@
 - [ ] T020 [P] [US3] Add `TestE2E_ProcessStability_KillRecovery` in `tests/e2e_proxy_test.go` — send SIGKILL, verify restart succeeds: stale PID cleaned, lock acquired, same ports (FR-013, SC-005)
 - [ ] T021 [US3] Add `TestE2E_ProcessStability_IdempotentStart` in `tests/e2e_proxy_test.go` — start daemon, attempt second start, verify detection of existing instance and no duplicate (FR-014)
 - [ ] T022 [US3] Add `TestE2E_ProcessStability_ConfigReloadUnderLoad` in `tests/e2e_proxy_test.go` — start daemon, send requests while config watcher triggers reload, verify no dropped connections and web UI remains accessible (acceptance scenario 4)
+- [ ] T023 [US3] Add reference process supervisor configurations in `docs/server-deployment.md` — include launchd plist (macOS) and systemd unit (Linux) examples demonstrating how to run GoZen as a server-mode service (FR-015, documentation only)
 
 **Checkpoint**: Daemon is supervisor-friendly — clean PID handling, idempotent startup, no port conflicts on restart.
 
@@ -98,11 +99,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T023 [P] [US4] Create `/test.run` skill in `.claude/commands/test.run.md` — detect modified Go packages, run `go test` with race detection and coverage, compare against CI thresholds (80% core / 50% supporting), report pass/fail with test names (FR-021, FR-026)
-- [ ] T024 [P] [US4] Create `/test.integration` skill in `.claude/commands/test.integration.md` — build binary, run `go test -tags=integration ./test/integration/... ./tests/...`, report results with daemon startup/shutdown status (FR-022, FR-026)
-- [ ] T025 [P] [US4] Create `/test.web` skill in `.claude/commands/test.web.md` — run `pnpm test` in `web/` with coverage, report page-level and hook-level results, flag drops below 70% (FR-023, FR-026)
-- [ ] T026 [P] [US4] Create `/test.all` skill in `.claude/commands/test.all.md` — run all test tiers (unit, integration, e2e, web) in sequence, produce consolidated pass/fail summary, suggest `/commit` on full pass (FR-024, FR-026, FR-027)
-- [ ] T027 [P] [US4] Create `/test.write` skill in `.claude/commands/test.write.md` — analyze `git diff` against base branch, identify test files and patterns, generate skeleton test cases following project TDD conventions (FR-025, FR-026)
+- [ ] T024 [P] [US4] Create `/test.run` skill in `.claude/commands/test.run.md` — detect modified Go packages, run `go test` with race detection and coverage, compare against CI thresholds (80% core / 50% supporting), report pass/fail with test names (FR-021, FR-026)
+- [ ] T025 [P] [US4] Create `/test.integration` skill in `.claude/commands/test.integration.md` — build binary, run `go test -tags=integration ./test/integration/... ./tests/...`, report results with daemon startup/shutdown status (FR-022, FR-026)
+- [ ] T026 [P] [US4] Create `/test.web` skill in `.claude/commands/test.web.md` — run `pnpm test` in `web/` with coverage, report page-level and hook-level results, flag drops below 70% (FR-023, FR-026)
+- [ ] T027 [P] [US4] Create `/test.all` skill in `.claude/commands/test.all.md` — run all test tiers (unit, integration, e2e, web) in sequence, produce consolidated pass/fail summary, suggest `/commit` on full pass (FR-024, FR-026, FR-027)
+- [ ] T028 [P] [US4] Create `/test.write` skill in `.claude/commands/test.write.md` — analyze `git diff` against base branch, identify test files and patterns, generate skeleton test cases following project TDD conventions (FR-025, FR-026)
 
 **Checkpoint**: All 5 testing skills installable and invocable from Claude Code CLI.
 
@@ -116,13 +117,14 @@
 
 ### Implementation for User Story 5
 
-- [ ] T028 [P] [US5] Create monitoring page tests in `web/src/pages/monitoring/index.test.tsx` — render with MSW mock data, verify request table rendering (timestamps, durations, status), auto-refresh toggle, filter interactions, detail modal display (FR-016, SC-006)
-- [ ] T029 [P] [US5] Create providers list page tests in `web/src/pages/providers/index.test.tsx` — render with mock providers, verify list rendering, add button interaction (FR-017, SC-006)
-- [ ] T030 [P] [US5] Create provider edit page tests in `web/src/pages/providers/edit.test.tsx` — render edit form, verify form validation, submit flow with correct API payload (FR-017, SC-006)
-- [ ] T031 [P] [US5] Create profiles list page tests in `web/src/pages/profiles/index.test.tsx` — render with mock profiles, verify list rendering (FR-018, SC-006)
-- [ ] T032 [P] [US5] Create profile edit page tests in `web/src/pages/profiles/edit.test.tsx` — render edit form, verify provider reordering, routing config (FR-018, SC-006)
-- [ ] T033 [P] [US5] Create settings page tests in `web/src/pages/settings/tabs/GeneralSettings.test.tsx` — render general tab, verify proxy port displayed read-only with correct value from settings API (FR-019, SC-006)
-- [ ] T034 [US5] Verify frontend coverage remains above 70% threshold after adding all page tests — run `pnpm test:coverage` in `web/` (FR-020, SC-006)
+- [ ] T029 [P] [US5] Create monitoring page tests in `web/src/pages/monitoring/index.test.tsx` — render with MSW mock data, verify request table rendering (timestamps, durations, status), auto-refresh toggle, filter interactions, detail modal display (FR-016, SC-006)
+- [ ] T030 [P] [US5] Create providers list page tests in `web/src/pages/providers/index.test.tsx` — render with mock providers, verify list rendering, add button interaction (FR-017, SC-006)
+- [ ] T031 [P] [US5] Create provider edit page tests in `web/src/pages/providers/edit.test.tsx` — render edit form, verify form validation, submit flow with correct API payload (FR-017, SC-006)
+- [ ] T032 [P] [US5] Create profiles list page tests in `web/src/pages/profiles/index.test.tsx` — render with mock profiles, verify list rendering (FR-018, SC-006)
+- [ ] T033 [P] [US5] Create profile edit page tests in `web/src/pages/profiles/edit.test.tsx` — render edit form, verify provider reordering, routing config (FR-018, SC-006)
+- [ ] T034 [P] [US5] Create general settings tab tests in `web/src/pages/settings/tabs/GeneralSettings.test.tsx` — render general tab, verify proxy port displayed read-only with correct value from settings API (FR-019, SC-006)
+- [ ] T035 [P] [US5] Create password settings tab tests in `web/src/pages/settings/tabs/PasswordSettings.test.tsx` — render password tab, verify password change form validation and submit flow (FR-019, SC-006)
+- [ ] T036 [US5] Verify frontend coverage remains above 70% threshold after adding all page tests — run `pnpm test:coverage` in `web/` (FR-020, SC-006)
 
 **Checkpoint**: All critical page components have test coverage. Overall web UI coverage stays above 70%.
 
@@ -132,9 +134,9 @@
 
 **Purpose**: Unified test runner, CI updates, and validation.
 
-- [ ] T035 Add Makefile test targets: `test-unit` (go test ./...), `test-integration` (go test -tags=integration ./test/integration/...), `test-e2e` (go test -tags=integration -timeout 180s ./tests/...), `test-web` (cd web && pnpm test), `test-all` (all tiers in sequence) in `Makefile` (FR-028, SC-007)
-- [ ] T036 Update CI pipeline in `.github/workflows/ci.yml` — add new `e2e` job that runs `go test -tags=integration -timeout 180s ./tests/...` with `continue-on-error: true` (non-blocking), keeping existing integration tests in `go` job as blocking (FR-030, R7)
-- [ ] T037 Run quickstart.md validation — execute all 7 manual verification scenarios from `specs/008-automated-testing/quickstart.md` and verify expected outcomes (SC-007, SC-008)
+- [ ] T037 Add Makefile test targets: `test-unit` (go test ./...), `test-integration` (go test -tags=integration ./test/integration/...), `test-e2e` (go test -tags=integration -timeout 180s ./tests/...), `test-web` (cd web && pnpm test), `test-all` (all tiers in sequence) in `Makefile` (FR-028, SC-007)
+- [ ] T038 Update CI pipeline in `.github/workflows/ci.yml` — add new `e2e` job that runs `go test -tags=integration -timeout 180s ./tests/...` with `continue-on-error: true` (non-blocking), keeping existing integration tests in `go` job as blocking (FR-030, R7)
+- [ ] T039 Run quickstart.md validation — execute all 7 manual verification scenarios from `specs/008-automated-testing/quickstart.md` and verify expected outcomes (SC-007, SC-008)
 
 ---
 
@@ -143,7 +145,7 @@
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: No dependencies — can start immediately
-- **Foundational (Phase 2)**: Depends on Phase 1 (T001–T004) — BLOCKS all user stories
+- **Foundational (Phase 2)**: Depends on Phase 1 (T001–T004) — BLOCKS Go test stories (US1–US3)
 - **US1 (Phase 3)**: Depends on Phase 2 (needs MockProvider from T005)
 - **US2 (Phase 4)**: Depends on Phase 2 (needs MockProvider from T005, e2e helpers from T006)
 - **US3 (Phase 5)**: Depends on Phase 2 (needs e2e helpers from T006)
@@ -171,8 +173,8 @@
 - T005, T006 can run in parallel (mock provider vs e2e helpers — different directories)
 - T012, T013 can run in parallel (different test functions in same file, no shared state)
 - T019, T020 can run in parallel (different test functions)
-- T023–T027 can ALL run in parallel (independent `.claude/commands/` files)
-- T028–T033 can ALL run in parallel (independent page test files)
+- T024–T028 can ALL run in parallel (independent `.claude/commands/` files)
+- T029–T035 can ALL run in parallel (independent page test files)
 - US4 and US5 can run in parallel with US1–US3 (no code dependencies)
 
 ---
@@ -199,6 +201,7 @@ Task: "providers/edit.test.tsx"
 Task: "profiles/index.test.tsx"
 Task: "profiles/edit.test.tsx"
 Task: "settings/tabs/GeneralSettings.test.tsx"
+Task: "settings/tabs/PasswordSettings.test.tsx"
 ```
 
 ---

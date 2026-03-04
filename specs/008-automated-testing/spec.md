@@ -69,7 +69,7 @@ As a user relying on GoZen as my daily AI proxy, the proxy must remain stable an
 2. **Given** a daemon with providers [A(down), B(down), C(healthy)], **When** a request is sent, **Then** the proxy tries A, then B, then C, and returns C's response.
 3. **Given** a daemon with all providers returning 500 errors, **When** a request is sent, **Then** the proxy returns a clear error (not a hang or crash) and the daemon remains running.
 4. **Given** a daemon with scenario routing configured (think-capable provider and standard provider), **When** a request containing extended thinking parameters is sent, **Then** the proxy routes to the think-capable provider (not the standard one).
-5. **Given** a daemon running for an extended period (simulated via rapid request cycling), **When** 1000+ requests are sent in sequence with varying success/failure patterns, **Then** the daemon does not leak memory, hang, or crash.
+5. **Given** a daemon running for an extended period (simulated via rapid request cycling), **When** 500+ requests are sent in sequence with varying success/failure patterns, **Then** the daemon does not leak memory, hang, or crash.
 6. **Given** a daemon with providers returning 429 (rate limit), **When** requests continue to arrive, **Then** the proxy backs off from rate-limited providers and routes to available ones without crashing.
 7. **Given** a daemon with a provider that takes >30 seconds to respond, **When** a request is sent and the client disconnects (context canceled), **Then** the proxy handles the cancellation gracefully and remains stable for subsequent requests.
 
@@ -160,7 +160,7 @@ As a developer maintaining the GoZen Web UI, I need page-level component tests f
 
 - **FR-008**: E2E tests MUST verify provider failover through the real proxy binary: send a request when the first N-1 providers are down, verify the Nth provider receives and handles the request.
 - **FR-009**: E2E tests MUST verify that scenario-based routing correctly identifies thinking-mode requests and routes them to the designated provider.
-- **FR-010**: E2E tests MUST verify the proxy remains stable after handling 100+ requests with mixed success/failure patterns (no memory leaks, no goroutine leaks, no crashes).
+- **FR-010**: E2E tests MUST verify the proxy remains stable after handling 500+ requests with mixed success/failure patterns (no memory leaks, no goroutine leaks, no crashes).
 - **FR-011**: E2E tests MUST verify graceful handling of client disconnection (context cancellation) during an in-flight proxy request.
 
 #### Process Stability Tests

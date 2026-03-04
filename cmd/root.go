@@ -180,12 +180,68 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	return startViaDaemon(profile, client, providerNames, args, yesFlag)
 }
 
+// isConnectionError checks if stderr output indicates a connection error
+// that may be caused by a dead daemon.
+func isConnectionError(stderr string) bool {
+	if stderr == "" {
+		return false
+	}
+	lower := strings.ToLower(stderr)
+	patterns := []string{
+		"connection refused",
+		"connection reset",
+		"econnrefused",
+		"econnreset",
+		"etimedout",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// runClient executes the client binary and returns its exit code and stderr output.
+// Stderr is tee'd to both os.Stderr and a buffer for connection error detection.
+func runClient(cliPath string, args []string) (exitCode int, stderrOutput string, err error) {
+	cliCmd := exec.Command(cliPath, args...)
+	cliCmd.Stdin = os.Stdin
+	cliCmd.Stdout = os.Stdout
+
+	var stderrBuf bytes.Buffer
+	cliCmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+
+	// Forward signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for sig := range sigCh {
+			if cliCmd.Process != nil {
+				cliCmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	runErr := cliCmd.Run()
+	signal.Stop(sigCh)
+	close(sigCh)
+
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), stderrBuf.String(), nil
+		}
+		return 1, stderrBuf.String(), runErr
+	}
+	return 0, stderrBuf.String(), nil
+}
+
 // startViaDaemon starts a client session through the zend daemon.
 // 1. Ensure zend is running (auto-start if needed)
 // 2. Generate session UUID
 // 3. Set base URL to http://127.0.0.1:<proxy_port>/<profile>/<session>/v1
 // 4. Merge provider env vars
-// 5. Exec client binary
+// 5. Exec client binary with retry on connection error
 func startViaDaemon(profile, client string, providerNames []string, args []string, autoApprove bool) error {
 	if err := ensureDaemonRunning(); err != nil {
 		return fmt.Errorf("failed to start zend: %w", err)
@@ -230,37 +286,37 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 	}
 
 	// Inject auto-approve flags based on client type
+	clientArgs := args
 	if autoApprove {
-		args = prependAutoApproveArgs(clientBin, args)
+		clientArgs = prependAutoApproveArgs(clientBin, args)
 	}
 
-	// Start client as subprocess
-	cliCmd := exec.Command(cliPath, args...)
-	cliCmd.Stdin = os.Stdin
-	cliCmd.Stdout = os.Stdout
-	cliCmd.Stderr = os.Stderr
+	// Run client with retry on connection error (daemon recovery)
+	exitCode, stderrOutput, runErr := runClient(cliPath, clientArgs)
+	if runErr != nil {
+		return runErr
+	}
 
-	// Forward signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		for sig := range sigCh {
-			if cliCmd.Process != nil {
-				cliCmd.Process.Signal(sig)
+	if exitCode != 0 && isConnectionError(stderrOutput) {
+		// Check if daemon died
+		if _, running := daemon.IsDaemonRunning(); !running {
+			fmt.Fprintln(os.Stderr, "Daemon connection lost. Restarting daemon...")
+			if err := ensureDaemonRunning(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to restart daemon: %v\n", err)
+				os.Exit(exitCode)
+			}
+
+			// Retry once
+			exitCode, _, runErr = runClient(cliPath, clientArgs)
+			if runErr != nil {
+				return runErr
 			}
 		}
-	}()
-
-	if err := cliCmd.Run(); err != nil {
-		signal.Stop(sigCh)
-		close(sigCh)
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		return err
 	}
-	signal.Stop(sigCh)
-	close(sigCh)
+
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 	return nil
 }
 

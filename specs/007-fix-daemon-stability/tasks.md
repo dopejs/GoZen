@@ -19,8 +19,8 @@
 
 **Purpose**: No new project structure needed — this feature modifies existing files. Setup ensures the working environment is ready.
 
-- [ ] T001 Verify dev environment builds cleanly: run `go build ./...` and `go test ./...` from repo root
-- [ ] T002 Verify current test coverage baselines by running `go test -cover` for `internal/daemon`, `internal/proxy`, `internal/config`, `internal/bot`, `internal/web`
+- [X] T001 Verify dev environment builds cleanly: run `go build ./...` and `go test ./...` from repo root
+- [X] T002 Verify current test coverage baselines by running `go test -cover` for `internal/daemon`, `internal/proxy`, `internal/config`, `internal/bot`, `internal/web`
 
 ---
 
@@ -32,13 +32,13 @@
 
 ### Tests
 
-- [ ] T003 [P] Write tests for `DaemonLockPath()`, `AcquireDaemonLock()`, `ReleaseDaemonLock()` in `internal/daemon/daemon_test.go` — test: lock acquired successfully, second lock attempt blocks/returns EWOULDBLOCK, lock released on file close
+- [X] T003 [P] Write tests for `DaemonLockPath()`, `AcquireDaemonLock()`, `ReleaseDaemonLock()` in `internal/daemon/daemon_test.go` — test: lock acquired successfully, second lock attempt blocks/returns EWOULDBLOCK, lock released on file close
 
 ### Implementation
 
-- [ ] T004 Implement `DaemonLockPath()` returning `filepath.Join(config.ConfigDirPath(), "zend.lock")` in `internal/daemon/daemon.go`
-- [ ] T005 Implement `AcquireDaemonLock()` and `ReleaseDaemonLock()` using `syscall.Flock(LOCK_EX|LOCK_NB)` in `internal/daemon/daemon.go` — return lock file handle on success, `ErrLockContention` on EWOULDBLOCK; caller can then do blocking `Flock(LOCK_EX)` on the handle
-- [ ] T006 Verify T003 tests pass: `go test ./internal/daemon/... -run TestDaemonLock`
+- [X] T004 Implement `DaemonLockPath()` returning `filepath.Join(config.ConfigDirPath(), "zend.lock")` in `internal/daemon/daemon.go`
+- [X] T005 Implement `AcquireDaemonLock()` and `ReleaseDaemonLock()` using `syscall.Flock(LOCK_EX|LOCK_NB)` in `internal/daemon/daemon.go` — return lock file handle on success, `ErrLockContention` on EWOULDBLOCK; caller can then do blocking `Flock(LOCK_EX)` on the handle
+- [X] T006 Verify T003 tests pass: `go test ./internal/daemon/... -run TestDaemonLock`
 
 **Checkpoint**: File lock primitives ready — US1 and US2 can now proceed
 
@@ -54,28 +54,28 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T007 [P] [US1] Write test for `EnsureProxyPort()` in `internal/config/store_test.go` — test: when ProxyPort==0, persists DefaultProxyPort; when ProxyPort!=0, no-op; verify config file contains `proxy_port` after call
-- [ ] T008 [P] [US1] Write test for `GetProcessOnPort()` in `internal/daemon/process_unix_test.go` — test: returns PID and process name for a known listening port (use a test TCP listener), returns error for unused port
-- [ ] T009 [P] [US1] Write test for `IsZenProcess()` in `internal/daemon/process_unix_test.go` — test: returns true for process names containing "zen" or "gozen", false for others
-- [ ] T010 [P] [US1] Write test for smart port binding in `internal/daemon/server_test.go` — test: `startProxy()` binds successfully on free port; fails with descriptive error when port is occupied by non-zen process
-- [ ] T011 [P] [US1] Write test for `zen config set` subcommand in `cmd/config_test.go` — test: valid proxy_port saves to config; invalid port returns error; unknown key returns error; value type mismatch returns error
-- [ ] T012 [P] [US1] Write test for settings API returning `proxy_port` in `internal/web/api_settings_test.go` — test: GET /api/v1/settings response includes `proxy_port` field with correct value
+- [X] T007 [P] [US1] Write test for `EnsureProxyPort()` in `internal/config/store_test.go` — test: when ProxyPort==0, persists DefaultProxyPort; when ProxyPort!=0, no-op; verify config file contains `proxy_port` after call
+- [X] T008 [P] [US1] Write test for `GetProcessOnPort()` in `internal/daemon/process_unix_test.go` — test: returns PID and process name for a known listening port (use a test TCP listener), returns error for unused port
+- [X] T009 [P] [US1] Write test for `IsZenProcess()` in `internal/daemon/process_unix_test.go` — test: returns true for process names containing "zen" or "gozen", false for others
+- [X] T010 [P] [US1] Write test for smart port binding in `internal/daemon/server_test.go` — test: `startProxy()` binds successfully on free port; fails with descriptive error when port is occupied by non-zen process
+- [X] T011 [P] [US1] Write test for `zen config set` subcommand in `cmd/config_test.go` — test: valid proxy_port saves to config; invalid port returns error; unknown key returns error; value type mismatch returns error
+- [X] T012 [P] [US1] Write test for settings API returning `proxy_port` in `internal/web/api_settings_test.go` — test: GET /api/v1/settings response includes `proxy_port` field with correct value
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Add `EnsureProxyPort()` method to Store in `internal/config/store.go` — if ProxyPort==0, set to DefaultProxyPort and save; add convenience wrapper in `internal/config/compat.go`
-- [ ] T014 [US1] Call `config.EnsureProxyPort()` at the start of `Daemon.Start()` in `internal/daemon/server.go` (before `config.GetProxyPort()`) to ensure port is persisted on first run
-- [ ] T015 [P] [US1] Implement `GetProcessOnPort(port int) (pid int, name string, err error)` in `internal/daemon/process_unix.go` — shell out to `lsof -i :PORT -sTCP:LISTEN -t` then `ps -p PID -o comm=`
-- [ ] T016 [P] [US1] Implement `IsZenProcess(processName string) bool` in `internal/daemon/process_unix.go` — check if name contains "zen" or "gozen"
-- [ ] T017 [US1] Add smart port conflict handling to `startProxy()` in `internal/daemon/server.go` — on `net.Listen` failure: call `GetProcessOnPort()`, if zen process then kill it and retry bind (if kill fails with EPERM, report "Cannot kill process PID (permission denied). Try: sudo kill PID"), if non-zen then return error with process name and port
-- [ ] T018 [US1] Integrate file lock into `ensureDaemonRunning()` in `cmd/root.go` — acquire lock before starting daemon, release after `waitForDaemonReady()`; if lock contended, wait then check if daemon is alive
-- [ ] T019 [US1] Integrate file lock into `startDaemonBackground()` in `cmd/daemon.go` — same pattern as T018 for the `zen daemon start` code path
-- [ ] T020 [US1] Add `configSetCmd` Cobra subcommand in `cmd/config.go` — accepts `<key> <value>`, whitelist: `proxy_port`; validates port 1024-65535; saves via `config.SetProxyPort()`; if daemon running, stop & restart; print warning about restarting client processes
-- [ ] T021 [US1] Register `configSetCmd` under `configCmd` in `cmd/config.go` `init()` function
-- [ ] T022 [US1] Add `ProxyPort` field to `settingsResponse` struct and populate it in `getSettings()` handler in `internal/web/api_settings.go`
-- [ ] T023 [US1] Add read-only proxy port display to Web UI in `web/src/pages/settings/tabs/GeneralSettings.tsx` — show current `proxy_port` as disabled Input with helper text: "To change the proxy port, use `zen config set proxy_port <port>` in the terminal."
-- [ ] T024 [US1] Ensure `proxy_port` exists in `Settings` type in `web/src/types/api.ts`
-- [ ] T025 [US1] Verify all T007-T012 tests pass: `go test ./internal/config/... ./internal/daemon/... ./internal/web/... ./cmd/...`
+- [X] T013 [US1] Add `EnsureProxyPort()` method to Store in `internal/config/store.go` — if ProxyPort==0, set to DefaultProxyPort and save; add convenience wrapper in `internal/config/compat.go`
+- [X] T014 [US1] Call `config.EnsureProxyPort()` at the start of `Daemon.Start()` in `internal/daemon/server.go` (before `config.GetProxyPort()`) to ensure port is persisted on first run
+- [X] T015 [P] [US1] Implement `GetProcessOnPort(port int) (pid int, name string, err error)` in `internal/daemon/process_unix.go` — shell out to `lsof -i :PORT -sTCP:LISTEN -t` then `ps -p PID -o comm=`
+- [X] T016 [P] [US1] Implement `IsZenProcess(processName string) bool` in `internal/daemon/process_unix.go` — check if name contains "zen" or "gozen"
+- [X] T017 [US1] Add smart port conflict handling to `startProxy()` in `internal/daemon/server.go` — on `net.Listen` failure: call `GetProcessOnPort()`, if zen process then kill it and retry bind (if kill fails with EPERM, report "Cannot kill process PID (permission denied). Try: sudo kill PID"), if non-zen then return error with process name and port
+- [X] T018 [US1] Integrate file lock into `ensureDaemonRunning()` in `cmd/root.go` — acquire lock before starting daemon, release after `waitForDaemonReady()`; if lock contended, wait then check if daemon is alive
+- [X] T019 [US1] Integrate file lock into `startDaemonBackground()` in `cmd/daemon.go` — same pattern as T018 for the `zen daemon start` code path
+- [X] T020 [US1] Add `configSetCmd` Cobra subcommand in `cmd/config.go` — accepts `<key> <value>`, whitelist: `proxy_port`; validates port 1024-65535; saves via `config.SetProxyPort()`; if daemon running, stop & restart; print warning about restarting client processes
+- [X] T021 [US1] Register `configSetCmd` under `configCmd` in `cmd/config.go` `init()` function
+- [X] T022 [US1] Add `ProxyPort` field to `settingsResponse` struct and populate it in `getSettings()` handler in `internal/web/api_settings.go`
+- [X] T023 [US1] Add read-only proxy port display to Web UI in `web/src/pages/settings/tabs/GeneralSettings.tsx` — show current `proxy_port` as disabled Input with helper text: "To change the proxy port, use `zen config set proxy_port <port>` in the terminal."
+- [X] T024 [US1] Ensure `proxy_port` exists in `Settings` type in `web/src/types/api.ts`
+- [X] T025 [US1] Verify all T007-T012 tests pass: `go test ./internal/config/... ./internal/daemon/... ./internal/web/... ./cmd/...`
 
 **Checkpoint**: Proxy port is stable across restarts, configurable via CLI, read-only in Web UI. Port conflicts detected with process identification.
 

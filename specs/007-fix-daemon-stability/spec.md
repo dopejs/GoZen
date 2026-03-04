@@ -31,6 +31,8 @@ As a user, when the daemon restarts (whether manually or automatically), the pro
 2. **Given** the daemon is running on port P and another process occupies that port, **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process rather than silently choosing a different port.
 3. **Given** a fresh installation with no prior configuration, **When** the daemon starts for the first time, **Then** the proxy port is set to a well-known default value (19841) and persisted in configuration.
 4. **Given** the user has explicitly configured a custom proxy port, **When** the daemon starts, **Then** it uses the user-configured port, not a random one.
+5. **Given** a user whose default port 19841 is occupied by another important application, **When** the user sets a custom proxy port via CLI (`zen config`) or Web UI settings, **Then** all future daemon starts use that custom port.
+6. **Given** a user changes the proxy port while the daemon is running, **When** the daemon is restarted, **Then** it binds to the newly configured port.
 
 ---
 
@@ -74,6 +76,8 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - What happens when the system wakes from sleep but network connectivity is not yet restored?
 - What happens when the configured proxy port is in the ephemeral range and the OS has allocated it to another process?
 - What happens when the daemon is auto-restarted but the config file has been modified during sleep?
+- What happens when the user sets an invalid port number (e.g., 0, negative, above 65535, or a privileged port below 1024)?
+- What happens when the user changes the proxy port while active client sessions are connected?
 
 ## Requirements *(mandatory)*
 
@@ -81,7 +85,10 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 
 - **FR-001**: The system MUST use a fixed, deterministic proxy port that does not change across daemon restarts. The default port MUST be 19841 unless explicitly overridden by the user in configuration.
 - **FR-002**: The system MUST persist the proxy port in configuration on first startup so it remains stable across all future restarts.
-- **FR-003**: The system MUST NOT silently fall back to a random port when the configured port is unavailable. It MUST report the conflict clearly and fail to start.
+- **FR-003**: The system MUST NOT silently fall back to a random port when the configured port is unavailable. It MUST report the conflict clearly and fail to start — like nginx refusing to start when port 80 is occupied.
+- **FR-011**: The system MUST provide a user-accessible configuration option to set the proxy port. This option MUST be available through both the CLI (`zen config`) and the Web UI settings page.
+- **FR-012**: When the user changes the proxy port setting, the system MUST validate that the port number is within the valid range (1024-65535) before saving.
+- **FR-013**: After a proxy port change, the system MUST inform the user that a daemon restart is required for the change to take effect.
 - **FR-004**: When a client request fails to connect to the proxy, the system MUST check if the daemon is still running and attempt to restart it automatically.
 - **FR-005**: After automatic daemon restart, the system MUST retry the failed request at least once before reporting an error to the user.
 - **FR-006**: Automatic daemon restart MUST complete within 5 seconds, including port binding and readiness verification.
@@ -99,6 +106,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - **SC-003**: 100% of `duration_ms` values in monitoring data are within 2x of the actual wall-clock request duration (i.e., no nanosecond-to-millisecond confusion).
 - **SC-004**: Users experience zero "Connection error" disruptions due to daemon death during a full workday that includes at least one system sleep/wake cycle.
 - **SC-005**: When the proxy port is occupied by another process, the daemon startup fails with a diagnostic message within 3 seconds (no silent fallback to random port).
+- **SC-006**: User can set a custom proxy port via CLI or Web UI, and the daemon uses that exact port on next restart.
 
 ## Assumptions
 
@@ -112,6 +120,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 ### In Scope
 
 - Fixed proxy port enforcement
+- User-configurable proxy port via CLI and Web UI settings
 - Client-side daemon liveness detection and auto-restart
 - Request retry after daemon restart
 - Monitoring duration unit correction (nanoseconds to milliseconds)

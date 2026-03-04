@@ -11,6 +11,7 @@ import (
 type settingsResponse struct {
 	DefaultProfile string   `json:"default_profile"`
 	DefaultClient  string   `json:"default_client"`
+	ProxyPort      int      `json:"proxy_port"`
 	WebPort        int      `json:"web_port"`
 	Profiles       []string `json:"profiles"`
 	Clients        []string `json:"clients"`
@@ -41,6 +42,7 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	resp := settingsResponse{
 		DefaultProfile: store.GetDefaultProfile(),
 		DefaultClient:  store.GetDefaultClient(),
+		ProxyPort:      store.GetProxyPort(),
 		WebPort:        store.GetWebPort(),
 		Profiles:       profiles,
 		Clients:        config.AvailableClients,

@@ -216,7 +216,6 @@ export interface Settings {
   default_client?: string
   web_port: number
   proxy_port?: number
-  show_provider_tag?: boolean
   profiles?: string[]
   clients?: string[]
 }

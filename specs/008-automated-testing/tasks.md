@@ -99,11 +99,11 @@
 
 ### Implementation for User Story 4
 
-- [ ] T024 [P] [US4] Create `/test.run` skill in `.claude/commands/test.run.md` — detect modified Go packages, run `go test` with race detection and coverage, compare against CI thresholds (80% core / 50% supporting), report pass/fail with test names (FR-021, FR-026)
-- [ ] T025 [P] [US4] Create `/test.integration` skill in `.claude/commands/test.integration.md` — build binary, run `go test -tags=integration ./test/integration/... ./tests/...`, report results with daemon startup/shutdown status (FR-022, FR-026)
-- [ ] T026 [P] [US4] Create `/test.web` skill in `.claude/commands/test.web.md` — run `pnpm test` in `web/` with coverage, report page-level and hook-level results, flag drops below 70% (FR-023, FR-026)
-- [ ] T027 [P] [US4] Create `/test.all` skill in `.claude/commands/test.all.md` — run all test tiers (unit, integration, e2e, web) in sequence, produce consolidated pass/fail summary, suggest `/commit` on full pass (FR-024, FR-026, FR-027)
-- [ ] T028 [P] [US4] Create `/test.write` skill in `.claude/commands/test.write.md` — analyze `git diff` against base branch, identify test files and patterns, generate skeleton test cases following project TDD conventions (FR-025, FR-026)
+- [x] T024 [P] [US4] Create `/test.run` skill in `.claude/commands/test.run.md` — detect modified Go packages, run `go test` with race detection and coverage, compare against CI thresholds (80% core / 50% supporting), report pass/fail with test names (FR-021, FR-026)
+- [x] T025 [P] [US4] Create `/test.integration` skill in `.claude/commands/test.integration.md` — build binary, run `go test -tags=integration ./test/integration/... ./tests/...`, report results with daemon startup/shutdown status (FR-022, FR-026)
+- [x] T026 [P] [US4] Create `/test.web` skill in `.claude/commands/test.web.md` — run `pnpm test` in `web/` with coverage, report page-level and hook-level results, flag drops below 70% (FR-023, FR-026)
+- [x] T027 [P] [US4] Create `/test.all` skill in `.claude/commands/test.all.md` — run all test tiers (unit, integration, e2e, web) in sequence, produce consolidated pass/fail summary, suggest `/commit` on full pass (FR-024, FR-026, FR-027)
+- [x] T028 [P] [US4] Create `/test.write` skill in `.claude/commands/test.write.md` — analyze `git diff` against base branch, identify test files and patterns, generate skeleton test cases following project TDD conventions (FR-025, FR-026)
 
 **Checkpoint**: All 5 testing skills installable and invocable from Claude Code CLI.
 

@@ -28,7 +28,8 @@ As a user, when the daemon restarts (whether manually or automatically), the pro
 **Acceptance Scenarios**:
 
 1. **Given** the daemon is running on port P, **When** the daemon is stopped and restarted, **Then** it binds to the same port P.
-2. **Given** the daemon is running on port P and another process occupies that port, **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process rather than silently choosing a different port.
+2. **Given** the proxy port is occupied by a stale zen daemon process (e.g., from a previous crash or orphaned instance), **When** the daemon tries to start, **Then** it detects the occupying process is a zen daemon, kills it, and starts the new daemon on that port successfully.
+7. **Given** the proxy port is occupied by a non-zen process (e.g., another application), **When** the daemon tries to start, **Then** it reports a clear error message identifying the conflicting process name and fails to start — it MUST NOT silently choose a different port.
 3. **Given** a fresh installation with no prior configuration, **When** the daemon starts for the first time, **Then** the proxy port is set to a well-known default value (19841) and persisted in configuration.
 4. **Given** the user has explicitly configured a custom proxy port, **When** the daemon starts, **Then** it uses the user-configured port, not a random one.
 5. **Given** a user whose default port 19841 is occupied by another important application, **When** the user sets a custom proxy port via CLI (`zen config`), **Then** the daemon is automatically restarted on the new port and the user is told to restart all running `zen` client processes.
@@ -78,6 +79,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - What happens when the daemon is auto-restarted but the config file has been modified during sleep?
 - What happens when the user sets an invalid port number (e.g., 0, negative, above 65535, or a privileged port below 1024)?
 - What happens when the user changes the proxy port while active client sessions are connected?
+- What happens when the stale zen daemon on the port cannot be killed (e.g., permission denied)?
 
 ## Requirements *(mandatory)*
 
@@ -85,7 +87,7 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 
 - **FR-001**: The system MUST use a fixed, deterministic proxy port that does not change across daemon restarts. The default port MUST be 19841 unless explicitly overridden by the user in configuration.
 - **FR-002**: The system MUST persist the proxy port in configuration on first startup so it remains stable across all future restarts.
-- **FR-003**: The system MUST NOT silently fall back to a random port when the configured port is unavailable. It MUST report the conflict clearly and fail to start — like nginx refusing to start when port 80 is occupied.
+- **FR-003**: When the configured proxy port is unavailable, the system MUST identify the process occupying it. If the occupying process is a zen daemon (stale/orphaned), the system MUST kill it and proceed to start. If the occupying process is NOT a zen daemon, the system MUST report the conflicting process name and fail to start — it MUST NOT silently fall back to a random port.
 - **FR-011**: The proxy port MUST be configurable only through the CLI (`zen config`). The Web UI settings page MUST display the current proxy port as read-only, with a message directing the user to use the CLI to change it.
 - **FR-012**: When the user changes the proxy port via CLI, the system MUST validate that the port number is within the valid range (1024-65535) before saving.
 - **FR-013**: After a proxy port change via CLI, the system MUST automatically restart the daemon to apply the new port, and MUST display a message telling the user to restart all running `zen` client processes (since their `ANTHROPIC_BASE_URL` still points to the old port).
@@ -105,7 +107,8 @@ As a user viewing the monitoring dashboard, I should see correct request duratio
 - **SC-002**: After a simulated daemon kill, the next client request succeeds automatically within 10 seconds, with zero manual intervention required.
 - **SC-003**: 100% of `duration_ms` values in monitoring data are within 2x of the actual wall-clock request duration (i.e., no nanosecond-to-millisecond confusion).
 - **SC-004**: Users experience zero "Connection error" disruptions due to daemon death during a full workday that includes at least one system sleep/wake cycle.
-- **SC-005**: When the proxy port is occupied by another process, the daemon startup fails with a diagnostic message within 3 seconds (no silent fallback to random port).
+- **SC-005**: When the proxy port is occupied by a non-zen process, the daemon startup fails with a diagnostic message naming the conflicting process within 3 seconds (no silent fallback to random port).
+- **SC-007**: When the proxy port is occupied by a stale zen daemon, the system automatically kills it and starts successfully within 5 seconds.
 - **SC-006**: User can set a custom proxy port via CLI, the daemon auto-restarts on the new port, and the user is informed to restart running client processes.
 
 ## Assumptions

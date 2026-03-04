@@ -129,6 +129,11 @@ func SetProxyPort(port int) error {
 	return DefaultStore().SetProxyPort(port)
 }
 
+// EnsureProxyPort persists the default proxy port if not already set.
+func EnsureProxyPort() error {
+	return DefaultStore().EnsureProxyPort()
+}
+
 // --- Project Bindings convenience functions ---
 
 // BindProject binds a directory path to a profile and/or CLI.

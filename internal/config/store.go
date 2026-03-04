@@ -397,6 +397,20 @@ func (s *Store) SetProxyPort(port int) error {
 	return s.saveLocked()
 }
 
+// EnsureProxyPort persists the default proxy port if it is currently unset (0).
+// This ensures the port value is always written to disk so it survives restarts.
+func (s *Store) EnsureProxyPort() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	if s.config.ProxyPort == 0 {
+		s.config.ProxyPort = DefaultProxyPort
+		return s.saveLocked()
+	}
+	return nil
+}
+
 // GetWebPasswordHash returns the stored bcrypt password hash.
 func (s *Store) GetWebPasswordHash() string {
 	s.mu.Lock()

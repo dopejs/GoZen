@@ -21,7 +21,7 @@
 
 **⚠️ CRITICAL**: US1 and US2 cannot begin until this is complete.
 
-- [ ] T001 Add `ScenarioCode Scenario = "code"` to the Scenario const block in `internal/config/config.go` (after `ScenarioBackground`, before `ScenarioDefault`)
+- [x] T001 Add `ScenarioCode Scenario = "code"` to the Scenario const block in `internal/config/config.go` (after `ScenarioBackground`, before `ScenarioDefault`)
 
 **Checkpoint**: `go build ./...` succeeds. Existing tests still pass (`go test ./...`).
 
@@ -37,12 +37,12 @@
 
 > **Write these tests FIRST, verify they FAIL, then implement.**
 
-- [ ] T002 [US1] Write TDD tests for `code` scenario detection in `internal/proxy/scenario_test.go`. Table-driven tests covering: (1) regular non-specialized request → `ScenarioCode`, (2) Haiku model request → `ScenarioBackground` not `ScenarioCode`, (3) thinking-enabled request → `ScenarioThink` not `ScenarioCode`, (4) image request → `ScenarioImage` not `ScenarioCode`, (5) webSearch request → `ScenarioWebSearch` not `ScenarioCode`, (6) backward compat: `DetectScenario` returns `ScenarioCode` for a regular request (routing fallback to default providers when no code route is configured is already handled by existing server logic in `server.go`)
+- [x] T002 [US1] Write TDD tests for `code` scenario detection in `internal/proxy/scenario_test.go`. Table-driven tests covering: (1) regular non-specialized request → `ScenarioCode`, (2) Haiku model request → `ScenarioBackground` not `ScenarioCode`, (3) thinking-enabled request → `ScenarioThink` not `ScenarioCode`, (4) image request → `ScenarioImage` not `ScenarioCode`, (5) webSearch request → `ScenarioWebSearch` not `ScenarioCode`, (6) backward compat: `DetectScenario` returns `ScenarioCode` for a regular request (routing fallback to default providers when no code route is configured is already handled by existing server logic in `server.go`)
 
 ### Implementation for User Story 1
 
-- [ ] T003 [US1] Add `isCodeRequest()` function (returns `!isBackgroundRequest(body)`) and insert code scenario check into `DetectScenario()` between `isLongContext` and `isBackgroundRequest` checks in `internal/proxy/scenario.go`
-- [ ] T004 [P] [US1] Add `{config.ScenarioCode, "code        (regular coding requests)"}` entry to `knownScenarios` slice in `tui/routing.go` (insert between `longContext` and `background` entries at line ~63)
+- [x] T003 [US1] Add `isCodeRequest()` function (returns `!isBackgroundRequest(body)`) and insert code scenario check into `DetectScenario()` between `isLongContext` and `isBackgroundRequest` checks in `internal/proxy/scenario.go`
+- [x] T004 [P] [US1] Add `{config.ScenarioCode, "code        (regular coding requests)"}` entry to `knownScenarios` slice in `tui/routing.go` (insert between `longContext` and `background` entries at line ~63)
 
 **Checkpoint**: `go test ./internal/proxy/ -v` passes. All 6 new test cases green. All existing scenario tests unchanged and passing. TUI routing editor shows "code" scenario.
 
@@ -56,10 +56,10 @@
 
 ### Implementation for User Story 2
 
-- [ ] T005 [US2] Add `'code'` to the `Scenario` type union, insert `'code'` into `SCENARIOS` array (between `'longContext'` and `'background'`), and add `code: 'Code'` to `SCENARIO_LABELS` map in `web/src/types/api.ts`
-- [ ] T006 [P] [US2] Add `"scenarioCode": "Code"` to `web/src/i18n/locales/en.json` (after `scenarioLongContext` entry at line ~129)
-- [ ] T007 [P] [US2] Add `"scenarioCode": "编程"` to `web/src/i18n/locales/zh-CN.json` (after `scenarioLongContext` entry at line ~129)
-- [ ] T008 [P] [US2] Add `"scenarioCode": "編程"` to `web/src/i18n/locales/zh-TW.json` (after `scenarioLongContext` entry at line ~129)
+- [x] T005 [US2] Add `'code'` to the `Scenario` type union, insert `'code'` into `SCENARIOS` array (between `'longContext'` and `'background'`), and add `code: 'Code'` to `SCENARIO_LABELS` map in `web/src/types/api.ts`
+- [x] T006 [P] [US2] Add `"scenarioCode": "Code"` to `web/src/i18n/locales/en.json` (after `scenarioLongContext` entry at line ~129)
+- [x] T007 [P] [US2] Add `"scenarioCode": "编程"` to `web/src/i18n/locales/zh-CN.json` (after `scenarioLongContext` entry at line ~129)
+- [x] T008 [P] [US2] Add `"scenarioCode": "編程"` to `web/src/i18n/locales/zh-TW.json` (after `scenarioLongContext` entry at line ~129)
 
 **Checkpoint**: `pnpm run test` in `web/` passes. Profile edit page shows "Code" scenario in the Routing tab alongside existing scenarios. No changes needed to `edit.tsx` — it dynamically renders from `SCENARIOS`.
 
@@ -69,8 +69,8 @@
 
 **Purpose**: Ensure coverage thresholds are met and all tests pass.
 
-- [ ] T009 Verify all Go tests pass and `internal/proxy` coverage ≥80% via `go test -cover ./internal/proxy/`
-- [ ] T010 Verify frontend tests pass and coverage ≥70% via `pnpm run test:coverage` in `web/`
+- [x] T009 Verify all Go tests pass and `internal/proxy` coverage ≥80% via `go test -cover ./internal/proxy/`
+- [x] T010 Verify frontend tests pass and coverage ≥70% via `pnpm run test:coverage` in `web/`
 
 **Checkpoint**: All CI-mandated coverage thresholds met. `go test ./...` and `pnpm run test:coverage` both green.
 

@@ -77,6 +77,38 @@ jobs:
 
           exit $failed
 
+  e2e:
+    name: E2E Tests (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    needs: go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Web UI
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Read Go version
+        id: goversion
+        run: echo "version=$(grep '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+
+      - name: Build binary
+        run: go build -o bin/zen .
+
+      - name: E2E Tests
+        run: go test -tags=integration -v -timeout 180s ./tests/...
+
   website:
     name: Website Build
     runs-on: ubuntu-latest

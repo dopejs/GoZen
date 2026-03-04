@@ -163,6 +163,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at `~/.zen/zen.json`, SQLite for proxy logs (007-fix-daemon-stability)
 - Go 1.21+ (backend), TypeScript (frontend, React 18) + `net/http`, `net/http/httptest`, `os/exec`, `encoding/json` (Go tests); vitest 4, @testing-library/react, MSW (frontend tests) (008-automated-testing)
 - JSON config at `~/.zen/zen.json` (test isolation via `GOZEN_CONFIG_DIR` and ephemeral ports) (008-automated-testing)
+- Go 1.21+ + Cobra (CLI), Bubble Tea + Lip Gloss (TUI), React + TypeScript + Vite (Web UI) (009-code-scenario-routing)
+- JSON at `~/.zen/zen.json` — no schema migration needed (string-keyed routing map) (009-code-scenario-routing)
 
 ## Recent Changes
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering

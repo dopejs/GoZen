@@ -59,7 +59,7 @@ Users can configure the `code` scenario route through the Web UI profile editor,
 
 - What happens when both `think` and `code` scenarios are configured and a request has extended thinking? → The `think` scenario has higher priority and is matched first (existing priority order applies).
 - What happens when no `code` scenario is configured? → Requests fall through to `default` as they do today — fully backward compatible.
-- What happens when a request has tool_use but also has thinking enabled? → The `think` scenario takes priority because the priority order is: webSearch > think > image > longContext > code > background > default.
+- What happens when a request has tool_use but also has thinking enabled? → The `think` scenario takes priority because thinking is checked before code in the priority order: webSearch > think > image > longContext > code > background > default.
 - What happens when all providers in the `code` scenario fail? → Existing fallback behavior applies: the proxy falls back to the profile's default provider chain.
 
 ## Requirements
@@ -67,8 +67,8 @@ Users can configure the `code` scenario route through the Web UI profile editor,
 ### Functional Requirements
 
 - **FR-001**: System MUST support a new `code` scenario type alongside existing scenarios (think, image, longContext, webSearch, background, default).
-- **FR-002**: System MUST automatically detect coding requests — defined as requests that are NOT think, NOT image, NOT webSearch, NOT longContext, and NOT background. The `code` scenario captures all "regular" non-specialized requests when configured.
-- **FR-003**: System MUST maintain the existing scenario priority order, inserting `code` between `background` and `default`: webSearch > think > image > longContext > code > background > default.
+- **FR-002**: System MUST automatically detect coding requests — defined as requests that are NOT think, NOT image, NOT webSearch, NOT longContext, and NOT background. The `code` detection MUST explicitly exclude background (Haiku) requests. The `code` scenario captures all "regular" non-specialized requests when configured.
+- **FR-003**: System MUST maintain the existing scenario priority order, inserting `code` between `longContext` and `background`: webSearch > think > image > longContext > code > background > default. The `code` detection explicitly filters out Haiku requests before matching, so `background` requests are never captured by `code` even though `code` appears earlier in the priority chain.
 - **FR-004**: When a `code` scenario route is configured, requests that would otherwise fall through to `default` MUST be routed to the `code` providers instead.
 - **FR-005**: When NO `code` scenario route is configured, request routing MUST behave identically to today — full backward compatibility.
 - **FR-006**: System MUST support per-provider model overrides for the `code` scenario, consistent with all other scenarios.
@@ -96,3 +96,9 @@ Users can configure the `code` scenario route through the Web UI profile editor,
 - The priority position of `code` is just above `default` — all other specialized scenarios (think, image, webSearch, longContext, background) take precedence.
 - The existing `background` scenario detection (Haiku model requests) remains unchanged. `code` does NOT capture Haiku background tasks even though they could be considered "coding."
 - No config version migration is needed because the `routing` map already uses `Scenario` (string) keys — adding a new scenario key `"code"` is fully backward compatible.
+
+## Clarifications
+
+### Session 2026-03-04
+
+- Q: Priority order — should `code` be before or after `background` in the detection chain? → A: `code` before `background` (Option B). The `code` detection must explicitly exclude Haiku requests so background requests are never captured by the code catch-all. Priority: webSearch > think > image > longContext > code > background > default.

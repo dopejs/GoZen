@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -56,6 +57,20 @@ func doRequest(s *Server, method, path string, body interface{}) *httptest.Respo
 	if body != nil {
 		data, _ := json.Marshal(body)
 		reqBody = bytes.NewReader(data)
+	}
+	req := httptest.NewRequest(method, path, reqBody)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+	return w
+}
+
+func doRequestRaw(s *Server, method, path string, body []byte) *httptest.ResponseRecorder {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, reqBody)
 	if body != nil {
@@ -155,9 +170,9 @@ func TestGetProvider(t *testing.T) {
 	if p.BaseURL != "https://api.test.com" {
 		t.Errorf("base_url = %q", p.BaseURL)
 	}
-	// Token should be masked in get response
-	if p.AuthToken == "sk-test-secret-token-1234" {
-		t.Errorf("token should be masked in get response, got %q", p.AuthToken)
+	// Token should NOT be masked when getting single provider (for editing)
+	if p.AuthToken != "sk-test-secret-token-1234" {
+		t.Errorf("token should be unmasked in get response, got %q", p.AuthToken)
 	}
 }
 
@@ -1229,16 +1244,15 @@ func TestSyncConfigPutAndGet(t *testing.T) {
 	if resp["configured"] != true {
 		t.Error("expected configured=true")
 	}
-	cfg := resp["config"].(map[string]interface{})
-	if cfg["backend"] != "webdav" {
-		t.Errorf("backend = %v", cfg["backend"])
+	if resp["backend"] != "webdav" {
+		t.Errorf("backend = %v", resp["backend"])
 	}
-	// Token should be masked
-	if cfg["token"] == "pass123456789" {
-		t.Error("token should be masked")
+	// Token should be returned in plain (not masked)
+	if resp["token"] != "pass123456789" {
+		t.Errorf("token should be in plain, got %v", resp["token"])
 	}
-	if cfg["passphrase"] != "********" {
-		t.Errorf("passphrase should be masked, got %v", cfg["passphrase"])
+	if resp["passphrase"] != "********" {
+		t.Errorf("passphrase should be masked, got %v", resp["passphrase"])
 	}
 }
 
@@ -1347,10 +1361,10 @@ func TestSyncConfigPutPreservesSecrets(t *testing.T) {
 	}
 	doRequest(s, "PUT", "/api/v1/sync/config", body1)
 
-	// Now save with masked token (simulating UI sending back masked values)
+	// Now save with same token and masked passphrase (simulating UI sending back values)
 	body2 := config.SyncConfig{
 		Backend:    "gist",
-		Token:      maskToken("ghp_realtoken12345"),
+		Token:      "ghp_realtoken12345",
 		GistID:     "abc123",
 		Passphrase: "********",
 	}
@@ -1467,6 +1481,57 @@ func TestSyncCreateGistWithToken(t *testing.T) {
 	// Will get 502 because GitHub rejects the token
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestServerHandleFunc(t *testing.T) {
+	s := setupTestServer(t)
+
+	called := false
+	s.HandleFunc("/test-custom", func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest("GET", "/test-custom", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	if !called {
+		t.Error("custom handler should be called")
+	}
+}
+
+func TestServerSetSyncManager(t *testing.T) {
+	s := setupTestServer(t)
+
+	// SetSyncManager should not panic with nil
+	s.SetSyncManager(nil)
+
+	s.syncMu.RLock()
+	if s.syncMgr != nil {
+		t.Error("syncMgr should be nil")
+	}
+	s.syncMu.RUnlock()
+}
+
+func TestSPAFallback(t *testing.T) {
+	s := setupTestServer(t)
+
+	// Request a non-existent path that looks like a SPA route
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	w := httptest.NewRecorder()
+	s.mux.ServeHTTP(w, req)
+
+	// Should return 200 with index.html content (SPA fallback)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected Content-Type text/html, got %s", contentType)
 	}
 }
 

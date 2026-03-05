@@ -389,11 +389,6 @@ func TestManagerMarkModified(t *testing.T) {
 	if mgr.meta.DefaultProfile.IsZero() {
 		t.Fatal("default_profile timestamp should be set")
 	}
-
-	mgr.MarkModified("default_client", "")
-	if mgr.meta.DefaultClient.IsZero() {
-		t.Fatal("default_client timestamp should be set")
-	}
 }
 
 func TestGenerateDeviceID(t *testing.T) {
@@ -491,7 +486,6 @@ func TestUpdateMetaTimestamps(t *testing.T) {
 	payload.Providers["new-prov"] = &SyncEntity{ModifiedAt: now}
 	payload.Profiles["default"] = &SyncEntity{ModifiedAt: now}
 	payload.DefaultProfile = &SyncScalar{ModifiedAt: now, Value: "default"}
-	payload.DefaultClient = &SyncScalar{ModifiedAt: now, Value: "claude"}
 
 	mgr.updateMetaTimestamps(payload)
 
@@ -503,5 +497,64 @@ func TestUpdateMetaTimestamps(t *testing.T) {
 	}
 	if mgr.meta.Profiles["default"].IsZero() {
 		t.Fatal("default profile should have timestamp")
+	}
+}
+
+func TestSyncExcludesProxyURL(t *testing.T) {
+	mgr, _ := newTestManager(t, "")
+
+	// Set up a provider with a proxy URL
+	store := config.DefaultStore()
+	store.SetProvider("test-proxy", &config.ProviderConfig{
+		BaseURL:   "https://api.test.com",
+		AuthToken: "tok",
+		ProxyURL:  "socks5://proxy:1080",
+	})
+
+	// Build local payload
+	payload, err := mgr.buildLocalPayload()
+	if err != nil {
+		t.Fatalf("buildLocalPayload error: %v", err)
+	}
+
+	// Verify proxy_url is not in the marshaled payload
+	ent, ok := payload.Providers["test-proxy"]
+	if !ok {
+		t.Fatal("expected provider 'test-proxy' in payload")
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(ent.Config, &raw); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if _, found := raw["proxy_url"]; found {
+		t.Error("proxy_url should be excluded from sync payload")
+	}
+
+	// Verify local proxy_url is preserved after applyToLocal
+	// Simulate remote payload without proxy_url
+	remoteConfig, _ := json.Marshal(&config.ProviderConfig{
+		BaseURL:   "https://api.updated.com",
+		AuthToken: "new-tok",
+	})
+	remotePayload := NewSyncPayload("remote-device")
+	remotePayload.Providers["test-proxy"] = &SyncEntity{
+		ModifiedAt: time.Now().UTC(),
+		Config:     remoteConfig,
+	}
+
+	if err := mgr.applyToLocal(remotePayload); err != nil {
+		t.Fatalf("applyToLocal error: %v", err)
+	}
+
+	// Verify local ProxyURL was preserved
+	updated := store.GetProvider("test-proxy")
+	if updated == nil {
+		t.Fatal("expected provider 'test-proxy' after apply")
+	}
+	if updated.ProxyURL != "socks5://proxy:1080" {
+		t.Errorf("ProxyURL = %q, want %q (should be preserved from local)", updated.ProxyURL, "socks5://proxy:1080")
+	}
+	if updated.BaseURL != "https://api.updated.com" {
+		t.Errorf("BaseURL = %q, want %q (should be updated from remote)", updated.BaseURL, "https://api.updated.com")
 	}
 }

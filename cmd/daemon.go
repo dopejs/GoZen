@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -92,7 +93,11 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 
 	// Check if already running
 	if pid, running := daemon.IsDaemonRunning(); running {
-		fmt.Printf("zend is already running (PID %d).\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is already running on port %d (PID unknown).\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is already running (PID %d).\n", pid)
+		}
 		return nil
 	}
 
@@ -114,21 +119,61 @@ func runDaemonForeground() error {
 	// Write PID file
 	daemon.WriteDaemonPid(os.Getpid())
 
-	// Graceful shutdown on signals
+	// Graceful shutdown on signals or API request
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-sigCh
+		select {
+		case <-sigCh:
+		case <-d.ShutdownCh():
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		d.Shutdown(ctx)
+		close(shutdownDone)
 	}()
 
-	return d.Start()
+	err := d.Start()
+
+	// If Start() returned due to shutdown signal, wait for cleanup to complete
+	// Use a short timeout to avoid hanging if shutdown wasn't triggered
+	select {
+	case <-shutdownDone:
+		// Shutdown completed, PID file should be removed
+	case <-time.After(100 * time.Millisecond):
+		// Start returned for other reason (error), clean up PID file
+		daemon.RemoveDaemonPid()
+	}
+
+	return err
 }
 
 // startDaemonBackground forks a child process to run the daemon.
+// Uses a file lock to coordinate concurrent startup attempts.
 func startDaemonBackground() error {
+	// Acquire daemon lock
+	lockFile, err := daemon.AcquireDaemonLock()
+	if err == daemon.ErrLockContention {
+		// Another process is starting — wait for it
+		fmt.Println("Another process is starting zend, waiting...")
+		lockPath := daemon.DaemonLockPath()
+		f, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+		if openErr != nil {
+			return fmt.Errorf("daemon lock contention and cannot wait: %w", openErr)
+		}
+		syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		if _, running := daemon.IsDaemonRunning(); running {
+			fmt.Println("zend is now running (started by another process).")
+			return nil
+		}
+	} else if err != nil {
+		return fmt.Errorf("cannot acquire daemon lock: %w", err)
+	}
+	defer daemon.ReleaseDaemonLock(lockFile)
+
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot determine executable path: %w", err)
@@ -160,6 +205,8 @@ func startDaemonBackground() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := waitForDaemonReady(ctx); err != nil {
+		// Daemon failed to start - clean up PID file
+		daemon.RemoveDaemonPid()
 		return fmt.Errorf("zend started but did not become ready: %w", err)
 	}
 
@@ -171,6 +218,7 @@ func startDaemonBackground() error {
 // waitForDaemonReady polls the daemon status endpoint until ready.
 func waitForDaemonReady(ctx context.Context) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/status", config.GetWebPort())
+	proxyAddr := fmt.Sprintf("127.0.0.1:%d", config.GetProxyPort())
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	for {
 		select {
@@ -178,11 +226,17 @@ func waitForDaemonReady(ctx context.Context) error {
 			return ctx.Err()
 		default:
 		}
+		// Check web port (HTTP GET)
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				return nil
+				// Also check proxy port (TCP dial)
+				conn, err := net.DialTimeout("tcp", proxyAddr, 500*time.Millisecond)
+				if err == nil {
+					conn.Close()
+					return nil
+				}
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -220,8 +274,8 @@ func runDaemonStop(cmd *cobra.Command, args []string) error {
 }
 
 func runDaemonRestart(cmd *cobra.Command, args []string) error {
-	if pid, running := daemon.IsDaemonRunning(); running {
-		fmt.Printf("Stopping zend (PID %d)...\n", pid)
+	if _, running := daemon.IsDaemonRunning(); running {
+		fmt.Println("Stopping zend...")
 		if err := daemon.StopDaemonProcess(30 * time.Second); err != nil {
 			return fmt.Errorf("failed to stop zend: %w", err)
 		}
@@ -245,7 +299,11 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 	resp, err := client.Get(url)
 	if err != nil {
 		// API not reachable, show basic info
-		fmt.Printf("zend is running (PID %d) but API is not reachable.\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is running on port %d but PID is unknown and API is not reachable.\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is running (PID %d) but API is not reachable.\n", pid)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
@@ -258,11 +316,19 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 		ActiveSessions int    `json:"active_sessions"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		fmt.Printf("zend is running (PID %d).\n", pid)
+		if pid == -1 {
+			fmt.Printf("zend is running on port %d (PID unknown).\n", config.GetProxyPort())
+		} else {
+			fmt.Printf("zend is running (PID %d).\n", pid)
+		}
 		return nil
 	}
 
-	fmt.Printf("zend is running (PID %d)\n", pid)
+	if pid == -1 {
+		fmt.Printf("zend is running (PID unknown)\n")
+	} else {
+		fmt.Printf("zend is running (PID %d)\n", pid)
+	}
 	fmt.Printf("  Version:  %s\n", status.Version)
 	fmt.Printf("  Uptime:   %s\n", status.Uptime)
 	fmt.Printf("  Proxy:    http://127.0.0.1:%d\n", status.ProxyPort)

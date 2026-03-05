@@ -1,15 +1,21 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy"
 )
 
 func TestDaemonStatusAPI(t *testing.T) {
@@ -99,10 +105,25 @@ func TestDaemonSessionsAPI(t *testing.T) {
 func TestDaemonSessionsAPIMethodNotAllowed(t *testing.T) {
 	d := newTestDaemon()
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/v1/daemon/sessions", nil)
+	r := httptest.NewRequest("DELETE", "/api/v1/daemon/sessions", nil)
 	d.handleDaemonSessions(w, r)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestDaemonSessionsAPIRegister(t *testing.T) {
+	d := newTestDaemon()
+
+	// Initialize bot bridge for the test
+	proxy.InitBotBridge("")
+
+	body := `{"session_id":"test-123","profile":"default","client_type":"claude"}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/daemon/sessions", strings.NewReader(body))
+	d.handleDaemonSessions(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -433,9 +454,523 @@ func TestTouchSessionNonExistent(t *testing.T) {
 	d.TouchSession("nonexistent")
 }
 
+func TestNewDaemon(t *testing.T) {
+	logger := log.New(os.Stderr, "[test] ", 0)
+	d := NewDaemon("1.0.0", logger)
+	if d == nil {
+		t.Fatal("Expected non-nil daemon")
+	}
+	if d.version != "1.0.0" {
+		t.Errorf("Expected version 1.0.0, got %s", d.version)
+	}
+	if d.sessions == nil {
+		t.Error("Expected sessions map to be initialized")
+	}
+	if d.tmpProfiles == nil {
+		t.Error("Expected tmpProfiles map to be initialized")
+	}
+}
+
+func TestDaemonOnConfigReload(t *testing.T) {
+	d := newTestDaemon()
+	// Should not panic even without profileProxy
+	d.onConfigReload()
+}
+
+// Test that config reload reverts port changes to protect active sessions.
+func TestDaemonOnConfigReloadProtectsPorts(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	os.MkdirAll(filepath.Join(tmpDir, ".zen"), 0755)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Set the daemon's running ports
+	d := newTestDaemon()
+	d.proxyPort = 19841
+	d.webPort = 19840
+
+	// Simulate someone changing ports in the config
+	config.SetProxyPort(29841)
+	config.SetWebPort(29840)
+
+	// Verify ports are changed before reload
+	if config.GetProxyPort() != 29841 {
+		t.Fatalf("expected proxy port 29841, got %d", config.GetProxyPort())
+	}
+
+	// Config reload should revert the port changes
+	d.onConfigReload()
+
+	// Verify ports are reverted to daemon's running values
+	if got := config.GetProxyPort(); got != 19841 {
+		t.Errorf("proxy port should be reverted to 19841, got %d", got)
+	}
+	if got := config.GetWebPort(); got != 19840 {
+		t.Errorf("web port should be reverted to 19840, got %d", got)
+	}
+}
+
+// Test that config reload does not revert when ports haven't changed.
+func TestDaemonOnConfigReloadNoRevertWhenUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	os.MkdirAll(filepath.Join(tmpDir, ".zen"), 0755)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	d := newTestDaemon()
+	d.proxyPort = 19841
+	d.webPort = 19840
+
+	// Set config ports to same values as daemon
+	config.SetProxyPort(19841)
+	config.SetWebPort(19840)
+
+	// Config reload should be a no-op for ports
+	d.onConfigReload()
+
+	if got := config.GetProxyPort(); got != 19841 {
+		t.Errorf("proxy port should remain 19841, got %d", got)
+	}
+	if got := config.GetWebPort(); got != 19840 {
+		t.Errorf("web port should remain 19840, got %d", got)
+	}
+}
+
+func TestWriteDaemonPidError(t *testing.T) {
+	// Test with invalid path
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", "/nonexistent/path/that/does/not/exist")
+	defer os.Setenv("HOME", oldHome)
+
+	err := WriteDaemonPid(12345)
+	if err == nil {
+		t.Error("Expected error for invalid path")
+	}
+}
+
+func TestIsDaemonPortListeningWithServer(t *testing.T) {
+	// Start a simple server
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("Cannot create listener")
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	if !IsDaemonPortListening(port) {
+		t.Error("Expected port to be listening")
+	}
+}
+
 func newTestDaemon() *Daemon {
 	d := NewDaemon("test", log.New(os.Stderr, "[test] ", 0))
 	d.proxyPort = 19841
 	d.webPort = 19840
 	return d
+}
+
+func TestDaemonShutdown(t *testing.T) {
+	d := newTestDaemon()
+
+	// Set up some resources that Shutdown should clean up
+	ctx, cancel := context.WithCancel(context.Background())
+	d.syncCancel = cancel
+
+	timer := time.NewTimer(time.Hour)
+	d.pushTimer = timer
+
+	// Create a mock watcher
+	d.watcher = NewConfigWatcher(d.logger, func() {})
+
+	// Shutdown should not panic and should clean up resources
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	err := d.Shutdown(shutdownCtx)
+	if err != nil {
+		t.Errorf("Shutdown returned error: %v", err)
+	}
+
+	// Verify context was cancelled
+	select {
+	case <-ctx.Done():
+		// Good - context was cancelled
+	default:
+		t.Error("syncCancel should have been called")
+	}
+}
+
+func TestDaemonShutdownNilResources(t *testing.T) {
+	d := newTestDaemon()
+
+	// Shutdown with nil resources should not panic
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := d.Shutdown(ctx)
+	if err != nil {
+		t.Errorf("Shutdown with nil resources returned error: %v", err)
+	}
+}
+
+func TestSessionCleanupRemovesStale(t *testing.T) {
+	d := newTestDaemon()
+
+	// Add a fresh session
+	d.RegisterSession("fresh", "default", "claude")
+
+	// Add a stale session (manually set LastSeen to past)
+	d.RegisterSession("stale", "default", "claude")
+	d.mu.Lock()
+	d.sessions["stale"].LastSeen = time.Now().Add(-3 * time.Hour)
+	d.mu.Unlock()
+
+	// Run cleanup manually (simulating what sessionCleanupLoop does)
+	d.mu.Lock()
+	now := time.Now()
+	for id, s := range d.sessions {
+		if now.Sub(s.LastSeen) > 2*time.Hour {
+			delete(d.sessions, id)
+		}
+	}
+	d.mu.Unlock()
+
+	// Fresh session should remain
+	if d.ActiveSessionCount() != 1 {
+		t.Errorf("expected 1 session after cleanup, got %d", d.ActiveSessionCount())
+	}
+
+	// Verify it's the fresh one
+	d.mu.RLock()
+	_, hasFresh := d.sessions["fresh"]
+	_, hasStale := d.sessions["stale"]
+	d.mu.RUnlock()
+
+	if !hasFresh {
+		t.Error("fresh session should remain")
+	}
+	if hasStale {
+		t.Error("stale session should be removed")
+	}
+}
+
+func TestInitSyncCancelsExisting(t *testing.T) {
+	d := newTestDaemon()
+
+	// Set up an existing sync cancel function
+	cancelled := false
+	d.syncCancel = func() {
+		cancelled = true
+	}
+
+	// Call initSync - it should cancel the existing one
+	d.initSync()
+
+	if !cancelled {
+		t.Error("initSync should cancel existing syncCancel")
+	}
+
+	// syncCancel should be nil after initSync (no sync config)
+	if d.syncCancel != nil {
+		t.Error("syncCancel should be nil when no sync config")
+	}
+}
+
+func TestDaemonStartProxy(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	// Create minimal config
+	zenDir := filepath.Join(dir, ".zen")
+	os.MkdirAll(zenDir, 0755)
+	configPath := filepath.Join(zenDir, "zen.json")
+	os.WriteFile(configPath, []byte(`{"providers":{},"profiles":{"default":{"providers":[]}}}`), 0600)
+
+	d := newTestDaemon()
+
+	// Find an available port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("Cannot find available port")
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	d.proxyPort = port
+
+	// startProxy should work
+	err = d.startProxy()
+	if err != nil {
+		t.Fatalf("startProxy failed: %v", err)
+	}
+
+	// Clean up
+	if d.proxyServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		d.proxyServer.Shutdown(ctx)
+		cancel()
+	}
+}
+
+func TestDaemonResourceCleanupOnShutdown(t *testing.T) {
+	d := newTestDaemon()
+
+	// Track if resources are properly cleaned up
+	var cleanupOrder []string
+	var mu sync.Mutex
+
+	// Set up sync cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	d.syncCancel = func() {
+		mu.Lock()
+		cleanupOrder = append(cleanupOrder, "syncCancel")
+		mu.Unlock()
+		cancel()
+	}
+
+	// Set up push timer
+	d.pushTimer = time.AfterFunc(time.Hour, func() {})
+
+	// Set up watcher
+	d.watcher = NewConfigWatcher(d.logger, func() {})
+
+	// Shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	d.Shutdown(shutdownCtx)
+
+	// Verify sync was cancelled
+	select {
+	case <-ctx.Done():
+		// Good
+	default:
+		t.Error("sync context should be cancelled")
+	}
+
+	mu.Lock()
+	if len(cleanupOrder) == 0 || cleanupOrder[0] != "syncCancel" {
+		t.Error("syncCancel should be called during shutdown")
+	}
+	mu.Unlock()
+}
+
+func TestDaemonSysProcAttr(t *testing.T) {
+	attr := DaemonSysProcAttr()
+	if attr == nil {
+		t.Fatal("DaemonSysProcAttr returned nil")
+	}
+	if !attr.Setsid {
+		t.Error("Setsid should be true")
+	}
+}
+
+func TestIsDaemonRunningNoPidFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	// Set a random high port that won't be in use
+	config.SetProxyPort(59999)
+
+	pid, running := IsDaemonRunning()
+	if running {
+		t.Error("should not be running without PID file")
+	}
+	if pid != 0 {
+		t.Errorf("pid should be 0, got %d", pid)
+	}
+}
+
+func TestIsDaemonRunningDeadProcess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	// Use a dynamically allocated free port to avoid conflicts with running daemons
+	freePort := getFreePort(t)
+	config.SetProxyPort(freePort)
+
+	// Write a PID that doesn't exist (very high PID)
+	WriteDaemonPid(999999999)
+
+	pid, running := IsDaemonRunning()
+	if running {
+		t.Error("should not be running with dead process PID")
+	}
+	if pid != 0 {
+		t.Errorf("pid should be 0, got %d", pid)
+	}
+
+	// PID file should be cleaned up
+	_, err := ReadDaemonPid()
+	if err == nil {
+		t.Error("PID file should be removed for dead process")
+	}
+}
+
+func TestStopDaemonProcessNotRunning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	err := StopDaemonProcess(time.Second)
+	if err == nil {
+		t.Error("should return error when daemon is not running")
+	}
+}
+
+func TestInitBotNilConfig(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config without bot section
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	d := newTestDaemon()
+	d.initBot() // Should return early without error
+
+	if d.botGateway != nil {
+		t.Error("botGateway should be nil when bot config is nil")
+	}
+}
+
+func TestInitBotDisabled(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create config with bot disabled
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	configData := `{"version":5,"bot":{"enabled":false}}`
+	os.WriteFile(configPath, []byte(configData), 0644)
+
+	d := newTestDaemon()
+	d.initBot() // Should return early without error
+
+	if d.botGateway != nil {
+		t.Error("botGateway should be nil when bot is disabled")
+	}
+}
+
+func TestInitBotEnabled(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config first
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	// Use SetBot to set bot config programmatically
+	socketPath := filepath.Join(dir, "bot.sock")
+	botCfg := &config.BotConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Profile:    "default",
+		Aliases:    map[string]string{"proj": "/path/to/project"},
+		Interaction: &config.BotInteractionConfig{
+			RequireMention:  true,
+			MentionKeywords: []string{"@zen"},
+			DirectMsgMode:   "always",
+			ChannelMode:     "mention",
+		},
+		Notify: &config.BotNotifyConfig{
+			DefaultPlatform: "telegram",
+			DefaultChatID:   "123456",
+			QuietHoursStart: "23:00",
+			QuietHoursEnd:   "08:00",
+			QuietHoursZone:  "UTC",
+		},
+	}
+	config.SetBot(botCfg)
+
+	d := newTestDaemon()
+	d.initBot()
+
+	// Gateway should be created (may fail to start without adapters, but that's ok)
+	// The test covers the config conversion code path
+}
+
+func TestInitBotWithPlatforms(t *testing.T) {
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	defer os.Unsetenv("HOME")
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Create minimal config first
+	configPath := filepath.Join(dir, ".zen", "zen.json")
+	os.MkdirAll(filepath.Dir(configPath), 0755)
+	os.WriteFile(configPath, []byte(`{"version":5}`), 0644)
+
+	// Use SetBot to set bot config with all platforms
+	socketPath := filepath.Join(dir, "bot.sock")
+	botCfg := &config.BotConfig{
+		Enabled:    true,
+		SocketPath: socketPath,
+		Platforms: &config.BotPlatformsConfig{
+			Telegram: &config.BotTelegramConfig{
+				Enabled:      false,
+				Token:        "test-token",
+				AllowedUsers: []string{"user1"},
+				AllowedChats: []string{"chat1"},
+			},
+			Discord: &config.BotDiscordConfig{
+				Enabled:         false,
+				Token:           "discord-token",
+				AllowedUsers:    []string{"user1"},
+				AllowedChannels: []string{"channel1"},
+				AllowedGuilds:   []string{"guild1"},
+			},
+			Slack: &config.BotSlackConfig{
+				Enabled:         false,
+				BotToken:        "xoxb-token",
+				AppToken:        "xapp-token",
+				AllowedUsers:    []string{"user1"},
+				AllowedChannels: []string{"channel1"},
+			},
+			Lark: &config.BotLarkConfig{
+				Enabled:      false,
+				AppID:        "cli_xxx",
+				AppSecret:    "secret",
+				AllowedUsers: []string{"user1"},
+				AllowedChats: []string{"chat1"},
+			},
+			FBMessenger: &config.BotFBMessengerConfig{
+				Enabled:      false,
+				PageToken:    "page-token",
+				VerifyToken:  "verify-token",
+				AppSecret:    "app-secret",
+				AllowedUsers: []string{"user1"},
+			},
+		},
+	}
+	config.SetBot(botCfg)
+
+	d := newTestDaemon()
+	d.initBot()
+
+	// This test covers all platform config conversion code paths
+}
+
+// getFreePort returns a port that is currently not in use.
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to get free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	return port
 }

@@ -5,3 +5,30 @@
 /dist/
 /temp-docs/
 /.dev/
+web/node_modules/
+web/dist/
+internal/web/dist/
+bin/
+web/coverage/
+
+# Go
+*.exe
+*.test
+vendor/
+*.out
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -331,6 +332,41 @@ var configSyncCmd = &cobra.Command{
 	},
 }
 
+var configSetCmd = &cobra.Command{
+	Use:   "set <key> <value>",
+	Short: "Set a configuration value",
+	Long: `Set a configuration value.
+
+Supported keys:
+  proxy_port  Set the proxy port (1024-65535). Requires daemon restart.`,
+	Args: cobra.ExactArgs(2),
+	RunE: runConfigSet,
+}
+
+func runConfigSet(cmd *cobra.Command, args []string) error {
+	key, value := args[0], args[1]
+
+	switch key {
+	case "proxy_port":
+		port, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid port %q: must be a number", value)
+		}
+		if port < 1024 || port > 65535 {
+			return fmt.Errorf("invalid port %d: must be between 1024 and 65535", port)
+		}
+		if err := config.SetProxyPort(port); err != nil {
+			return fmt.Errorf("failed to set proxy_port: %w", err)
+		}
+		fmt.Printf("proxy_port set to %d.\n", port)
+		fmt.Println("Note: Restart the daemon for the change to take effect (zen daemon restart).")
+		fmt.Println("Client processes (e.g., Claude Code) may need to be restarted as well.")
+	default:
+		return fmt.Errorf("unknown configuration key %q. Supported keys: proxy_port", key)
+	}
+	return nil
+}
+
 func init() {
 	configAddCmd.AddCommand(configAddProviderCmd)
 	configAddCmd.AddCommand(configAddGroupCmd)
@@ -344,6 +380,7 @@ func init() {
 	configCmd.AddCommand(configAddCmd)
 	configCmd.AddCommand(configDeleteCmd)
 	configCmd.AddCommand(configEditCmd)
+	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configDefaultClientCmd)
 	configCmd.AddCommand(configDefaultProfileCmd)
 	configCmd.AddCommand(configResetPasswordCmd)

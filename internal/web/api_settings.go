@@ -9,11 +9,15 @@ import (
 
 // settingsResponse is the JSON shape for global settings.
 type settingsResponse struct {
-	DefaultProfile string   `json:"default_profile"`
-	DefaultClient  string   `json:"default_client"`
-	WebPort        int      `json:"web_port"`
-	Profiles       []string `json:"profiles"`
-	Clients        []string `json:"clients"`
+	DefaultProfile         string                       `json:"default_profile"`
+	DefaultClient          string                       `json:"default_client"`
+	ProxyPort              int                          `json:"proxy_port"`
+	WebPort                int                          `json:"web_port"`
+	Profiles               []string                     `json:"profiles"`
+	Clients                []string                     `json:"clients"`
+	ClaudeAutoPermission   *config.AutoPermissionConfig `json:"claude_auto_permission,omitempty"`
+	CodexAutoPermission    *config.AutoPermissionConfig `json:"codex_auto_permission,omitempty"`
+	OpenCodeAutoPermission *config.AutoPermissionConfig `json:"opencode_auto_permission,omitempty"`
 }
 
 // settingsRequest is the JSON shape for updating settings.
@@ -39,11 +43,15 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	profiles := store.ListProfiles()
 
 	resp := settingsResponse{
-		DefaultProfile: store.GetDefaultProfile(),
-		DefaultClient:  store.GetDefaultClient(),
-		WebPort:        store.GetWebPort(),
-		Profiles:       profiles,
-		Clients:        config.AvailableClients,
+		DefaultProfile:         store.GetDefaultProfile(),
+		DefaultClient:          store.GetDefaultClient(),
+		ProxyPort:              store.GetProxyPort(),
+		WebPort:                store.GetWebPort(),
+		Profiles:               profiles,
+		Clients:                config.AvailableClients,
+		ClaudeAutoPermission:   store.GetAutoPermission(config.ClientClaude),
+		CodexAutoPermission:    store.GetAutoPermission(config.ClientCodex),
+		OpenCodeAutoPermission: store.GetAutoPermission(config.ClientOpenCode),
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

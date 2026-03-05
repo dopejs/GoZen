@@ -27,16 +27,18 @@ const config: Config = {
 
   i18n: {
     defaultLocale: 'en',
-    locales: ['en', 'zh-Hans', 'zh-Hant', 'es'],
+    locales: ['en', 'zh-Hans', 'zh-Hant', 'es', 'ja', 'ko'],
     localeConfigs: {
       en: {label: 'English'},
       'zh-Hans': {label: '简体中文'},
       'zh-Hant': {label: '繁體中文'},
       es: {label: 'Español'},
+      ja: {label: '日本語'},
+      ko: {label: '한국어'},
     },
   },
 
-  plugins: ['docusaurus-plugin-sass', './plugins/releases-plugin.js'],
+  plugins: ['docusaurus-plugin-sass'],
 
   presets: [
     [
@@ -44,11 +46,11 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          lastVersion: '2.1',
+          lastVersion: '3.0',
           versions: {
-            '2.1': {label: 'v2.1', path: '/'},
+            '3.0': {label: 'v3.0', path: '/'},
           },
-          onlyIncludeVersions: ['2.1'],
+          onlyIncludeVersions: ['3.0'],
         },
         blog: false,
         theme: {
@@ -105,7 +107,6 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
-        {to: '/releases', label: 'Releases', position: 'left'},
         {
           type: 'localeDropdown',
           position: 'right',

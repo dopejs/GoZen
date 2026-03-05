@@ -13,8 +13,12 @@ import (
 
 // --- Path helpers ---
 
-// ConfigDirPath returns ~/.zen
+// ConfigDirPath returns the config directory path.
+// Uses GOZEN_CONFIG_DIR environment variable if set, otherwise ~/.zen
 func ConfigDirPath() string {
+	if dir := os.Getenv("GOZEN_CONFIG_DIR"); dir != "" {
+		return dir
+	}
 	return filepath.Join(os.Getenv("HOME"), ConfigDir)
 }
 
@@ -94,7 +98,8 @@ func ResetDefaultStore() {
 
 // --- Provider operations ---
 
-// GetProvider returns the config for a named provider, or nil.
+// GetProvider returns a copy of the config for a named provider, or nil.
+// The returned value is a deep copy; modifications do not affect the store.
 func (s *Store) GetProvider(name string) *ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -102,7 +107,7 @@ func (s *Store) GetProvider(name string) *ProviderConfig {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Providers[name]
+	return s.config.Providers[name].Clone()
 }
 
 // SetProvider creates or updates a provider and saves.
@@ -151,7 +156,8 @@ func (s *Store) ProviderNames() []string {
 	return names
 }
 
-// ProviderMap returns a copy of all providers.
+// ProviderMap returns a deep copy of all providers.
+// Modifications to the returned map or its values do not affect the store.
 func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -159,10 +165,10 @@ func (s *Store) ProviderMap() map[string]*ProviderConfig {
 	if s.config == nil {
 		return nil
 	}
-	// Return a copy to avoid concurrent modification
+	// Return a deep copy to avoid concurrent modification
 	copy := make(map[string]*ProviderConfig, len(s.config.Providers))
 	for k, v := range s.config.Providers {
-		copy[k] = v
+		copy[k] = v.Clone()
 	}
 	return copy
 }
@@ -216,7 +222,8 @@ func (s *Store) SetProfileOrder(profile string, names []string) error {
 	return s.saveLocked()
 }
 
-// GetProfileConfig returns the full profile configuration.
+// GetProfileConfig returns a deep copy of the full profile configuration.
+// The returned value is a deep copy; modifications do not affect the store.
 func (s *Store) GetProfileConfig(profile string) *ProfileConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -224,7 +231,7 @@ func (s *Store) GetProfileConfig(profile string) *ProfileConfig {
 	if s.config == nil {
 		return nil
 	}
-	return s.config.Profiles[profile]
+	return s.config.Profiles[profile].Clone()
 }
 
 // SetProfileConfig sets the full profile configuration and saves.
@@ -388,6 +395,20 @@ func (s *Store) SetProxyPort(port int) error {
 	s.ensureConfig()
 	s.config.ProxyPort = port
 	return s.saveLocked()
+}
+
+// EnsureProxyPort persists the default proxy port if it is currently unset (0).
+// This ensures the port value is always written to disk so it survives restarts.
+func (s *Store) EnsureProxyPort() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	if s.config.ProxyPort == 0 {
+		s.config.ProxyPort = DefaultProxyPort
+		return s.saveLocked()
+	}
+	return nil
 }
 
 // GetWebPasswordHash returns the stored bcrypt password hash.
@@ -709,7 +730,7 @@ func (s *Store) UnbindProject(path string) error {
 	return s.saveLocked()
 }
 
-// GetProjectBinding returns the binding for a directory path.
+// GetProjectBinding returns a copy of the binding for a directory path.
 // Returns nil if no binding exists.
 func (s *Store) GetProjectBinding(path string) *ProjectBinding {
 	path = resolveProjectPath(path)
@@ -719,10 +740,18 @@ func (s *Store) GetProjectBinding(path string) *ProjectBinding {
 	if s.config == nil || s.config.ProjectBindings == nil {
 		return nil
 	}
-	return s.config.ProjectBindings[path]
+	pb := s.config.ProjectBindings[path]
+	if pb == nil {
+		return nil
+	}
+	// Return a copy
+	return &ProjectBinding{
+		Profile: pb.Profile,
+		Client:  pb.Client,
+	}
 }
 
-// GetAllProjectBindings returns all project bindings.
+// GetAllProjectBindings returns a deep copy of all project bindings.
 func (s *Store) GetAllProjectBindings() map[string]*ProjectBinding {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -730,10 +759,329 @@ func (s *Store) GetAllProjectBindings() map[string]*ProjectBinding {
 	if s.config == nil || s.config.ProjectBindings == nil {
 		return make(map[string]*ProjectBinding)
 	}
-	// Return a copy to avoid concurrent modification
+	// Return a deep copy to avoid concurrent modification
 	bindings := make(map[string]*ProjectBinding, len(s.config.ProjectBindings))
 	for k, v := range s.config.ProjectBindings {
-		bindings[k] = v
+		if v != nil {
+			bindings[k] = &ProjectBinding{
+				Profile: v.Profile,
+				Client:  v.Client,
+			}
+		}
 	}
 	return bindings
+}
+
+// --- Pricing ---
+
+// GetPricing returns the model pricing map (custom overrides merged with defaults).
+func (s *Store) GetPricing() map[string]*ModelPricing {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+
+	// Start with defaults
+	result := make(map[string]*ModelPricing, len(DefaultModelPricing))
+	for k, v := range DefaultModelPricing {
+		result[k] = v
+	}
+
+	// Override with custom pricing
+	if s.config != nil && s.config.Pricing != nil {
+		for k, v := range s.config.Pricing {
+			result[k] = v
+		}
+	}
+	return result
+}
+
+// SetPricing sets custom model pricing overrides and saves.
+func (s *Store) SetPricing(pricing map[string]*ModelPricing) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Pricing = pricing
+	return s.saveLocked()
+}
+
+// --- Budgets ---
+
+// GetBudgets returns the budget configuration.
+func (s *Store) GetBudgets() *BudgetConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Budgets
+}
+
+// SetBudgets sets the budget configuration and saves.
+func (s *Store) SetBudgets(budgets *BudgetConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Budgets = budgets
+	return s.saveLocked()
+}
+
+// --- Webhooks ---
+
+// GetWebhooks returns all webhook configurations.
+func (s *Store) GetWebhooks() []*WebhookConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	// Return a copy
+	result := make([]*WebhookConfig, len(s.config.Webhooks))
+	copy(result, s.config.Webhooks)
+	return result
+}
+
+// SetWebhooks sets all webhook configurations and saves.
+func (s *Store) SetWebhooks(webhooks []*WebhookConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Webhooks = webhooks
+	return s.saveLocked()
+}
+
+// GetWebhook returns a webhook by name.
+func (s *Store) GetWebhook(name string) *WebhookConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	for _, w := range s.config.Webhooks {
+		if w.Name == name {
+			return w
+		}
+	}
+	return nil
+}
+
+// AddWebhook adds or updates a webhook configuration.
+func (s *Store) AddWebhook(webhook *WebhookConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	// Update existing or append
+	for i, w := range s.config.Webhooks {
+		if w.Name == webhook.Name {
+			s.config.Webhooks[i] = webhook
+			return s.saveLocked()
+		}
+	}
+	s.config.Webhooks = append(s.config.Webhooks, webhook)
+	return s.saveLocked()
+}
+
+// DeleteWebhook removes a webhook by name.
+func (s *Store) DeleteWebhook(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	for i, w := range s.config.Webhooks {
+		if w.Name == name {
+			s.config.Webhooks = append(s.config.Webhooks[:i], s.config.Webhooks[i+1:]...)
+			return s.saveLocked()
+		}
+	}
+	return nil
+}
+
+// --- Health Check ---
+
+// GetHealthCheck returns the health check configuration.
+func (s *Store) GetHealthCheck() *HealthCheckConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.HealthCheck
+}
+
+// SetHealthCheck sets the health check configuration and saves.
+func (s *Store) SetHealthCheck(hc *HealthCheckConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.HealthCheck = hc
+	return s.saveLocked()
+}
+
+// --- Compression (BETA) ---
+
+// GetCompression returns the compression configuration.
+func (s *Store) GetCompression() *CompressionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Compression
+}
+
+// SetCompression sets the compression configuration and saves.
+func (s *Store) SetCompression(cc *CompressionConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Compression = cc
+	return s.saveLocked()
+}
+
+// --- Middleware (BETA) ---
+
+// GetMiddleware returns the middleware configuration.
+func (s *Store) GetMiddleware() *MiddlewareConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Middleware
+}
+
+// SetMiddleware sets the middleware configuration and saves.
+func (s *Store) SetMiddleware(mc *MiddlewareConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Middleware = mc
+	return s.saveLocked()
+}
+
+// --- Agent (BETA) ---
+
+// GetAgent returns the agent configuration.
+func (s *Store) GetAgent() *AgentConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Agent
+}
+
+// SetAgent sets the agent configuration and saves.
+func (s *Store) SetAgent(ac *AgentConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Agent = ac
+	return s.saveLocked()
+}
+
+// --- Bot (BETA) ---
+
+// GetBot returns the bot configuration.
+func (s *Store) GetBot() *BotConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	return s.config.Bot
+}
+
+// SetBot sets the bot configuration and saves.
+func (s *Store) SetBot(bc *BotConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.Bot = bc
+	return s.saveLocked()
+}
+
+// --- Skills (via Bot) ---
+
+// GetSkillsConfig returns the skills configuration from bot config.
+// Returns nil if bot config is nil or skills not configured.
+func (s *Store) GetSkillsConfig() *SkillsConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.Bot == nil {
+		return nil
+	}
+	return s.config.Bot.Skills
+}
+
+// SetSkillsConfig sets the skills configuration within bot config and saves.
+// Creates bot config with defaults if it doesn't exist.
+func (s *Store) SetSkillsConfig(sc *SkillsConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	if s.config.Bot == nil {
+		s.config.Bot = &BotConfig{}
+	}
+	s.config.Bot.Skills = sc
+	return s.saveLocked()
+}
+
+// GetAutoPermission returns the auto-permission config for a specific client.
+func (s *Store) GetAutoPermission(client string) *AutoPermissionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	switch client {
+	case ClientClaude:
+		return s.config.ClaudeAutoPermission
+	case ClientCodex:
+		return s.config.CodexAutoPermission
+	case ClientOpenCode:
+		return s.config.OpenCodeAutoPermission
+	default:
+		return nil
+	}
+}
+
+// SetAutoPermission sets the auto-permission config for a specific client and saves.
+func (s *Store) SetAutoPermission(client string, ap *AutoPermissionConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	switch client {
+	case ClientClaude:
+		s.config.ClaudeAutoPermission = ap
+	case ClientCodex:
+		s.config.CodexAutoPermission = ap
+	case ClientOpenCode:
+		s.config.OpenCodeAutoPermission = ap
+	default:
+		return fmt.Errorf("unknown client: %q", client)
+	}
+	return s.saveLocked()
 }

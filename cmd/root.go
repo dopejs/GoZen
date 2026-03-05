@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -29,7 +32,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "2.1.1"
+var Version = "3.0.0-alpha.15"
 
 var updateChecker *update.Checker
 
@@ -69,7 +72,7 @@ func init() {
 	rootCmd.Flags().StringP("fallback", "f", "", "alias for --profile (deprecated)")
 	rootCmd.Flags().Lookup("fallback").Hidden = true
 	rootCmd.Flags().StringVarP(&clientFlag, "client", "c", "", "client to use (claude, codex, opencode)")
-	rootCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "auto-approve CLI permissions (claude --permission-mode acceptEdits, codex -a never)")
+	rootCmd.Flags().BoolVarP(&yesFlag, "yes", "y", false, "auto-approve CLI permissions (claude --permission-mode bypassPermissions, codex -a never)")
 	rootCmd.Flags().String("cli", "", "alias for --client (deprecated)")
 	rootCmd.Flags().Lookup("cli").Hidden = true
 	rootCmd.AddCommand(useCmd)
@@ -108,6 +111,7 @@ Quick Start:
   zen -p <profile>          Start with specific profile
   zen --cli codex           Start with specific CLI
   zen -y                    Start with auto-approve permissions
+  zen -- --verbose          Pass extra flags to the CLI client
 
 Configuration:
   config add provider [name]   Add a new provider
@@ -177,12 +181,68 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	return startViaDaemon(profile, client, providerNames, args, yesFlag)
 }
 
+// isConnectionError checks if stderr output indicates a connection error
+// that may be caused by a dead daemon.
+func isConnectionError(stderr string) bool {
+	if stderr == "" {
+		return false
+	}
+	lower := strings.ToLower(stderr)
+	patterns := []string{
+		"connection refused",
+		"connection reset",
+		"econnrefused",
+		"econnreset",
+		"etimedout",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// runClient executes the client binary and returns its exit code and stderr output.
+// Stderr is tee'd to both os.Stderr and a buffer for connection error detection.
+func runClient(cliPath string, args []string) (exitCode int, stderrOutput string, err error) {
+	cliCmd := exec.Command(cliPath, args...)
+	cliCmd.Stdin = os.Stdin
+	cliCmd.Stdout = os.Stdout
+
+	var stderrBuf bytes.Buffer
+	cliCmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+
+	// Forward signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for sig := range sigCh {
+			if cliCmd.Process != nil {
+				cliCmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	runErr := cliCmd.Run()
+	signal.Stop(sigCh)
+	close(sigCh)
+
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			return exitErr.ExitCode(), stderrBuf.String(), nil
+		}
+		return 1, stderrBuf.String(), runErr
+	}
+	return 0, stderrBuf.String(), nil
+}
+
 // startViaDaemon starts a client session through the zend daemon.
 // 1. Ensure zend is running (auto-start if needed)
 // 2. Generate session UUID
 // 3. Set base URL to http://127.0.0.1:<proxy_port>/<profile>/<session>/v1
 // 4. Merge provider env vars
-// 5. Exec client binary
+// 5. Exec client binary with retry on connection error
 func startViaDaemon(profile, client string, providerNames []string, args []string, autoApprove bool) error {
 	if err := ensureDaemonRunning(); err != nil {
 		return fmt.Errorf("failed to start zend: %w", err)
@@ -217,52 +277,110 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 	// Set X-Zen-Client header via env var (proxy strips it)
 	os.Setenv("X_ZEN_CLIENT", clientBin)
 
+	// Register session with daemon for bot visibility
+	registerSession(proxyPort, profile, sessionID, clientBin)
+
 	// Find client binary
 	cliPath, err := exec.LookPath(clientBin)
 	if err != nil {
 		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
 	}
 
-	// Inject auto-approve flags based on client type
-	if autoApprove {
-		args = prependAutoApproveArgs(clientBin, args)
+	// Resolve auto-permission with priority chain:
+	// -- explicit args > --yes flag > Web UI config > default (no flags)
+	clientArgs := args
+	if !hasPermissionFlags(clientBin, args) {
+		if autoApprove {
+			// --yes flag: use hardcoded defaults
+			clientArgs = prependAutoApproveArgs(clientBin, args)
+		} else {
+			// Try Web UI config
+			clientArgs, _ = prependConfigAutoPermissionArgs(clientBin, args)
+		}
 	}
 
-	// Start client as subprocess
-	cliCmd := exec.Command(cliPath, args...)
-	cliCmd.Stdin = os.Stdin
-	cliCmd.Stdout = os.Stdout
-	cliCmd.Stderr = os.Stderr
+	// Run client with retry on connection error (daemon recovery)
+	exitCode, stderrOutput, runErr := runClient(cliPath, clientArgs)
+	if runErr != nil {
+		return runErr
+	}
 
-	// Forward signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		for sig := range sigCh {
-			if cliCmd.Process != nil {
-				cliCmd.Process.Signal(sig)
+	if exitCode != 0 && isConnectionError(stderrOutput) {
+		// Check if daemon died
+		if _, running := daemon.IsDaemonRunning(); !running {
+			fmt.Fprintln(os.Stderr, "Daemon connection lost. Restarting daemon...")
+			if err := ensureDaemonRunning(); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to restart daemon: %v\n", err)
+				os.Exit(exitCode)
+			}
+
+			// Retry once
+			exitCode, _, runErr = runClient(cliPath, clientArgs)
+			if runErr != nil {
+				return runErr
 			}
 		}
-	}()
-
-	if err := cliCmd.Run(); err != nil {
-		signal.Stop(sigCh)
-		close(sigCh)
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		return err
 	}
-	signal.Stop(sigCh)
-	close(sigCh)
+
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 	return nil
 }
 
+// registerSession registers a session with the daemon for bot visibility.
+func registerSession(proxyPort int, profile, sessionID, clientType string) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/sessions", proxyPort)
+	body, _ := json.Marshal(map[string]string{
+		"session_id":  sessionID,
+		"profile":     profile,
+		"client_type": clientType,
+	})
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return // Silently ignore - daemon might not support this yet
+	}
+	resp.Body.Close()
+}
+
 // ensureDaemonRunning checks if zend is running and starts it if not.
+// Uses a file lock to coordinate concurrent startup attempts.
 func ensureDaemonRunning() error {
 	if _, running := daemon.IsDaemonRunning(); running {
 		return nil
 	}
+
+	// Acquire daemon lock to prevent concurrent startups
+	lockFile, err := daemon.AcquireDaemonLock()
+	if err == daemon.ErrLockContention {
+		// Another process is starting the daemon — wait for it
+		lockPath := daemon.DaemonLockPath()
+		f, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+		if openErr != nil {
+			// Can't open lock file — fall through and check if daemon is up
+			time.Sleep(2 * time.Second)
+			if _, running := daemon.IsDaemonRunning(); running {
+				return nil
+			}
+			return fmt.Errorf("daemon lock contention and cannot wait: %w", openErr)
+		}
+		// Block until lock is available (other process finished startup)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+		// Check if daemon is now alive
+		if _, running := daemon.IsDaemonRunning(); running {
+			return nil
+		}
+		// Daemon still not running — fall through to start it ourselves
+	} else if err != nil {
+		return fmt.Errorf("cannot acquire daemon lock: %w", err)
+	}
+
+	// We hold the lock — start the daemon
+	defer daemon.ReleaseDaemonLock(lockFile)
 
 	// Auto-start the daemon
 	exe, err := os.Executable()
@@ -295,7 +413,10 @@ func ensureDaemonRunning() error {
 	// Wait for daemon to be ready
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return waitForDaemonReady(ctx)
+	if err := waitForDaemonReady(ctx); err != nil {
+		return fmt.Errorf("daemon started but not ready: %w (try 'zen daemon status' for diagnostics)", err)
+	}
+	return nil
 }
 
 // generateSessionID generates a short random hex session ID.
@@ -355,18 +476,21 @@ func startLegacyProxy(names []string, pc *config.ProfileConfig, cli string, args
 	logger.Printf("CLI: %s, Client format: %s", cliBin, clientFormat)
 
 	// Start proxy — with routing if configured, otherwise plain
+	proxyPort := config.GetProxyPort()
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", proxyPort)
+
 	var port int
 	if pc != nil && len(pc.Routing) > 0 {
 		routingCfg, err := buildRoutingConfig(pc, providers, logger)
 		if err != nil {
 			return fmt.Errorf("failed to build routing config: %w", err)
 		}
-		port, err = proxy.StartProxyWithRouting(routingCfg, clientFormat, "127.0.0.1:0", logger)
+		port, err = proxy.StartProxyWithRouting(routingCfg, clientFormat, listenAddr, logger)
 		if err != nil {
 			return fmt.Errorf("failed to start proxy: %w", err)
 		}
 	} else {
-		port, err = proxy.StartProxy(providers, clientFormat, "127.0.0.1:0", logger)
+		port, err = proxy.StartProxy(providers, clientFormat, listenAddr, logger)
 		if err != nil {
 			return fmt.Errorf("failed to start proxy: %w", err)
 		}
@@ -480,8 +604,20 @@ func buildProviders(names []string) ([]*proxy.Provider, error) {
 			ClaudeEnvVars:   p.ClaudeEnvVars,
 			CodexEnvVars:    p.CodexEnvVars,
 			OpenCodeEnvVars: p.OpenCodeEnvVars,
+			ProxyURL:        p.ProxyURL,
 			Healthy:         true,
 		})
+
+		// Create per-provider HTTP client if proxy is configured
+		if p.ProxyURL != "" {
+			prov := providers[len(providers)-1]
+			client, err := proxy.NewHTTPClientWithProxy(p.ProxyURL, 10*time.Minute)
+			if err != nil {
+				log.Printf("[%s] warning: failed to create proxy client: %v", name, err)
+			} else {
+				prov.Client = client
+			}
+		}
 	}
 
 	if len(providers) == 0 {
@@ -777,17 +913,60 @@ func GetClientFormat(clientType ClientType) string {
 }
 
 // prependAutoApproveArgs prepends the appropriate auto-approve flags for each CLI.
-// Claude Code: --permission-mode acceptEdits, Codex: -a never, OpenCode: auto-approves by default (no flag needed).
+// Claude Code: --permission-mode bypassPermissions, Codex: -a never, OpenCode: auto-approves by default (no flag needed).
 func prependAutoApproveArgs(clientBin string, args []string) []string {
 	switch GetClientType(clientBin) {
 	case ClientClaude:
-		return append([]string{"--permission-mode", "acceptEdits"}, args...)
+		return append([]string{"--permission-mode", "bypassPermissions"}, args...)
 	case ClientCodex:
 		return append([]string{"-a", "never"}, args...)
 	default:
 		// OpenCode auto-approves by default
 		return args
 	}
+}
+
+// prependConfigAutoPermissionArgs prepends permission flags based on Web UI config.
+// Returns the modified args and true if flags were added.
+func prependConfigAutoPermissionArgs(clientBin string, args []string) ([]string, bool) {
+	clientName := string(GetClientType(clientBin))
+	ap := config.GetAutoPermission(clientName)
+	if ap == nil || !ap.Enabled || ap.Mode == "" {
+		return args, false
+	}
+
+	switch GetClientType(clientBin) {
+	case ClientClaude:
+		return append([]string{"--permission-mode", ap.Mode}, args...), true
+	case ClientCodex:
+		return append([]string{"-a", ap.Mode}, args...), true
+	default:
+		// OpenCode: no known permission flag
+		return args, false
+	}
+}
+
+// hasPermissionFlags checks if args already contain permission-related flags.
+func hasPermissionFlags(clientBin string, args []string) bool {
+	switch GetClientType(clientBin) {
+	case ClientClaude:
+		for _, arg := range args {
+			if arg == "--permission-mode" {
+				return true
+			}
+		}
+	case ClientCodex:
+		for i, arg := range args {
+			if arg == "-a" || arg == "--ask-for-approval" {
+				return true
+			}
+			// Also check combined form like "-a=never"
+			if (strings.HasPrefix(arg, "-a=") || strings.HasPrefix(arg, "--ask-for-approval=")) && i >= 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // setupClientEnvironment sets the appropriate environment variables for the client.

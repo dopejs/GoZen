@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy"
 )
+
+// getBotBridge returns the global bot bridge.
+func getBotBridge() *proxy.BotBridge {
+	return proxy.GetBotBridge()
+}
 
 // --- Daemon Status API ---
 
@@ -39,6 +45,33 @@ func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Daemon Shutdown API ---
+
+func (d *Daemon) handleDaemonShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "shutting down"})
+
+	// Trigger shutdown in background so the response is sent first
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-d.shutdownCh:
+			// Already closed
+		default:
+			close(d.shutdownCh)
+		}
+	}()
+}
+
+// ShutdownCh returns a channel that is closed when shutdown is requested via API.
+func (d *Daemon) ShutdownCh() <-chan struct{} {
+	return d.shutdownCh
+}
+
 // --- Daemon Reload API ---
 
 func (d *Daemon) handleDaemonReload(w http.ResponseWriter, r *http.Request) {
@@ -53,12 +86,24 @@ func (d *Daemon) handleDaemonReload(w http.ResponseWriter, r *http.Request) {
 
 // --- Daemon Sessions API ---
 
-func (d *Daemon) handleDaemonSessions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
+type registerSessionRequest struct {
+	SessionID  string `json:"session_id"`
+	Profile    string `json:"profile"`
+	ClientType string `json:"client_type"`
+}
 
+func (d *Daemon) handleDaemonSessions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		d.handleGetSessions(w, r)
+	case http.MethodPost:
+		d.handleRegisterSession(w, r)
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	}
+}
+
+func (d *Daemon) handleGetSessions(w http.ResponseWriter, r *http.Request) {
 	d.mu.RLock()
 	sessions := make([]*SessionInfo, 0, len(d.sessions))
 	for _, s := range d.sessions {
@@ -70,6 +115,28 @@ func (d *Daemon) handleDaemonSessions(w http.ResponseWriter, r *http.Request) {
 		"sessions": sessions,
 		"count":    len(sessions),
 	})
+}
+
+func (d *Daemon) handleRegisterSession(w http.ResponseWriter, r *http.Request) {
+	var req registerSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if req.SessionID == "" || req.Profile == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id and profile are required"})
+		return
+	}
+
+	// Register with bot bridge
+	if bridge := getBotBridge(); bridge != nil {
+		cacheKey := req.Profile + ":" + req.SessionID
+		bridge.UpdateSession(cacheKey, req.ClientType, nil, "", "", "input")
+		d.logger.Printf("[session] registered %s (client=%s)", cacheKey, req.ClientType)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "registered"})
 }
 
 // --- Temporary Profile API ---
@@ -90,9 +157,11 @@ func (d *Daemon) handleTempProfiles(w http.ResponseWriter, r *http.Request) {
 
 	var req tempProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = r.Body.Close()
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 		return
 	}
+	_ = r.Body.Close()
 
 	if len(req.Providers) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "providers required"})

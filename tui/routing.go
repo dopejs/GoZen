@@ -60,6 +60,7 @@ var knownScenarios = []struct {
 	{config.ScenarioThink, "think       (thinking mode requests)"},
 	{config.ScenarioImage, "image       (requests with images)"},
 	{config.ScenarioLongContext, "longContext (exceeds threshold)"},
+	{config.ScenarioCode, "code        (regular coding requests)"},
 	{config.ScenarioBackground, "background  (haiku model requests)"},
 }
 

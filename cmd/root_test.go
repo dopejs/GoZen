@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -333,6 +336,46 @@ func TestBuildProvidersMissingConfigErrors(t *testing.T) {
 	}
 }
 
+// T005: Test that buildProviders (direct path) sets ProxyURL and creates per-provider Client.
+func TestBuildProvidersWithProxyURL(t *testing.T) {
+	setTestHome(t)
+	writeTestProvider(t, "proxied", &config.ProviderConfig{
+		BaseURL:   "https://api.example.com",
+		AuthToken: "tok1",
+		Model:     "claude-sonnet-4-5",
+		ProxyURL:  "socks5://proxy.example.com:1080",
+	})
+	writeTestProvider(t, "direct", &config.ProviderConfig{
+		BaseURL:   "https://api2.example.com",
+		AuthToken: "tok2",
+		Model:     "claude-sonnet-4-5",
+	})
+
+	providers, err := buildProviders([]string{"proxied", "direct"})
+	if err != nil {
+		t.Fatalf("buildProviders() error: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("expected 2 providers, got %d", len(providers))
+	}
+
+	// Proxied provider should have ProxyURL and non-nil Client
+	if providers[0].ProxyURL != "socks5://proxy.example.com:1080" {
+		t.Errorf("providers[0].ProxyURL = %q, want socks5://proxy.example.com:1080", providers[0].ProxyURL)
+	}
+	if providers[0].Client == nil {
+		t.Error("providers[0].Client should be non-nil for provider with ProxyURL")
+	}
+
+	// Direct provider should have empty ProxyURL and nil Client
+	if providers[1].ProxyURL != "" {
+		t.Errorf("providers[1].ProxyURL = %q, want empty", providers[1].ProxyURL)
+	}
+	if providers[1].Client != nil {
+		t.Error("providers[1].Client should be nil for provider without ProxyURL")
+	}
+}
+
 // --- validateProviderNames tests ---
 
 // mockStdin replaces stdinReader for the duration of the test.
@@ -584,3 +627,740 @@ func discardLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
 
+// --- Connection error detection tests (US2) ---
+
+func TestIsConnectionError(t *testing.T) {
+	tests := []struct {
+		name   string
+		stderr string
+		want   bool
+	}{
+		{"connection refused", "Error: dial tcp 127.0.0.1:19841: connection refused", true},
+		{"connection reset", "Error: read tcp: connection reset by peer", true},
+		{"ECONNREFUSED", "Error: ECONNREFUSED connecting to proxy", true},
+		{"ECONNRESET", "Error: ECONNRESET during request", true},
+		{"ETIMEDOUT", "Error: ETIMEDOUT waiting for response", true},
+		{"connection error mixed case", "CONNECTION REFUSED by server", true},
+		{"normal error output", "Error: invalid API key", false},
+		{"empty stderr", "", false},
+		{"exit code only", "exit status 1", false},
+		{"partial match - connect", "connected successfully", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isConnectionError(tt.stderr)
+			if got != tt.want {
+				t.Errorf("isConnectionError(%q) = %v, want %v", tt.stderr, got, tt.want)
+			}
+		})
+	}
+}
+
+
+func TestProxyListenAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		port     int
+		expected string
+	}{
+		{"default port", 0, "127.0.0.1:19841"},
+		{"custom port", 8080, "127.0.0.1:8080"},
+		{"high port", 65535, "127.0.0.1:65535"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.port != 0 {
+				if err := config.SetProxyPort(tt.port); err != nil {
+					t.Fatalf("SetProxyPort(%d) error: %v", tt.port, err)
+				}
+			}
+			proxyPort := config.GetProxyPort()
+			addr := fmt.Sprintf("127.0.0.1:%d", proxyPort)
+			if addr != tt.expected {
+				t.Errorf("proxy listen address = %q, want %q", addr, tt.expected)
+			}
+		})
+	}
+}
+
+// T016: Test prependAutoApproveArgs with --yes for Claude Code
+func TestPrependAutoApproveArgs_ClaudeCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "claude with empty args",
+			client:   "claude",
+			args:     []string{},
+			expected: []string{"--permission-mode", "bypassPermissions"},
+		},
+		{
+			name:     "claude with existing args",
+			client:   "claude",
+			args:     []string{"--verbose"},
+			expected: []string{"--permission-mode", "bypassPermissions", "--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// T017: Test prependAutoApproveArgs with --yes for Codex
+func TestPrependAutoApproveArgs_Codex(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "codex with empty args",
+			client:   "codex",
+			args:     []string{},
+			expected: []string{"-a", "never"},
+		},
+		{
+			name:     "codex with existing args",
+			client:   "codex",
+			args:     []string{"--verbose"},
+			expected: []string{"-a", "never", "--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// T018: Test prependAutoApproveArgs with --yes for OpenCode
+func TestPrependAutoApproveArgs_OpenCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "opencode with empty args (no flag needed)",
+			client:   "opencode",
+			args:     []string{},
+			expected: []string{},
+		},
+		{
+			name:     "opencode with existing args (no flag added)",
+			client:   "opencode",
+			args:     []string{"--verbose"},
+			expected: []string{"--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// T019a: Test error messages when client not found in PATH
+func TestClientNotFoundInPath(t *testing.T) {
+	_, err := exec.LookPath("nonexistent-client-xyz-99999")
+	if err == nil {
+		t.Skip("client unexpectedly found in PATH")
+	}
+	// exec.LookPath returns "executable file not found in $PATH"
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error message = %q, want to contain %q", err.Error(), "not found")
+	}
+}
+
+// T019b: Test exit code forwarding from child process
+func TestExitCodeForwarding(t *testing.T) {
+	// Run a command that exits with code 2
+	cmd := exec.Command("sh", "-c", "exit 2")
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected non-zero exit")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exec.ExitError, got %T", err)
+	}
+	if exitErr.ExitCode() != 2 {
+		t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+	}
+}
+
+// T026-T028: Test prependConfigAutoPermissionArgs with Web UI config
+func TestPrependConfigAutoPermissionArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		client     string
+		mode       string
+		enabled    bool
+		args       []string
+		wantArgs   []string
+		wantAdded  bool
+	}{
+		{
+			name:      "claude with config enabled",
+			client:    "claude",
+			mode:      "acceptEdits",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{"--permission-mode", "acceptEdits"},
+			wantAdded: true,
+		},
+		{
+			name:      "claude with config disabled",
+			client:    "claude",
+			mode:      "acceptEdits",
+			enabled:   false,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "codex with config enabled",
+			client:    "codex",
+			mode:      "on-request",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{"-a", "on-request"},
+			wantAdded: true,
+		},
+		{
+			name:      "codex with config disabled",
+			client:    "codex",
+			mode:      "on-request",
+			enabled:   false,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "opencode with config enabled (no flag added)",
+			client:    "opencode",
+			mode:      "auto",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "claude with empty mode",
+			client:    "claude",
+			mode:      "",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.enabled || tt.mode != "" {
+				config.SetAutoPermission(tt.client, &config.AutoPermissionConfig{
+					Enabled: tt.enabled,
+					Mode:    tt.mode,
+				})
+			}
+
+			result, added := prependConfigAutoPermissionArgs(tt.client, tt.args)
+			if added != tt.wantAdded {
+				t.Errorf("added = %v, want %v", added, tt.wantAdded)
+			}
+			if len(result) != len(tt.wantArgs) {
+				t.Fatalf("len(result) = %d, want %d; got %v", len(result), len(tt.wantArgs), result)
+			}
+			for i := range result {
+				if result[i] != tt.wantArgs[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// Test hasPermissionFlags detection
+func TestHasPermissionFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		client    string
+		args      []string
+		wantFound bool
+	}{
+		{
+			name:      "claude with --permission-mode",
+			client:    "claude",
+			args:      []string{"--permission-mode", "bypassPermissions"},
+			wantFound: true,
+		},
+		{
+			name:      "claude without permission flags",
+			client:    "claude",
+			args:      []string{"--verbose"},
+			wantFound: false,
+		},
+		{
+			name:      "codex with -a flag",
+			client:    "codex",
+			args:      []string{"-a", "never"},
+			wantFound: true,
+		},
+		{
+			name:      "codex with --ask-for-approval",
+			client:    "codex",
+			args:      []string{"--ask-for-approval", "on-request"},
+			wantFound: true,
+		},
+		{
+			name:      "codex without permission flags",
+			client:    "codex",
+			args:      []string{"--verbose"},
+			wantFound: false,
+		},
+		{
+			name:      "empty args",
+			client:    "claude",
+			args:      []string{},
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			found := hasPermissionFlags(tt.client, tt.args)
+			if found != tt.wantFound {
+				t.Errorf("hasPermissionFlags(%q, %v) = %v, want %v", tt.client, tt.args, found, tt.wantFound)
+			}
+		})
+	}
+}
+
+// Test priority chain: -- > --yes > Web UI config (unit test)
+func TestAutoPermissionPriorityChain(t *testing.T) {
+	tests := []struct {
+		name           string
+		client         string
+		yesFlag        bool
+		configEnabled  bool
+		configMode     string
+		explicitArgs   []string // args that include explicit permission flags
+		wantFirstArgs  []string // expected first N args
+	}{
+		{
+			name:          "explicit args override --yes",
+			client:        "claude",
+			yesFlag:       true,
+			explicitArgs:  []string{"--permission-mode", "plan"},
+			wantFirstArgs: []string{"--permission-mode", "plan"},
+		},
+		{
+			name:          "explicit args override config",
+			client:        "claude",
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{"--permission-mode", "dontAsk"},
+			wantFirstArgs: []string{"--permission-mode", "dontAsk"},
+		},
+		{
+			name:          "--yes overrides config",
+			client:        "claude",
+			yesFlag:       true,
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{"--permission-mode", "bypassPermissions"},
+		},
+		{
+			name:          "config used when no --yes",
+			client:        "claude",
+			yesFlag:       false,
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{"--permission-mode", "acceptEdits"},
+		},
+		{
+			name:          "no flags when nothing configured",
+			client:        "claude",
+			yesFlag:       false,
+			configEnabled: false,
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.configEnabled {
+				config.SetAutoPermission(tt.client, &config.AutoPermissionConfig{
+					Enabled: tt.configEnabled,
+					Mode:    tt.configMode,
+				})
+			}
+
+			// Simulate the priority chain logic from startViaDaemon
+			result := tt.explicitArgs
+			if !hasPermissionFlags(tt.client, result) {
+				if tt.yesFlag {
+					result = prependAutoApproveArgs(tt.client, result)
+				} else {
+					result, _ = prependConfigAutoPermissionArgs(tt.client, result)
+				}
+			}
+
+			if len(tt.wantFirstArgs) == 0 {
+				if len(result) != 0 {
+					t.Errorf("expected empty args, got %v", result)
+				}
+				return
+			}
+
+			if len(result) < len(tt.wantFirstArgs) {
+				t.Fatalf("result too short: %v, want at least %v", result, tt.wantFirstArgs)
+			}
+			for i, want := range tt.wantFirstArgs {
+				if result[i] != want {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], want)
+				}
+			}
+		})
+	}
+}
+
+// --- Automated verification tests (replacing manual T024/T025/T044/T055/T056/T066/T067/T068) ---
+
+// createFakeClient creates a shell script that prints its received arguments one per line.
+func createFakeClient(t *testing.T, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, name)
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  echo \"$arg\"\ndone\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return scriptPath
+}
+
+// T024: Verify zen --yes with Claude Code passes --permission-mode bypassPermissions
+func TestVerify_YesFlagClaude_ArgsCorrect(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	clientArgs := []string{}
+	if !hasPermissionFlags("claude", clientArgs) {
+		clientArgs = prependAutoApproveArgs("claude", clientArgs)
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "--permission-mode" || lines[1] != "bypassPermissions" {
+		t.Errorf("expected [--permission-mode bypassPermissions], got %v", lines)
+	}
+}
+
+// T025: Verify zen --yes with Codex passes -a never
+func TestVerify_YesFlagCodex_ArgsCorrect(t *testing.T) {
+	fakeCodex := createFakeClient(t, "codex")
+
+	clientArgs := []string{}
+	if !hasPermissionFlags("codex", clientArgs) {
+		clientArgs = prependAutoApproveArgs("codex", clientArgs)
+	}
+
+	cmd := exec.Command(fakeCodex, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake codex failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "-a" || lines[1] != "never" {
+		t.Errorf("expected [-a never], got %v", lines)
+	}
+}
+
+// T044: Verify Web UI config auto-permission is applied via fake client
+func TestVerify_WebUIConfig_ArgsCorrect(t *testing.T) {
+	setTestHome(t)
+	config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+		Enabled: true,
+		Mode:    "acceptEdits",
+	})
+
+	fakeClaude := createFakeClient(t, "claude")
+	clientArgs := []string{}
+	if !hasPermissionFlags("claude", clientArgs) {
+		clientArgs, _ = prependConfigAutoPermissionArgs("claude", clientArgs)
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "--permission-mode" || lines[1] != "acceptEdits" {
+		t.Errorf("expected [--permission-mode acceptEdits], got %v", lines)
+	}
+}
+
+// T055: Verify -- passes arbitrary flags through to client
+func TestVerify_DashDashPassThrough(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	cliArgs := []string{"--verbose", "--debug"}
+	clientArgs := cliArgs
+	// No autoApprove, no config → args pass through unchanged
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 || lines[0] != "--verbose" || lines[1] != "--debug" {
+		t.Errorf("expected [--verbose --debug], got %v", lines)
+	}
+}
+
+// T056: Verify zen --yes -- --permission-mode acceptEdits uses acceptEdits (not bypassPermissions)
+func TestVerify_DashDashOverridesYes(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	cliArgs := []string{"--permission-mode", "acceptEdits"}
+	autoApprove := true
+
+	clientArgs := cliArgs
+	if !hasPermissionFlags("claude", cliArgs) {
+		if autoApprove {
+			clientArgs = prependAutoApproveArgs("claude", cliArgs)
+		}
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 || lines[0] != "--permission-mode" || lines[1] != "acceptEdits" {
+		t.Errorf("expected [--permission-mode acceptEdits], got %v (bypassPermissions would be wrong)", lines)
+	}
+}
+
+// T066: Test config migration from v11 to v12 with file I/O
+func TestVerify_ConfigMigrationV11ToV12(t *testing.T) {
+	home := setTestHome(t)
+
+	v11Config := `{
+		"version": 11,
+		"proxy_port": 19841,
+		"web_port": 19840,
+		"providers": {
+			"test": {
+				"base_url": "https://api.example.com",
+				"auth_token": "tok123",
+				"model": "claude-sonnet-4-5"
+			}
+		},
+		"profiles": {
+			"default": ["test"]
+		}
+	}`
+	configDir := filepath.Join(home, ".zen")
+	os.MkdirAll(configDir, 0755)
+	os.WriteFile(filepath.Join(configDir, "zen.json"), []byte(v11Config), 0600)
+	config.ResetDefaultStore()
+
+	store := config.DefaultStore()
+	provider := store.GetProvider("test")
+	if provider == nil {
+		t.Fatal("provider 'test' should exist after migration")
+	}
+
+	if ap := store.GetAutoPermission("claude"); ap != nil {
+		t.Errorf("claude auto-permission should be nil after v11→v12 migration, got %+v", ap)
+	}
+
+	store.SetAutoPermission("claude", &config.AutoPermissionConfig{
+		Enabled: true,
+		Mode:    "bypassPermissions",
+	})
+	config.ResetDefaultStore()
+
+	ap := config.GetAutoPermission("claude")
+	if ap == nil || !ap.Enabled || ap.Mode != "bypassPermissions" {
+		t.Errorf("round-trip failed: got %+v", ap)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "zen.json"))
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+	if v, ok := raw["version"].(float64); !ok || int(v) != config.CurrentConfigVersion {
+		t.Errorf("saved version = %v, want %d", raw["version"], config.CurrentConfigVersion)
+	}
+}
+
+// T067: Test backward compatibility - v12 config with auto-permission fields
+func TestVerify_BackwardCompatV12Config(t *testing.T) {
+	home := setTestHome(t)
+
+	v12Config := fmt.Sprintf(`{
+		"version": %d,
+		"proxy_port": 19841,
+		"web_port": 19840,
+		"providers": {
+			"test": {"base_url": "https://api.example.com", "auth_token": "tok"}
+		},
+		"profiles": {"default": ["test"]},
+		"claude_auto_permission": {"enabled": true, "mode": "acceptEdits"},
+		"codex_auto_permission": null
+	}`, config.CurrentConfigVersion)
+
+	configDir := filepath.Join(home, ".zen")
+	os.MkdirAll(configDir, 0755)
+	os.WriteFile(filepath.Join(configDir, "zen.json"), []byte(v12Config), 0600)
+	config.ResetDefaultStore()
+
+	store := config.DefaultStore()
+	if p := store.GetProvider("test"); p == nil {
+		t.Fatal("provider should exist")
+	}
+	ap := store.GetAutoPermission("claude")
+	if ap == nil || !ap.Enabled || ap.Mode != "acceptEdits" {
+		t.Errorf("claude auto-permission = %+v, want enabled=true mode=acceptEdits", ap)
+	}
+	if apCodex := store.GetAutoPermission("codex"); apCodex != nil {
+		t.Errorf("codex should be nil, got %+v", apCodex)
+	}
+}
+
+// T068: End-to-end test of all three user stories in sequence
+func TestVerify_AllUserStoriesE2E(t *testing.T) {
+	setTestHome(t)
+	fakeClaude := createFakeClient(t, "claude")
+
+	runAndCheck := func(t *testing.T, args []string, wantArgs []string) {
+		t.Helper()
+		cmd := exec.Command(fakeClaude, args...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+		got := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if strings.TrimSpace(string(out)) == "" {
+			got = []string{}
+		}
+		if len(got) != len(wantArgs) {
+			t.Fatalf("got %d args %v, want %d args %v", len(got), got, len(wantArgs), wantArgs)
+		}
+		for i := range got {
+			if got[i] != wantArgs[i] {
+				t.Errorf("arg[%d] = %q, want %q", i, got[i], wantArgs[i])
+			}
+		}
+	}
+
+	t.Run("US1_yes_bypass", func(t *testing.T) {
+		args := prependAutoApproveArgs("claude", nil)
+		runAndCheck(t, args, []string{"--permission-mode", "bypassPermissions"})
+	})
+
+	t.Run("US2_config_permission", func(t *testing.T) {
+		config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "acceptEdits",
+		})
+		args, added := prependConfigAutoPermissionArgs("claude", nil)
+		if !added {
+			t.Fatal("expected config args to be added")
+		}
+		runAndCheck(t, args, []string{"--permission-mode", "acceptEdits"})
+	})
+
+	t.Run("US3_explicit_override", func(t *testing.T) {
+		explicitArgs := []string{"--permission-mode", "plan", "--verbose"}
+		clientArgs := explicitArgs
+		if !hasPermissionFlags("claude", explicitArgs) {
+			clientArgs = prependAutoApproveArgs("claude", explicitArgs)
+		}
+		runAndCheck(t, clientArgs, []string{"--permission-mode", "plan", "--verbose"})
+	})
+
+	t.Run("full_priority_chain_sequence", func(t *testing.T) {
+		config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "acceptEdits",
+		})
+
+		// Explicit wins over --yes + config
+		explicit := []string{"--permission-mode", "dontAsk"}
+		result := explicit
+		if !hasPermissionFlags("claude", explicit) {
+			result = prependAutoApproveArgs("claude", explicit)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "dontAsk"})
+
+		// --yes wins over config
+		result = []string{}
+		if !hasPermissionFlags("claude", result) {
+			result = prependAutoApproveArgs("claude", result)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "bypassPermissions"})
+
+		// Config used when no --yes
+		result = []string{}
+		if !hasPermissionFlags("claude", result) {
+			result, _ = prependConfigAutoPermissionArgs("claude", result)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "acceptEdits"})
+	})
+}

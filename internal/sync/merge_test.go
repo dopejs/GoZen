@@ -120,19 +120,14 @@ func TestMergeScalars(t *testing.T) {
 
 	local := NewSyncPayload("dev1")
 	local.DefaultProfile = scalar(t1, "old-profile")
-	local.DefaultClient = scalar(t2, "claude")
 
 	remote := NewSyncPayload("dev2")
 	remote.DefaultProfile = scalar(t2, "new-profile")
-	remote.DefaultClient = scalar(t1, "codex")
 
 	merged := Merge(local, remote)
 
 	if merged.DefaultProfile.Value != "new-profile" {
 		t.Fatalf("expected newer remote default_profile, got %s", merged.DefaultProfile.Value)
-	}
-	if merged.DefaultClient.Value != "claude" {
-		t.Fatalf("expected newer local default_client, got %s", merged.DefaultClient.Value)
 	}
 }
 

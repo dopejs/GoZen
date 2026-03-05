@@ -1,0 +1,7 @@
+{
+  "title": {"message": "GoZen"},
+  "logo.alt": {"message": "GoZen Logo"},
+  "item.label.Docs": {"message": "ドキュメント"},
+  "item.label.Releases": {"message": "リリース"},
+  "item.label.GitHub": {"message": "GitHub"}
+}

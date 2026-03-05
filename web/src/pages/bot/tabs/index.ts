@@ -1,0 +1,7 @@
+export { GeneralTab } from './GeneralTab'
+export { PlatformsTab } from './PlatformsTab'
+export { InteractionTab } from './InteractionTab'
+export { AliasesTab } from './AliasesTab'
+export { NotifyTab } from './NotifyTab'
+export { ChatTab } from './ChatTab'
+export type { TabProps } from './types'

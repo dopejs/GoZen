@@ -9,9 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/dopejs/gozen/internal/agent"
+	"github.com/dopejs/gozen/internal/bot"
+	"github.com/dopejs/gozen/internal/bot/adapters"
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
@@ -23,6 +28,7 @@ type Daemon struct {
 	proxyServer  *http.Server
 	proxyMux     *http.ServeMux
 	profileProxy *proxy.ProfileProxy
+	botGateway   *bot.Gateway
 	logger       *log.Logger
 	version      string
 	watcher      *ConfigWatcher
@@ -43,6 +49,9 @@ type Daemon struct {
 	startTime time.Time
 	proxyPort int
 	webPort   int
+
+	// Shutdown channel - closed when shutdown is requested via API
+	shutdownCh chan struct{}
 }
 
 // SessionInfo tracks an active client session.
@@ -78,12 +87,19 @@ func NewDaemon(version string, logger *log.Logger) *Daemon {
 		logger:      logger,
 		sessions:    make(map[string]*SessionInfo),
 		tmpProfiles: make(map[string]*TempProfile),
+		shutdownCh:  make(chan struct{}),
 	}
 }
 
 // Start initializes and starts both the proxy and web servers.
 func (d *Daemon) Start() error {
 	d.startTime = time.Now()
+
+	// Ensure proxy port is persisted on first run
+	if err := config.EnsureProxyPort(); err != nil {
+		d.logger.Printf("Warning: failed to persist proxy port: %v", err)
+	}
+
 	d.proxyPort = config.GetProxyPort()
 	d.webPort = config.GetWebPort()
 
@@ -91,6 +107,34 @@ func (d *Daemon) Start() error {
 	if err := proxy.InitGlobalLogger(config.ConfigDirPath()); err != nil {
 		d.logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
+
+	// Initialize usage tracker, budget checker, health checker, and load balancer
+	logDB := proxy.GetGlobalLogDB()
+	proxy.InitGlobalUsageTracker(logDB)
+	proxy.InitGlobalBudgetChecker(proxy.GetGlobalUsageTracker())
+	proxy.InitGlobalHealthChecker(logDB)
+	proxy.InitGlobalLoadBalancer(logDB)
+
+	// Initialize context compressor (BETA)
+	proxy.InitGlobalCompressor(nil) // providers will be set per-request
+
+	// Initialize middleware registry (BETA)
+	middleware.InitGlobalRegistry(d.logger)
+	if registry := middleware.GetGlobalRegistry(); registry != nil {
+		if err := registry.LoadFromConfig(); err != nil {
+			d.logger.Printf("Warning: failed to load middleware config: %v", err)
+		}
+	}
+
+	// Initialize agent infrastructure (BETA)
+	agent.InitGlobalObservatory()
+	agent.InitGlobalGuardrails()
+	agent.InitGlobalCoordinator()
+	agent.InitGlobalTaskQueue()
+	agent.InitGlobalRuntime(d.proxyPort)
+
+	// Start health checker if enabled
+	proxy.StartGlobalHealthChecker()
 
 	// Generate web password on first start if not configured
 	if config.GetWebPasswordHash() == "" {
@@ -111,6 +155,7 @@ func (d *Daemon) Start() error {
 
 	// Register daemon API routes on the web server
 	d.webServer.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.webServer.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.webServer.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.webServer.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
 	d.webServer.HandleFunc("/api/v1/profiles/temp", d.handleTempProfiles)
@@ -125,6 +170,12 @@ func (d *Daemon) Start() error {
 
 	// Initialize sync if configured
 	d.initSync()
+
+	// Initialize bot bridge for session tracking
+	proxy.InitBotBridge("")
+
+	// Initialize bot gateway if configured
+	d.initBot()
 
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
@@ -142,6 +193,7 @@ func (d *Daemon) startProxy() error {
 
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.proxyMux.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.proxyMux.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
 	d.proxyMux.HandleFunc("/api/v1/profiles/temp", d.handleTempProfiles)
@@ -154,7 +206,39 @@ func (d *Daemon) startProxy() error {
 	addr := fmt.Sprintf("127.0.0.1:%d", d.proxyPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("port %d is already in use: %w", d.proxyPort, err)
+		// Port is busy — identify who's using it
+		pid, procName, identErr := GetProcessOnPort(d.proxyPort)
+		if identErr != nil {
+			return fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)
+		}
+
+		if IsZenProcess(procName) {
+			// Stale zen daemon — kill it and retry
+			d.logger.Printf("Port %d occupied by stale zen process (PID %d: %s), killing...", d.proxyPort, pid, procName)
+			proc, findErr := os.FindProcess(pid)
+			if findErr != nil {
+				return fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)
+			}
+			if killErr := proc.Signal(syscall.SIGTERM); killErr != nil {
+				return fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)
+			}
+			// Wait briefly for process to die
+			for i := 0; i < 10; i++ {
+				time.Sleep(300 * time.Millisecond)
+				if proc.Signal(syscall.Signal(0)) != nil {
+					break // process is dead
+				}
+			}
+			d.logger.Printf("Daemon restarted (replaced stale process %d)", pid)
+
+			// Retry bind
+			ln, err = net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)
+			}
+		} else {
+			return fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)
+		}
 	}
 
 	d.proxyServer = &http.Server{
@@ -174,6 +258,14 @@ func (d *Daemon) startProxy() error {
 // Shutdown gracefully stops the daemon.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.logger.Println("shutting down zend...")
+
+	// Stop bot gateway
+	if d.botGateway != nil {
+		d.botGateway.Stop()
+	}
+
+	// Stop health checker
+	proxy.StopGlobalHealthChecker()
 
 	// Stop sync auto-pull ticker
 	if d.syncCancel != nil {
@@ -270,12 +362,26 @@ func (d *Daemon) sessionCleanupLoop() {
 func (d *Daemon) onConfigReload() {
 	d.logger.Println("config file changed, reloading...")
 	config.ResetDefaultStore()
+
+	// Protect running ports: revert any port changes to preserve active sessions.
+	// Port changes only take effect on daemon restart.
+	if newProxy := config.GetProxyPort(); newProxy != d.proxyPort {
+		d.logger.Printf("WARNING: proxy_port changed %d→%d in config, reverting (active sessions depend on port %d; restart daemon to apply)", newProxy, d.proxyPort, d.proxyPort)
+		config.SetProxyPort(d.proxyPort)
+	}
+	if newWeb := config.GetWebPort(); newWeb != d.webPort {
+		d.logger.Printf("WARNING: web_port changed %d→%d in config, reverting (restart daemon to apply)", newWeb, d.webPort)
+		config.SetWebPort(d.webPort)
+	}
+
 	// Invalidate proxy cache so new config takes effect
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()
 	}
 	// Reinitialize sync if config changed
 	d.initSync()
+	// Reinitialize bot gateway if config changed
+	d.reinitBot()
 	d.logger.Println("config reloaded successfully")
 }
 
@@ -345,10 +451,11 @@ func (d *Daemon) initSync() {
 					return
 				case <-ticker.C:
 					pullCtx, pullCancel := context.WithTimeout(ctx, 30*time.Second)
-					if err := mgr.Pull(pullCtx); err != nil {
+					err := mgr.Pull(pullCtx)
+					pullCancel()
+					if err != nil {
 						d.logger.Printf("sync auto-pull failed: %v", err)
 					}
-					pullCancel()
 				}
 			}
 		}()
@@ -401,17 +508,172 @@ func (d *Daemon) GetTempProfileProviders(id string) []string {
 // randomID generates a short random hex ID.
 func randomID() string {
 	b := make([]byte, 4)
-	f, _ := os.Open("/dev/urandom")
-	if f != nil {
-		f.Read(b)
+	f, err := os.Open("/dev/urandom")
+	if err == nil {
+		_, readErr := f.Read(b)
 		f.Close()
-	} else {
-		// Fallback: use time-based
-		t := time.Now().UnixNano()
-		b[0] = byte(t >> 24)
-		b[1] = byte(t >> 16)
-		b[2] = byte(t >> 8)
-		b[3] = byte(t)
+		if readErr == nil {
+			return fmt.Sprintf("%x", b)
+		}
 	}
+	// Fallback: use time-based
+	t := time.Now().UnixNano()
+	b[0] = byte(t >> 24)
+	b[1] = byte(t >> 16)
+	b[2] = byte(t >> 8)
+	b[3] = byte(t)
 	return fmt.Sprintf("%x", b)
+}
+
+// reinitBot stops the existing bot gateway (if any) and starts a new one if configured.
+func (d *Daemon) reinitBot() {
+	if d.botGateway != nil {
+		d.botGateway.Stop()
+		d.botGateway = nil
+		d.logger.Println("Bot gateway stopped for reload")
+	}
+	d.initBot()
+}
+
+// initBot initializes the bot gateway if configured.
+func (d *Daemon) initBot() {
+	cfg := config.GetBot()
+	if cfg == nil || !cfg.Enabled {
+		return
+	}
+
+	// Convert config types to bot gateway config
+	gwConfig := &bot.GatewayConfig{
+		Enabled:     cfg.Enabled,
+		SocketPath:  cfg.SocketPath,
+		Profile:     cfg.Profile,
+		Model:       cfg.Model,
+		ProxyPort:   d.proxyPort,
+		Aliases:     cfg.Aliases,
+		HistorySize: cfg.HistorySize,
+	}
+
+	// Convert platform configs
+	if cfg.Platforms != nil {
+		gwConfig.Platforms = bot.PlatformsConfig{}
+
+		if cfg.Platforms.Telegram != nil {
+			gwConfig.Platforms.Telegram = &adapters.TelegramConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.Telegram.Enabled,
+					AllowedUsers: cfg.Platforms.Telegram.AllowedUsers,
+					AllowedChats: cfg.Platforms.Telegram.AllowedChats,
+				},
+				Token: cfg.Platforms.Telegram.Token,
+			}
+		}
+
+		if cfg.Platforms.Discord != nil {
+			gwConfig.Platforms.Discord = &adapters.DiscordConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:         cfg.Platforms.Discord.Enabled,
+					AllowedUsers:    cfg.Platforms.Discord.AllowedUsers,
+					AllowedChannels: cfg.Platforms.Discord.AllowedChannels,
+				},
+				Token:         cfg.Platforms.Discord.Token,
+				AllowedGuilds: cfg.Platforms.Discord.AllowedGuilds,
+			}
+		}
+
+		if cfg.Platforms.Slack != nil {
+			gwConfig.Platforms.Slack = &adapters.SlackConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:         cfg.Platforms.Slack.Enabled,
+					AllowedUsers:    cfg.Platforms.Slack.AllowedUsers,
+					AllowedChannels: cfg.Platforms.Slack.AllowedChannels,
+				},
+				BotToken: cfg.Platforms.Slack.BotToken,
+				AppToken: cfg.Platforms.Slack.AppToken,
+			}
+		}
+
+		if cfg.Platforms.Lark != nil {
+			gwConfig.Platforms.Lark = &adapters.LarkConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.Lark.Enabled,
+					AllowedUsers: cfg.Platforms.Lark.AllowedUsers,
+					AllowedChats: cfg.Platforms.Lark.AllowedChats,
+				},
+				AppID:     cfg.Platforms.Lark.AppID,
+				AppSecret: cfg.Platforms.Lark.AppSecret,
+			}
+		}
+
+		if cfg.Platforms.FBMessenger != nil {
+			gwConfig.Platforms.FBMessenger = &adapters.FBMessengerConfig{
+				AdapterConfig: adapters.AdapterConfig{
+					Enabled:      cfg.Platforms.FBMessenger.Enabled,
+					AllowedUsers: cfg.Platforms.FBMessenger.AllowedUsers,
+				},
+				PageToken:   cfg.Platforms.FBMessenger.PageToken,
+				VerifyToken: cfg.Platforms.FBMessenger.VerifyToken,
+				AppSecret:   cfg.Platforms.FBMessenger.AppSecret,
+			}
+		}
+	}
+
+	// Convert interaction config
+	if cfg.Interaction != nil {
+		gwConfig.Interaction = bot.InteractionConfig{
+			RequireMention:  cfg.Interaction.RequireMention,
+			MentionKeywords: cfg.Interaction.MentionKeywords,
+			DirectMsgMode:   cfg.Interaction.DirectMsgMode,
+			ChannelMode:     cfg.Interaction.ChannelMode,
+		}
+	} else {
+		gwConfig.Interaction = bot.InteractionConfig{
+			RequireMention: true,
+		}
+	}
+
+	// Convert notification config
+	if cfg.Notify != nil && cfg.Notify.DefaultPlatform != "" {
+		gwConfig.Notifications = bot.NotifyConfig{
+			DefaultChat: &struct {
+				Platform bot.Platform `json:"platform"`
+				ChatID   string       `json:"chat_id"`
+			}{
+				Platform: bot.Platform(cfg.Notify.DefaultPlatform),
+				ChatID:   cfg.Notify.DefaultChatID,
+			},
+		}
+		if cfg.Notify.QuietHoursStart != "" {
+			gwConfig.Notifications.QuietHours = &struct {
+				Enabled  bool   `json:"enabled"`
+				Start    string `json:"start"`
+				End      string `json:"end"`
+				Timezone string `json:"timezone"`
+			}{
+				Enabled:  true,
+				Start:    cfg.Notify.QuietHoursStart,
+				End:      cfg.Notify.QuietHoursEnd,
+				Timezone: cfg.Notify.QuietHoursZone,
+			}
+		}
+	}
+
+	d.botGateway = bot.NewGateway(gwConfig, d.logger)
+	if err := d.botGateway.Start(context.Background()); err != nil {
+		d.logger.Printf("Failed to start bot gateway: %v", err)
+		d.botGateway = nil
+		return
+	}
+
+	// Connect bot bridge to gateway for session tracking
+	if bridge := proxy.GetBotBridge(); bridge != nil {
+		d.botGateway.SetSessionProvider(bridge)
+		d.logger.Println("Bot bridge connected to gateway")
+	}
+
+	d.logger.Println("Bot gateway started")
+
+	// Expose gateway to web server for skill management API
+	if d.webServer != nil {
+		d.webServer.SetBotGateway(d.botGateway)
+	}
 }

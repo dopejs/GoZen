@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
     'bindings',
     'multi-cli',
     'web-ui',
+    'bot',
     'config',
     'config-sync',
   ],

@@ -39,14 +39,14 @@ func ReadDaemonPid() (int, error) {
 
 // RemoveDaemonPid removes the zend daemon PID file.
 func RemoveDaemonPid() {
-	os.Remove(DaemonPidPath())
+	_ = os.Remove(DaemonPidPath())
 }
 
 // CleanupLegacyPidFiles removes old web daemon PID files from previous versions.
 func CleanupLegacyPidFiles() {
 	dir := config.ConfigDirPath()
-	// Remove legacy web.pid
-	os.Remove(dir + "/web.pid")
+	// Remove legacy web.pid - ignore errors
+	_ = os.Remove(dir + "/web.pid")
 	// Remove hash-based web-*.pid files
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -54,7 +54,7 @@ func CleanupLegacyPidFiles() {
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "web-") && strings.HasSuffix(e.Name(), ".pid") {
-			os.Remove(dir + "/" + e.Name())
+			_ = os.Remove(dir + "/" + e.Name())
 		}
 	}
 }

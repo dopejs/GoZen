@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/dopejs/gozen/internal/config"
 )
@@ -47,31 +49,63 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientType := r.Header.Get("X-Zen-Client")
 	r.Header.Del("X-Zen-Client")
 
-	pp.Logger.Printf("[route] profile=%s session=%s client=%s path=%s",
-		route.Profile, route.SessionID, clientType, route.Remainder)
+	// Auto-detect client format from request path if not explicitly set
+	clientFormat := detectClientFormat(route.Remainder, clientType)
 
-	// Resolve provider names for this profile
-	providerNames, err := pp.resolveProviderNames(route)
+	pp.Logger.Printf("[route] profile=%s session=%s client=%s format=%s path=%s",
+		route.Profile, route.SessionID, clientType, clientFormat, route.Remainder)
+
+	// Register session with bot bridge (for task list visibility)
+	if bridge := GetBotBridge(); bridge != nil {
+		bridge.MarkSessionBusy(route.CacheKey(), clientType)
+	}
+
+	// Resolve profile config (providers + routing)
+	profileCfg, err := pp.resolveProfileConfig(route)
 	if err != nil {
 		pp.writeError(w, http.StatusNotFound, "profile_not_found", err.Error())
 		return
 	}
 
-	// Build providers from config
-	providers, err := pp.buildProviders(providerNames)
+	// Build default providers from config
+	providers, err := pp.buildProviders(profileCfg.providers)
 	if err != nil {
 		pp.writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		return
 	}
 
-	// Determine client format from the client type header
-	clientFormat := config.ProviderTypeAnthropic
-	if clientType == "codex" {
-		clientFormat = config.ProviderTypeOpenAI
+	// Build routing config if scenario routing is configured
+	var routing *RoutingConfig
+	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
+		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
+		for scenario, sr := range profileCfg.routing {
+			scenarioProviders, err := pp.buildProviders(sr.ProviderNames())
+			if err != nil {
+				pp.Logger.Printf("[routing] warning: failed to build providers for scenario %s: %v", scenario, err)
+				continue
+			}
+			models := make(map[string]string)
+			for _, pr := range sr.Providers {
+				if pr != nil && pr.Model != "" {
+					models[pr.Name] = pr.Model
+				}
+			}
+			scenarioRoutes[scenario] = &ScenarioProviders{
+				Providers: scenarioProviders,
+				Models:    models,
+			}
+		}
+		if len(scenarioRoutes) > 0 {
+			routing = &RoutingConfig{
+				DefaultProviders:     providers,
+				ScenarioRoutes:       scenarioRoutes,
+				LongContextThreshold: profileCfg.longContextThreshold,
+			}
+		}
 	}
 
 	// Get or create a proxy server for this profile
-	srv := pp.getOrCreateProxy(route.Profile, providers, clientFormat)
+	srv := pp.getOrCreateProxy(route.Profile, providers, routing)
 
 	// Rewrite the request URL to strip profile/session prefix
 	r.URL.Path = route.Remainder
@@ -80,8 +114,10 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Override session ID extraction: use the route's cache key instead of body parsing
-	// We do this by setting a context value or header that ServeHTTP can pick up
 	r.Header.Set("X-Zen-Session", route.CacheKey())
+
+	// Pass request format to ProxyServer (detected per-request, not cached)
+	r.Header.Set("X-Zen-Request-Format", clientFormat)
 
 	// Pass client type to ProxyServer for logging
 	if clientType != "" {
@@ -91,8 +127,15 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	srv.ServeHTTP(w, r)
 }
 
-// resolveProviderNames looks up provider names for a profile.
-func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error) {
+// profileInfo holds resolved profile data for proxy construction.
+type profileInfo struct {
+	providers            []string
+	routing              map[config.Scenario]*config.ScenarioRoute
+	longContextThreshold int
+}
+
+// resolveProfileConfig looks up provider names and routing config for a profile.
+func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, error) {
 	if route.IsTempProfile() {
 		if pp.TempProfiles == nil {
 			return nil, fmt.Errorf("temporary profile %q: temp profiles not supported", route.Profile)
@@ -101,7 +144,7 @@ func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error)
 		if len(names) == 0 {
 			return nil, fmt.Errorf("temporary profile %q not found or expired", route.Profile)
 		}
-		return names, nil
+		return &profileInfo{providers: names}, nil
 	}
 
 	// Look up from config
@@ -113,7 +156,11 @@ func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error)
 	if len(pc.Providers) == 0 {
 		return nil, fmt.Errorf("profile %q has no providers configured", route.Profile)
 	}
-	return pc.Providers, nil
+	return &profileInfo{
+		providers:            pc.Providers,
+		routing:              pc.Routing,
+		longContextThreshold: pc.LongContextThreshold,
+	}, nil
 }
 
 // buildProviders converts provider names to Provider objects.
@@ -136,23 +183,52 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 		if model == "" {
 			model = "claude-sonnet-4-5"
 		}
+		reasoningModel := pc.ReasoningModel
+		if reasoningModel == "" {
+			reasoningModel = "claude-sonnet-4-5-thinking"
+		}
+		haikuModel := pc.HaikuModel
+		if haikuModel == "" {
+			haikuModel = "claude-haiku-4-5"
+		}
+		opusModel := pc.OpusModel
+		if opusModel == "" {
+			opusModel = "claude-opus-4-5"
+		}
+		sonnetModel := pc.SonnetModel
+		if sonnetModel == "" {
+			sonnetModel = "claude-sonnet-4-5"
+		}
 
-		providers = append(providers, &Provider{
+		p := &Provider{
 			Name:            name,
 			Type:            pc.GetType(),
 			BaseURL:         baseURL,
 			Token:           pc.AuthToken,
 			Model:           model,
-			ReasoningModel:  pc.ReasoningModel,
-			HaikuModel:      pc.HaikuModel,
-			OpusModel:       pc.OpusModel,
-			SonnetModel:     pc.SonnetModel,
+			ReasoningModel:  reasoningModel,
+			HaikuModel:      haikuModel,
+			OpusModel:       opusModel,
+			SonnetModel:     sonnetModel,
 			EnvVars:         pc.EnvVars,
 			ClaudeEnvVars:   pc.ClaudeEnvVars,
 			CodexEnvVars:    pc.CodexEnvVars,
 			OpenCodeEnvVars: pc.OpenCodeEnvVars,
+			ProxyURL:        pc.ProxyURL,
 			Healthy:         true,
-		})
+		}
+
+		// Create per-provider HTTP client if proxy is configured
+		if pc.ProxyURL != "" {
+			client, err := NewHTTPClientWithProxy(pc.ProxyURL, 10*time.Minute)
+			if err != nil {
+				pp.Logger.Printf("[%s] warning: failed to create proxy client: %v", name, err)
+			} else {
+				p.Client = client
+			}
+		}
+
+		providers = append(providers, p)
 	}
 
 	if len(providers) == 0 {
@@ -162,7 +238,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 }
 
 // getOrCreateProxy returns a cached ProxyServer for the profile, or creates one.
-func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, clientFormat string) *ProxyServer {
+func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig) *ProxyServer {
 	pp.mu.RLock()
 	if srv, ok := pp.cache[profile]; ok {
 		pp.mu.RUnlock()
@@ -178,7 +254,12 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 		return srv
 	}
 
-	srv := NewProxyServerWithClientFormat(providers, clientFormat, pp.Logger)
+	var srv *ProxyServer
+	if routing != nil {
+		srv = NewProxyServerWithRouting(routing, pp.Logger)
+	} else {
+		srv = NewProxyServer(providers, pp.Logger)
+	}
 	pp.cache[profile] = srv
 	return srv
 }
@@ -194,10 +275,33 @@ func (pp *ProfileProxy) InvalidateCache() {
 func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error": map[string]string{
 			"type":    errType,
 			"message": message,
 		},
 	})
+}
+
+// detectClientFormat determines the client API format based on request path and client type.
+// OpenAI clients use /responses or /v1/chat/completions endpoints.
+// Anthropic clients use /v1/messages endpoint.
+func detectClientFormat(path, clientType string) string {
+	// If client type is explicitly set, use it
+	if clientType == "codex" {
+		return config.ProviderTypeOpenAI
+	}
+
+	// Auto-detect from path
+	// OpenAI Responses API: /responses
+	if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
+		return config.ProviderTypeOpenAI
+	}
+	// OpenAI Chat Completions API: /v1/chat/completions
+	if strings.HasSuffix(path, "/chat/completions") {
+		return config.ProviderTypeOpenAI
+	}
+
+	// Default to Anthropic
+	return config.ProviderTypeAnthropic
 }

@@ -13,6 +13,7 @@ type providerResponse struct {
 	Type            string            `json:"type,omitempty"`
 	BaseURL         string            `json:"base_url"`
 	AuthToken       string            `json:"auth_token"`
+	ProxyURL        string            `json:"proxy_url,omitempty"`
 	Model           string            `json:"model,omitempty"`
 	ReasoningModel  string            `json:"reasoning_model,omitempty"`
 	HaikuModel      string            `json:"haiku_model,omitempty"`
@@ -40,6 +41,7 @@ func toProviderResponse(name string, p *config.ProviderConfig, mask bool) provid
 		Type:            p.Type,
 		BaseURL:         p.BaseURL,
 		AuthToken:       token,
+		ProxyURL:        p.ProxyURL,
 		Model:           p.Model,
 		ReasoningModel:  p.ReasoningModel,
 		HaikuModel:      p.HaikuModel,
@@ -104,7 +106,7 @@ func (s *Server) getProvider(w http.ResponseWriter, r *http.Request, name string
 		writeError(w, http.StatusNotFound, "provider not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, toProviderResponse(name, p, true))
+	writeJSON(w, http.StatusOK, toProviderResponse(name, p, false))
 }
 
 func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +133,12 @@ func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {
 	store := config.DefaultStore()
 	if store.GetProvider(req.Name) != nil {
 		writeError(w, http.StatusConflict, "provider already exists")
+		return
+	}
+
+	// Validate proxy URL if provided
+	if err := config.ValidateProxyURL(req.Config.ProxyURL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -196,6 +204,13 @@ func (s *Server) updateProvider(w http.ResponseWriter, r *http.Request, name str
 	existing.ClaudeEnvVars = update.ClaudeEnvVars
 	existing.CodexEnvVars = update.CodexEnvVars
 	existing.OpenCodeEnvVars = update.OpenCodeEnvVars
+
+	// Validate and apply proxy URL
+	if err := config.ValidateProxyURL(update.ProxyURL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	existing.ProxyURL = update.ProxyURL
 
 	if err := store.SetProvider(name, existing); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

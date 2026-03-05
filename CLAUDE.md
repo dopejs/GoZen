@@ -33,6 +33,25 @@ go build ./...
 go test ./...
 ```
 
+## Dev Environment
+
+Dev daemon runs on separate ports to avoid interfering with production:
+
+- **Dev Web UI**: `http://localhost:29840`
+- **Dev Proxy**: `http://localhost:29841`
+- **Dev Config**: `~/.zen-dev/zen.json`
+- **Production ports (19840/19841)**: NEVER touch during development
+
+```sh
+./scripts/dev.sh              # Start dev daemon (builds + starts)
+./scripts/dev.sh stop         # Stop dev daemon
+./scripts/dev.sh restart      # Rebuild and restart dev daemon
+./scripts/dev.sh status       # Check dev daemon status
+./scripts/dev.sh web          # Start frontend dev server (Vite)
+```
+
+After modifying Go code, always run `./scripts/dev.sh restart` to rebuild and restart the dev daemon.
+
 ## Release Process
 
 Push a git tag to trigger GitHub Actions release workflow:
@@ -56,6 +75,24 @@ Do NOT use `gh release create` — the CI pipeline handles release creation auto
 - **No example files**: Do NOT create example config files (*.json, *.yaml, etc.) in the repository root. Examples belong in README.md or `docs/`.
 - **Minimal test files**: Only add tests for new public APIs or complex logic. Do not create excessive test files for simple functions. Prefer table-driven tests in existing *_test.go files.
 - **No unnecessary files**: Before committing, review `git status` and remove any generated, temporary, or example files that should not be in the repository.
+- **TDD for new features**: Use Test-Driven Development (TDD) for new feature development to ensure code quality. Write tests first, then implement the feature to make tests pass.
+
+## Release Checklist
+
+Before tagging a release, complete the following checklist:
+
+1. **Bug check**: Review all code for unresolved bugs. Run `go test ./...` and ensure all tests pass.
+2. **Version number**: Verify `Version` in `cmd/root.go` matches the release tag.
+3. **Website documentation**:
+   - Ensure website contains documentation for the release version
+   - Verify documentation is accurate and complete
+   - Confirm all new features are documented
+   - Remove or update documentation for changed/removed features
+4. **README files**: Update all README files to reflect the latest version:
+   - `README.md` (English)
+   - `docs/README.zh-CN.md` (简体中文)
+   - `docs/README.zh-TW.md` (繁體中文)
+   - `docs/README.es.md` (Español)
 
 ## Config Migration Rules
 
@@ -108,3 +145,35 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - v1.5.2: Allow reinstalling same version in upgrade command
 - v1.5.3: Per-binary PID files to avoid multi-binary conflicts
 - v2.0.0: Rename to GoZen (opencc → zen), config migration from ~/.opencc/ to ~/.zen/, non-blocking version update check
+- v3.0.0: Usage tracking & budget control, provider health monitoring, smart load balancing, webhooks, context compression, middleware pipeline, agent infrastructure
+
+## Active Technologies
+- Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5) (001-provider-proxy)
+- JSON config at `~/.zen/zen.json` (001-provider-proxy)
+- Go 1.21+ + `net`, `net/http`, `internal/config`, `internal/proxy` (002-fix-proxy-port)
+- Go 1.21+ + Bubble Tea (TUI), Cobra (CLI), net/http (proxy/web) (003-skill-intent-recognition)
+- JSON config at `~/.zen/zen.json`, match logs in memory (ring buffer) (003-skill-intent-recognition)
+- Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (SOCKS5), Cobra (CLI) (004-fix-proxy-stability)
+- JSON config at `~/.zen/zen.json` (no schema changes needed) (004-fix-proxy-stability)
+- Go 1.21+ + `net/http`, `encoding/json`, `bufio` (SSE parsing), React + TypeScript (Web UI) (005-provider-model-tag)
+- JSON config at `~/.zen/zen.json` (new `show_provider_tag` boolean field, version 10 → 11) (005-provider-model-tag)
+- Go 1.21+ + `net/http`, `encoding/json`, `sync` (for in-memory buffer), React + TypeScript (Web UI) (006-revert-tag-add-monitoring)
+- In-memory ring buffer (default 1000 requests), no database persistence for MVP (006-revert-tag-add-monitoring)
+- Go 1.21+ + Cobra (CLI), net/http (proxy/web), syscall (file lock, process management), React+TypeScript (Web UI) (007-fix-daemon-stability)
+- JSON config at `~/.zen/zen.json`, SQLite for proxy logs (007-fix-daemon-stability)
+- Go 1.21+ (backend), TypeScript (frontend, React 18) + `net/http`, `net/http/httptest`, `os/exec`, `encoding/json` (Go tests); vitest 4, @testing-library/react, MSW (frontend tests) (008-automated-testing)
+- JSON config at `~/.zen/zen.json` (test isolation via `GOZEN_CONFIG_DIR` and ephemeral ports) (008-automated-testing)
+- Go 1.21+ + Cobra (CLI), Bubble Tea + Lip Gloss (TUI), React + TypeScript + Vite (Web UI) (009-code-scenario-routing)
+- JSON at `~/.zen/zen.json` — no schema migration needed (string-keyed routing map) (009-code-scenario-routing)
+- Go 1.21+ + Cobra (CLI framework), existing `cmd/root.go` permission handling (001-use-command-enhancements)
+- JSON config at `~/.zen/zen.json` (schema version bump required) (001-use-command-enhancements)
+
+## Recent Changes
+- 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering
+  - Removed `show_provider_tag` setting and all tag injection logic from proxy responses
+  - Added RequestMonitor with thread-safe ring buffer (1000 request capacity, LRU eviction)
+  - Added GET /api/v1/monitoring/requests API with filtering (provider, model, status, time range)
+  - Added GET /api/v1/monitoring/requests/:id API for detailed request metadata
+  - Added React-based monitoring page with auto-refresh, filters, and detail modal
+  - Monitoring tracks: timestamp, provider, model, status, duration, tokens, cost, failover chain, errors
+  - Test coverage: 81.6% (proxy), 85.6% (config), 80.3% (web)

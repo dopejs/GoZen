@@ -18,7 +18,7 @@ const (
 )
 
 // DetectScenario examines a parsed request body and returns the matching scenario.
-// Priority: webSearch > think > image > longContext > background > default.
+// Priority: webSearch > think > image > longContext > code > background > default.
 func DetectScenario(body map[string]interface{}, threshold int, sessionID string) config.Scenario {
 	if hasWebSearchTool(body) {
 		return config.ScenarioWebSearch
@@ -31,6 +31,9 @@ func DetectScenario(body map[string]interface{}, threshold int, sessionID string
 	}
 	if isLongContext(body, threshold, sessionID) {
 		return config.ScenarioLongContext
+	}
+	if !isBackgroundRequest(body) {
+		return config.ScenarioCode
 	}
 	if isBackgroundRequest(body) {
 		return config.ScenarioBackground

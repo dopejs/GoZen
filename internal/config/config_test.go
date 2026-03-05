@@ -47,6 +47,328 @@ func TestConfigVersion(t *testing.T) {
 	}
 }
 
+// T004: Test AutoPermissionConfig type validation
+func TestAutoPermissionConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  AutoPermissionConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config with all fields",
+			config: AutoPermissionConfig{
+				Enabled: true,
+				Mode:    "bypassPermissions",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config disabled",
+			config: AutoPermissionConfig{
+				Enabled: false,
+				Mode:    "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with empty mode when disabled",
+			config: AutoPermissionConfig{
+				Enabled: false,
+				Mode:    "acceptEdits",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test JSON marshaling
+			data, err := json.Marshal(tt.config)
+			if err != nil {
+				t.Fatalf("failed to marshal: %v", err)
+			}
+
+			// Test JSON unmarshaling
+			var decoded AutoPermissionConfig
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
+			}
+
+			if decoded.Enabled != tt.config.Enabled {
+				t.Errorf("Enabled = %v, want %v", decoded.Enabled, tt.config.Enabled)
+			}
+			if decoded.Mode != tt.config.Mode {
+				t.Errorf("Mode = %q, want %q", decoded.Mode, tt.config.Mode)
+			}
+		})
+	}
+}
+
+// T005: Test config version migration (v11→v12)
+func TestConfigMigrationV11ToV12(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v11 config (without auto-permission fields)
+	v11Config := `{
+  "version": 11,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v11Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config (should trigger migration)
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Verify version was upgraded
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Version != 12 {
+		t.Errorf("version after migration = %d, want 12", cfg.Version)
+	}
+
+	// Verify new fields exist with default values (nil/empty)
+	if cfg.ClaudeAutoPermission != nil {
+		t.Errorf("claude_auto_permission should be nil after migration, got %+v", cfg.ClaudeAutoPermission)
+	}
+	if cfg.CodexAutoPermission != nil {
+		t.Errorf("codex_auto_permission should be nil after migration, got %+v", cfg.CodexAutoPermission)
+	}
+	if cfg.OpenCodeAutoPermission != nil {
+		t.Errorf("opencode_auto_permission should be nil after migration, got %+v", cfg.OpenCodeAutoPermission)
+	}
+}
+
+// T006: Test backward compatibility (old configs without new fields)
+func TestBackwardCompatibility(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write old config without auto-permission fields
+	oldConfig := `{
+  "version": 11,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(oldConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and verify it works
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load old config: %v", err)
+	}
+
+	// Verify provider still accessible
+	provider := store.GetProvider("test")
+	if provider == nil {
+		t.Fatal("provider 'test' not found after loading old config")
+	}
+	if provider.BaseURL != "https://api.test.com" {
+		t.Errorf("provider base_url = %q, want %q", provider.BaseURL, "https://api.test.com")
+	}
+}
+
+// T007: Test forward compatibility (new configs read by old code)
+func TestForwardCompatibility(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v12 config with new fields
+	v12Config := `{
+  "version": 12,
+  "claude_auto_permission": {
+    "enabled": true,
+    "mode": "bypassPermissions"
+  },
+  "codex_auto_permission": {
+    "enabled": true,
+    "mode": "never"
+  },
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v12Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load v12 config: %v", err)
+	}
+
+	// Verify new fields are loaded
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ClaudeAutoPermission == nil {
+		t.Fatal("claude_auto_permission should not be nil")
+	}
+	if !cfg.ClaudeAutoPermission.Enabled {
+		t.Error("claude_auto_permission.enabled should be true")
+	}
+	if cfg.ClaudeAutoPermission.Mode != "bypassPermissions" {
+		t.Errorf("claude_auto_permission.mode = %q, want %q", cfg.ClaudeAutoPermission.Mode, "bypassPermissions")
+	}
+
+	if cfg.CodexAutoPermission == nil {
+		t.Fatal("codex_auto_permission should not be nil")
+	}
+	if !cfg.CodexAutoPermission.Enabled {
+		t.Error("codex_auto_permission.enabled should be true")
+	}
+	if cfg.CodexAutoPermission.Mode != "never" {
+		t.Errorf("codex_auto_permission.mode = %q, want %q", cfg.CodexAutoPermission.Mode, "never")
+	}
+}
+
+// T008: Test config round-trip marshaling
+func TestConfigRoundTripMarshaling(t *testing.T) {
+	original := OpenCCConfig{
+		Version:        12,
+		DefaultProfile: "default",
+		DefaultClient:  "claude",
+		ClaudeAutoPermission: &AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "bypassPermissions",
+		},
+		CodexAutoPermission: &AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "never",
+		},
+		OpenCodeAutoPermission: &AutoPermissionConfig{
+			Enabled: false,
+			Mode:    "",
+		},
+		Providers: map[string]*ProviderConfig{
+			"test": {
+				BaseURL:   "https://api.test.com",
+				AuthToken: "test-token",
+			},
+		},
+		Profiles: map[string]*ProfileConfig{
+			"default": {
+				Providers: []string{"test"},
+			},
+		},
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	// Unmarshal back
+	var decoded OpenCCConfig
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Verify all fields match
+	if decoded.Version != original.Version {
+		t.Errorf("Version = %d, want %d", decoded.Version, original.Version)
+	}
+	if decoded.DefaultProfile != original.DefaultProfile {
+		t.Errorf("DefaultProfile = %q, want %q", decoded.DefaultProfile, original.DefaultProfile)
+	}
+	if decoded.DefaultClient != original.DefaultClient {
+		t.Errorf("DefaultClient = %q, want %q", decoded.DefaultClient, original.DefaultClient)
+	}
+
+	// Verify auto-permission configs
+	if decoded.ClaudeAutoPermission == nil {
+		t.Fatal("ClaudeAutoPermission is nil after round-trip")
+	}
+	if decoded.ClaudeAutoPermission.Enabled != original.ClaudeAutoPermission.Enabled {
+		t.Errorf("ClaudeAutoPermission.Enabled = %v, want %v", decoded.ClaudeAutoPermission.Enabled, original.ClaudeAutoPermission.Enabled)
+	}
+	if decoded.ClaudeAutoPermission.Mode != original.ClaudeAutoPermission.Mode {
+		t.Errorf("ClaudeAutoPermission.Mode = %q, want %q", decoded.ClaudeAutoPermission.Mode, original.ClaudeAutoPermission.Mode)
+	}
+
+	if decoded.CodexAutoPermission == nil {
+		t.Fatal("CodexAutoPermission is nil after round-trip")
+	}
+	if decoded.CodexAutoPermission.Enabled != original.CodexAutoPermission.Enabled {
+		t.Errorf("CodexAutoPermission.Enabled = %v, want %v", decoded.CodexAutoPermission.Enabled, original.CodexAutoPermission.Enabled)
+	}
+	if decoded.CodexAutoPermission.Mode != original.CodexAutoPermission.Mode {
+		t.Errorf("CodexAutoPermission.Mode = %q, want %q", decoded.CodexAutoPermission.Mode, original.CodexAutoPermission.Mode)
+	}
+
+	if decoded.OpenCodeAutoPermission == nil {
+		t.Fatal("OpenCodeAutoPermission is nil after round-trip")
+	}
+	if decoded.OpenCodeAutoPermission.Enabled != original.OpenCodeAutoPermission.Enabled {
+		t.Errorf("OpenCodeAutoPermission.Enabled = %v, want %v", decoded.OpenCodeAutoPermission.Enabled, original.OpenCodeAutoPermission.Enabled)
+	}
+}
+
 func TestConfigVersionOldFormat(t *testing.T) {
 	home := setTestHome(t)
 	configPath := filepath.Join(home, ConfigDir, ConfigFile)
@@ -1462,4 +1784,483 @@ func TestProviderConfigGetEnvVarsForClient(t *testing.T) {
 	if vars["SHARED"] != "1" {
 		t.Errorf("fallback vars = %v", vars)
 	}
+}
+
+func TestExportProxyToEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		proxyURL string
+		wantVars map[string]string // expected env vars to be set
+		noVars   []string          // env vars that should NOT be set
+	}{
+		{
+			name:     "http sets HTTP_PROXY and HTTPS_PROXY",
+			proxyURL: "http://proxy:8080",
+			wantVars: map[string]string{
+				"HTTP_PROXY":  "http://proxy:8080",
+				"HTTPS_PROXY": "http://proxy:8080",
+			},
+			noVars: []string{"ALL_PROXY"},
+		},
+		{
+			name:     "https sets HTTP_PROXY and HTTPS_PROXY",
+			proxyURL: "https://proxy:8443",
+			wantVars: map[string]string{
+				"HTTP_PROXY":  "https://proxy:8443",
+				"HTTPS_PROXY": "https://proxy:8443",
+			},
+			noVars: []string{"ALL_PROXY"},
+		},
+		{
+			name:     "socks5 sets ALL_PROXY",
+			proxyURL: "socks5://proxy:1080",
+			wantVars: map[string]string{
+				"ALL_PROXY": "socks5://proxy:1080",
+			},
+			noVars: []string{"HTTP_PROXY", "HTTPS_PROXY"},
+		},
+		{
+			name:     "empty does not set any proxy vars",
+			proxyURL: "",
+			noVars:   []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear all proxy env vars before each test
+			os.Unsetenv("HTTP_PROXY")
+			os.Unsetenv("HTTPS_PROXY")
+			os.Unsetenv("ALL_PROXY")
+
+			p := &ProviderConfig{ProxyURL: tt.proxyURL}
+			p.ExportProxyToEnv()
+
+			for k, want := range tt.wantVars {
+				got := os.Getenv(k)
+				if got != want {
+					t.Errorf("%s = %q, want %q", k, got, want)
+				}
+			}
+			for _, k := range tt.noVars {
+				if got := os.Getenv(k); got != "" {
+					t.Errorf("%s should not be set, got %q", k, got)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateProxyURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+		errMsg  string
+	}{
+		{"empty string", "", false, ""},
+		{"valid http", "http://proxy:8080", false, ""},
+		{"valid https", "https://proxy:8443", false, ""},
+		{"valid socks5", "socks5://proxy:1080", false, ""},
+		{"http with IP", "http://192.168.1.1:8080", false, ""},
+		{"http with credentials", "http://user:pass@proxy:8080", false, ""},
+		{"unsupported scheme ftp", "ftp://proxy:21", true, "unsupported scheme"},
+		{"malformed URL", "://bad", true, "invalid URL"},
+		{"missing host", "http://", true, "missing host"},
+		{"no scheme", "proxy:8080", true, "unsupported scheme"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateProxyURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateProxyURL(%q) error = %v, wantErr %v", tt.url, err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" {
+				if err == nil || !contains(err.Error(), tt.errMsg) {
+					t.Errorf("ValidateProxyURL(%q) error = %v, want error containing %q", tt.url, err, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
+func TestConfigMigrationProxyURL(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v8 config without proxy_url
+	v8Config := `{
+		"version": 8,
+		"providers": {
+			"test": {
+				"base_url": "https://api.test.com",
+				"auth_token": "tok"
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(v8Config), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	store := DefaultStore()
+	names := store.ProviderNames()
+	if len(names) == 0 {
+		t.Fatal("expected at least one provider")
+	}
+
+	pc := store.GetProvider("test")
+	if pc == nil {
+		t.Fatal("expected provider 'test'")
+	}
+	if pc.ProxyURL != "" {
+		t.Errorf("expected empty ProxyURL for v8 config, got %q", pc.ProxyURL)
+	}
+
+	// Verify round-trip: set proxy_url and reload
+	pc.ProxyURL = "socks5://proxy:1080"
+	store.SetProvider("test", pc)
+
+	ResetDefaultStore()
+	store = DefaultStore()
+	pc2 := store.GetProvider("test")
+	if pc2 == nil {
+		t.Fatal("expected provider 'test' after reload")
+	}
+	if pc2.ProxyURL != "socks5://proxy:1080" {
+		t.Errorf("ProxyURL round-trip failed: got %q, want %q", pc2.ProxyURL, "socks5://proxy:1080")
+	}
+}
+
+func TestMaskProxyURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"empty string", "", ""},
+		{"no credentials", "http://proxy:8080", "http://proxy:8080"},
+		{"with credentials", "http://user:pass@proxy:8080", "http://user:xxxxx@proxy:8080"},
+		{"socks5 no credentials", "socks5://proxy:1080", "socks5://proxy:1080"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MaskProxyURL(tt.url)
+			if got != tt.want {
+				t.Errorf("MaskProxyURL(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- Skills Config Migration Tests (v9 → v10) ---
+
+func TestSkillsConfigMigrationFromV9(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config with bot but no skills field
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": { "providers": ["test"] }
+  },
+  "bot": {
+    "enabled": true,
+    "profile": "default",
+    "model": "claude-3-haiku-20240307"
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// Should auto-upgrade to v10
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+
+	// Bot config should be preserved
+	bot := store.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be preserved after migration")
+	}
+	if !bot.Enabled {
+		t.Error("bot.enabled should be true")
+	}
+	if bot.Profile != "default" {
+		t.Errorf("bot.profile = %q, want %q", bot.Profile, "default")
+	}
+	if bot.Model != "claude-3-haiku-20240307" {
+		t.Errorf("bot.model = %q, want %q", bot.Model, "claude-3-haiku-20240307")
+	}
+
+	// Provider should be preserved
+	p := store.GetProvider("test")
+	if p == nil {
+		t.Fatal("provider should be preserved after migration")
+	}
+	if p.BaseURL != "https://api.test.com" {
+		t.Errorf("base_url = %q, want %q", p.BaseURL, "https://api.test.com")
+	}
+}
+
+func TestSkillsConfigMigrationNoBotField(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config without bot field at all
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": { "providers": ["test"] }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// Should upgrade without error
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+
+	// Bot should be nil (not created from nothing)
+	bot := store.GetBot()
+	if bot != nil {
+		t.Error("bot config should be nil when not present in v9 config")
+	}
+}
+
+func TestSkillsConfigRoundTrip(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write config with skills
+	store := DefaultStore()
+	store.SetBot(&BotConfig{
+		Enabled: true,
+		Profile: "default",
+		Skills: &SkillsConfig{
+			Enabled:             true,
+			ConfidenceThreshold: 0.8,
+			LLMFallback:         true,
+			LogBufferSize:       500,
+			Custom: []SkillDefinition{
+				{
+					Name:        "code-review",
+					Description: "请求代码审查",
+					Intent:      "send_task",
+					Priority:    50,
+					Keywords: map[string][]string{
+						"en": {"review", "code review"},
+						"zh": {"审查", "代码审查"},
+					},
+					Synonyms: map[string]string{"审核": "审查"},
+					Examples: []string{"帮我审查一下这段代码"},
+				},
+			},
+		},
+	})
+
+	// Re-read and verify round-trip
+	ResetDefaultStore()
+	store2 := DefaultStore()
+	bot := store2.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be loaded")
+	}
+	if bot.Skills == nil {
+		t.Fatal("skills config should be loaded")
+	}
+	if bot.Skills.ConfidenceThreshold != 0.8 {
+		t.Errorf("confidence_threshold = %f, want 0.8", bot.Skills.ConfidenceThreshold)
+	}
+	if bot.Skills.LogBufferSize != 500 {
+		t.Errorf("log_buffer_size = %d, want 500", bot.Skills.LogBufferSize)
+	}
+	if len(bot.Skills.Custom) != 1 {
+		t.Fatalf("custom skills count = %d, want 1", len(bot.Skills.Custom))
+	}
+
+	skill := bot.Skills.Custom[0]
+	if skill.Name != "code-review" {
+		t.Errorf("skill name = %q, want %q", skill.Name, "code-review")
+	}
+	if skill.Intent != "send_task" {
+		t.Errorf("skill intent = %q, want %q", skill.Intent, "send_task")
+	}
+	if skill.Priority != 50 {
+		t.Errorf("skill priority = %d, want 50", skill.Priority)
+	}
+	if len(skill.Keywords["en"]) != 2 {
+		t.Errorf("en keywords count = %d, want 2", len(skill.Keywords["en"]))
+	}
+	if len(skill.Keywords["zh"]) != 2 {
+		t.Errorf("zh keywords count = %d, want 2", len(skill.Keywords["zh"]))
+	}
+	if skill.Synonyms["审核"] != "审查" {
+		t.Errorf("synonym 审核 = %q, want 审查", skill.Synonyms["审核"])
+	}
+}
+
+func TestSkillsConfigFieldPreservation(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// v9 config with bot containing all existing fields
+	v9Config := `{
+  "version": 9,
+  "providers": {
+    "p1": {"base_url": "https://a.com", "auth_token": "t1"}
+  },
+  "profiles": {
+    "default": {"providers": ["p1"]}
+  },
+  "bot": {
+    "enabled": true,
+    "profile": "default",
+    "model": "claude-3-haiku-20240307",
+    "history_size": 30,
+    "interaction": {
+      "require_mention": true,
+      "mention_keywords": ["@zen", "/zen"]
+    },
+    "aliases": {"myproj": "/home/user/myproj"},
+    "notify": {
+      "default_platform": "telegram",
+      "default_chat_id": "12345"
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v9Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+	bot := store.GetBot()
+	if bot == nil {
+		t.Fatal("bot config should be loaded")
+	}
+
+	// All existing fields should be preserved
+	if bot.HistorySize != 30 {
+		t.Errorf("history_size = %d, want 30", bot.HistorySize)
+	}
+	if bot.Interaction == nil {
+		t.Fatal("interaction should be preserved")
+	}
+	if !bot.Interaction.RequireMention {
+		t.Error("require_mention should be true")
+	}
+	if bot.Aliases["myproj"] != "/home/user/myproj" {
+		t.Errorf("alias myproj = %q, want /home/user/myproj", bot.Aliases["myproj"])
+	}
+	if bot.Notify == nil {
+		t.Fatal("notify should be preserved")
+	}
+	if bot.Notify.DefaultPlatform != "telegram" {
+		t.Errorf("default_platform = %q, want telegram", bot.Notify.DefaultPlatform)
+	}
+	if bot.Notify.DefaultChatID != "12345" {
+		t.Errorf("default_chat_id = %q, want 12345", bot.Notify.DefaultChatID)
+	}
+}
+
+func TestConfig_DeprecatedFieldIgnored(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write config with deprecated field
+	deprecatedConfig := `{
+		"version": 11,
+		"show_provider_tag": true,
+		"providers": {
+			"test-provider": {
+				"base_url": "https://api.test.com",
+				"auth_token": "test-token"
+			}
+		},
+		"profiles": {}
+	}`
+
+	if err := os.WriteFile(configPath, []byte(deprecatedConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config - should not error
+	store := DefaultStore()
+	providers := store.ProviderNames()
+
+	// Verify provider was loaded correctly
+	if len(providers) != 1 {
+		t.Errorf("expected 1 provider, got %d", len(providers))
+	}
+
+	if p := store.GetProvider("test-provider"); p == nil {
+		t.Error("test-provider not found")
+	} else if p.BaseURL != "https://api.test.com" {
+		t.Errorf("provider BaseURL = %s, want https://api.test.com", p.BaseURL)
+	}
+
+	// Verify deprecated field is ignored (no error, field not accessible)
+	// The field should be parsed but not stored or used
 }

@@ -1,0 +1,489 @@
+package transform
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+)
+
+// StreamTransformer transforms SSE streams between API formats.
+type StreamTransformer struct {
+	ClientFormat   string
+	ProviderFormat string
+	MessageID      string
+	Model          string
+}
+
+// TransformSSEStream transforms SSE streams between API formats.
+// Returns a reader that produces the appropriate SSE events.
+func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
+	if st.ClientFormat == st.ProviderFormat {
+		return r
+	}
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+		if st.ProviderFormat == "anthropic" && st.ClientFormat == "openai" {
+			st.transformAnthropicToOpenAI(r, pw)
+		} else if st.ProviderFormat == "openai" && st.ClientFormat == "anthropic" {
+			st.transformOpenAIToAnthropic(r, pw)
+		}
+	}()
+
+	return pr
+}
+
+// transformAnthropicToOpenAI converts Anthropic SSE events to OpenAI Responses API format.
+func (st *StreamTransformer) transformAnthropicToOpenAI(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	// Increase buffer size for large events
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+	created := time.Now().Unix()
+
+	// Track state for building response
+	var outputIndex int = 0
+	var contentIndex int = 0
+	var itemID string = "item_0"
+	var fullText strings.Builder
+	var inputTokens, outputTokens int
+
+	// Send response.created first
+	responseCreated := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Parse SSE format
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		// Empty line = end of event
+		if line == "" && dataBuffer.Len() > 0 {
+			data := dataBuffer.String()
+			dataBuffer.Reset()
+
+			// Transform based on event type
+			events := st.transformEventToResponses(currentEvent, data, created, &responseCreated,
+				&outputIndex, &contentIndex, itemID, &fullText, &inputTokens, &outputTokens)
+			for _, event := range events {
+				fmt.Fprint(w, event)
+			}
+			currentEvent = ""
+		}
+	}
+
+	// Send response.completed
+	st.writeResponseCompleted(w, created, fullText.String(), inputTokens, outputTokens)
+}
+
+// transformEventToResponses transforms a single Anthropic event to OpenAI Responses API format.
+func (st *StreamTransformer) transformEventToResponses(eventType, data string, created int64,
+	responseCreated *bool, outputIndex, contentIndex *int, itemID string,
+	fullText *strings.Builder, inputTokens, outputTokens *int) []string {
+
+	var events []string
+	var eventData map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+		return events
+	}
+
+	switch eventType {
+	case "message_start":
+		// Extract message info
+		if msg, ok := eventData["message"].(map[string]interface{}); ok {
+			if id, ok := msg["id"].(string); ok {
+				st.MessageID = id
+			}
+			if model, ok := msg["model"].(string); ok {
+				st.Model = model
+			}
+			// Extract usage if present
+			if usage, ok := msg["usage"].(map[string]interface{}); ok {
+				if it, ok := usage["input_tokens"].(float64); ok {
+					*inputTokens = int(it)
+				}
+			}
+		}
+
+		// Send response.created
+		if !*responseCreated {
+			events = append(events, st.createResponseCreated(created))
+			// Send response.in_progress
+			events = append(events, st.createResponseInProgress(created))
+			// Send response.output_item.added
+			events = append(events, st.createOutputItemAdded(created, *outputIndex, itemID))
+			// Send response.content_part.added
+			events = append(events, st.createContentPartAdded(created, *outputIndex, itemID, *contentIndex))
+			*responseCreated = true
+		}
+
+	case "content_block_delta":
+		// Extract text delta
+		if delta, ok := eventData["delta"].(map[string]interface{}); ok {
+			if deltaType, ok := delta["type"].(string); ok && deltaType == "text_delta" {
+				if text, ok := delta["text"].(string); ok {
+					fullText.WriteString(text)
+					events = append(events, st.createOutputTextDelta(created, *outputIndex, itemID, *contentIndex, text))
+				}
+			}
+		}
+
+	case "message_delta":
+		// Extract usage and stop reason
+		if usage, ok := eventData["usage"].(map[string]interface{}); ok {
+			if ot, ok := usage["output_tokens"].(float64); ok {
+				*outputTokens = int(ot)
+			}
+		}
+		// Send content_part.done and output_item.done
+		events = append(events, st.createContentPartDone(created, *outputIndex, itemID, *contentIndex, fullText.String()))
+		events = append(events, st.createOutputItemDone(created, *outputIndex, itemID, fullText.String()))
+
+	case "message_stop":
+		// Final message - response.completed will be sent after loop
+	}
+
+	return events
+}
+
+// Helper functions to create OpenAI Responses API SSE events
+
+func (st *StreamTransformer) createResponseCreated(created int64) string {
+	event := map[string]interface{}{
+		"type":       "response.created",
+		"response": map[string]interface{}{
+			"id":         st.MessageID,
+			"object":     "response",
+			"created_at": created,
+			"status":     "in_progress",
+			"model":      st.Model,
+			"output":     []interface{}{},
+		},
+	}
+	return formatSSEEvent("response.created", event)
+}
+
+func (st *StreamTransformer) createResponseInProgress(created int64) string {
+	event := map[string]interface{}{
+		"type":       "response.in_progress",
+		"response": map[string]interface{}{
+			"id":         st.MessageID,
+			"object":     "response",
+			"created_at": created,
+			"status":     "in_progress",
+			"model":      st.Model,
+			"output":     []interface{}{},
+		},
+	}
+	return formatSSEEvent("response.in_progress", event)
+}
+
+func (st *StreamTransformer) createOutputItemAdded(created int64, outputIndex int, itemID string) string {
+	event := map[string]interface{}{
+		"type":         "response.output_item.added",
+		"output_index": outputIndex,
+		"item": map[string]interface{}{
+			"id":      itemID,
+			"type":    "message",
+			"role":    "assistant",
+			"content": []interface{}{},
+		},
+	}
+	return formatSSEEvent("response.output_item.added", event)
+}
+
+func (st *StreamTransformer) createContentPartAdded(created int64, outputIndex int, itemID string, contentIndex int) string {
+	event := map[string]interface{}{
+		"type":          "response.content_part.added",
+		"item_id":       itemID,
+		"output_index":  outputIndex,
+		"content_index": contentIndex,
+		"part": map[string]interface{}{
+			"type": "output_text",
+			"text": "",
+		},
+	}
+	return formatSSEEvent("response.content_part.added", event)
+}
+
+func (st *StreamTransformer) createOutputTextDelta(created int64, outputIndex int, itemID string, contentIndex int, text string) string {
+	event := map[string]interface{}{
+		"type":          "response.output_text.delta",
+		"item_id":       itemID,
+		"output_index":  outputIndex,
+		"content_index": contentIndex,
+		"delta":         text,
+	}
+	return formatSSEEvent("response.output_text.delta", event)
+}
+
+func (st *StreamTransformer) createContentPartDone(created int64, outputIndex int, itemID string, contentIndex int, text string) string {
+	event := map[string]interface{}{
+		"type":          "response.content_part.done",
+		"item_id":       itemID,
+		"output_index":  outputIndex,
+		"content_index": contentIndex,
+		"part": map[string]interface{}{
+			"type": "output_text",
+			"text": text,
+		},
+	}
+	return formatSSEEvent("response.content_part.done", event)
+}
+
+func (st *StreamTransformer) createOutputItemDone(created int64, outputIndex int, itemID string, text string) string {
+	event := map[string]interface{}{
+		"type":         "response.output_item.done",
+		"output_index": outputIndex,
+		"item": map[string]interface{}{
+			"id":   itemID,
+			"type": "message",
+			"role": "assistant",
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "output_text",
+					"text": text,
+				},
+			},
+		},
+	}
+	return formatSSEEvent("response.output_item.done", event)
+}
+
+func (st *StreamTransformer) writeResponseCompleted(w io.Writer, created int64, text string, inputTokens, outputTokens int) {
+	event := map[string]interface{}{
+		"type": "response.completed",
+		"response": map[string]interface{}{
+			"id":         st.MessageID,
+			"object":     "response",
+			"created_at": created,
+			"status":     "completed",
+			"model":      st.Model,
+			"output": []interface{}{
+				map[string]interface{}{
+					"id":   "item_0",
+					"type": "message",
+					"role": "assistant",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type": "output_text",
+							"text": text,
+						},
+					},
+				},
+			},
+			"usage": map[string]interface{}{
+				"input_tokens":  inputTokens,
+				"output_tokens": outputTokens,
+				"total_tokens":  inputTokens + outputTokens,
+			},
+		},
+	}
+	fmt.Fprint(w, formatSSEEvent("response.completed", event))
+}
+
+// formatSSEEvent formats a map as an SSE event with event type and JSON data.
+func formatSSEEvent(eventType string, data map[string]interface{}) string {
+	jsonData, _ := json.Marshal(data)
+	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonData))
+}
+
+// transformOpenAIToAnthropic converts OpenAI Chat Completions SSE events to Anthropic Messages API format.
+func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var messageStarted bool
+	var contentBlockStarted bool
+	var inputTokens, outputTokens int
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
+
+		// Parse SSE data line
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data: ")
+
+		// Handle [DONE] signal
+		if data == "[DONE]" {
+			// Send content_block_stop if we started a content block
+			if contentBlockStarted {
+				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+					"type":  "content_block_stop",
+					"index": 0,
+				}))
+			}
+
+			// Send message_delta with stop_reason
+			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+				"type": "message_delta",
+				"delta": map[string]interface{}{
+					"stop_reason":   "end_turn",
+					"stop_sequence": nil,
+				},
+				"usage": map[string]interface{}{
+					"output_tokens": outputTokens,
+				},
+			}))
+
+			// Send message_stop
+			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+				"type": "message_stop",
+			}))
+			continue
+		}
+
+		// Parse JSON data
+		var chunk map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		// Extract message ID and model on first chunk
+		if !messageStarted {
+			if id, ok := chunk["id"].(string); ok {
+				st.MessageID = id
+			}
+			if model, ok := chunk["model"].(string); ok {
+				st.Model = model
+			}
+
+			// Send message_start
+			fmt.Fprint(w, formatSSEEvent("message_start", map[string]interface{}{
+				"type": "message_start",
+				"message": map[string]interface{}{
+					"id":            st.MessageID,
+					"type":          "message",
+					"role":          "assistant",
+					"content":       []interface{}{},
+					"model":         st.Model,
+					"stop_reason":   nil,
+					"stop_sequence": nil,
+					"usage": map[string]interface{}{
+						"input_tokens":  inputTokens,
+						"output_tokens": 0,
+					},
+				},
+			}))
+			messageStarted = true
+		}
+
+		// Extract usage if present
+		if usage, ok := chunk["usage"].(map[string]interface{}); ok {
+			if pt, ok := usage["prompt_tokens"].(float64); ok {
+				inputTokens = int(pt)
+			}
+			if ct, ok := usage["completion_tokens"].(float64); ok {
+				outputTokens = int(ct)
+			}
+		}
+
+		// Process choices
+		choices, ok := chunk["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check for content delta
+		if content, ok := delta["content"].(string); ok && content != "" {
+			// Start content block if not started
+			if !contentBlockStarted {
+				fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
+					"type":  "content_block_start",
+					"index": 0,
+					"content_block": map[string]interface{}{
+						"type": "text",
+						"text": "",
+					},
+				}))
+				contentBlockStarted = true
+			}
+
+			// Send content_block_delta
+			fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
+				"type":  "content_block_delta",
+				"index": 0,
+				"delta": map[string]interface{}{
+					"type": "text_delta",
+					"text": content,
+				},
+			}))
+		}
+
+		// Check for finish_reason
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			// Send content_block_stop if we started a content block
+			if contentBlockStarted {
+				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+					"type":  "content_block_stop",
+					"index": 0,
+				}))
+				contentBlockStarted = false
+			}
+
+			// Map finish_reason to stop_reason
+			stopReason := "end_turn"
+			switch finishReason {
+			case "length":
+				stopReason = "max_tokens"
+			case "tool_calls":
+				stopReason = "tool_use"
+			case "content_filter":
+				stopReason = "end_turn"
+			}
+
+			// Send message_delta with stop_reason
+			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+				"type": "message_delta",
+				"delta": map[string]interface{}{
+					"stop_reason":   stopReason,
+					"stop_sequence": nil,
+				},
+				"usage": map[string]interface{}{
+					"output_tokens": outputTokens,
+				},
+			}))
+
+			// Send message_stop
+			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+				"type": "message_stop",
+			}))
+		}
+	}
+}

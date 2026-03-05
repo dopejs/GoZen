@@ -1,0 +1,26 @@
+{
+  "docs": [
+    "getting-started",
+    "providers",
+    "profiles",
+    "routing",
+    "bindings",
+    "multi-cli",
+    "web-ui",
+    "config",
+    "config-sync",
+    {
+      "type": "category",
+      "label": "v3.0 Features",
+      "items": [
+        "usage-tracking",
+        "health-monitoring",
+        "load-balancing",
+        "webhooks",
+        "compression",
+        "middleware",
+        "agents"
+      ]
+    }
+  ]
+}

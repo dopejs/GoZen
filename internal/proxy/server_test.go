@@ -1762,42 +1762,14 @@ func TestEnvVarsNilMapNoHeaders(t *testing.T) {
 	}
 }
 
-// TestNewProxyServerWithClientFormat tests creating a proxy with specific client format.
-func TestNewProxyServerWithClientFormat(t *testing.T) {
+// TestStartProxyBasic tests that StartProxy starts a server.
+func TestStartProxyBasic(t *testing.T) {
 	u, _ := url.Parse("https://api.example.com")
 	providers := []*Provider{
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	tests := []struct {
-		name         string
-		clientFormat string
-		wantFormat   string
-	}{
-		{"anthropic", "anthropic", "anthropic"},
-		{"openai", "openai", "openai"},
-		{"empty defaults to anthropic", "", "anthropic"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := NewProxyServerWithClientFormat(providers, tt.clientFormat, discardLogger())
-			if srv.ClientFormat != tt.wantFormat {
-				t.Errorf("ClientFormat = %q, want %q", srv.ClientFormat, tt.wantFormat)
-			}
-		})
-	}
-}
-
-// TestStartProxyWithClientFormat tests that StartProxy respects client format.
-func TestStartProxyWithClientFormat(t *testing.T) {
-	u, _ := url.Parse("https://api.example.com")
-	providers := []*Provider{
-		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
-	}
-
-	// Test with openai client format
-	port, err := StartProxy(providers, "openai", "127.0.0.1:0", discardLogger())
+	port, err := StartProxy(providers, "", "127.0.0.1:0", discardLogger())
 	if err != nil {
 		t.Fatalf("StartProxy() error: %v", err)
 	}
@@ -1806,8 +1778,8 @@ func TestStartProxyWithClientFormat(t *testing.T) {
 	}
 }
 
-// TestStartProxyWithRoutingClientFormat tests that StartProxyWithRouting respects client format.
-func TestStartProxyWithRoutingClientFormat(t *testing.T) {
+// TestStartProxyWithRoutingBasic tests that StartProxyWithRouting starts a server.
+func TestStartProxyWithRoutingBasic(t *testing.T) {
 	u, _ := url.Parse("https://api.example.com")
 	providers := []*Provider{
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
@@ -1817,7 +1789,7 @@ func TestStartProxyWithRoutingClientFormat(t *testing.T) {
 		DefaultProviders: providers,
 	}
 
-	port, err := StartProxyWithRouting(routing, "openai", "127.0.0.1:0", discardLogger())
+	port, err := StartProxyWithRouting(routing, "", "127.0.0.1:0", discardLogger())
 	if err != nil {
 		t.Fatalf("StartProxyWithRouting() error: %v", err)
 	}
@@ -1896,5 +1868,194 @@ func TestIsRequestRelatedError(t *testing.T) {
 				t.Errorf("isRequestRelatedError() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// T013: Test that 502 response body includes per-provider failure details with elapsed time.
+func TestAllProvidersFailBodyFormat(t *testing.T) {
+	// Provider 1: returns 500 server error
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":"internal error"}`))
+	}))
+	defer backend1.Close()
+
+	// Provider 2: returns 429 rate limit
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(429)
+		w.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer backend2.Close()
+
+	u1, _ := url.Parse(backend1.URL)
+	u2, _ := url.Parse(backend2.URL)
+	providers := []*Provider{
+		{Name: "provider-alpha", BaseURL: u1, Token: "t1", Healthy: true},
+		{Name: "provider-beta", BaseURL: u2, Token: "t2", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+
+	body := w.Body.String()
+
+	// Body must mention each provider by name
+	if !strings.Contains(body, "provider-alpha") {
+		t.Errorf("502 body should mention provider-alpha, got:\n%s", body)
+	}
+	if !strings.Contains(body, "provider-beta") {
+		t.Errorf("502 body should mention provider-beta, got:\n%s", body)
+	}
+
+	// Body must contain status codes
+	if !strings.Contains(body, "500") {
+		t.Errorf("502 body should contain status code 500, got:\n%s", body)
+	}
+	if !strings.Contains(body, "429") {
+		t.Errorf("502 body should contain status code 429, got:\n%s", body)
+	}
+
+	// Body must contain elapsed time indicators (e.g., "42ms")
+	if !strings.Contains(body, "ms") {
+		t.Errorf("502 body should contain elapsed time in ms, got:\n%s", body)
+	}
+}
+
+// T013b: Test 502 body format with connection error (no status code).
+func TestAllProvidersFailConnectionError(t *testing.T) {
+	// Use a URL that will fail to connect
+	badURL, _ := url.Parse("http://127.0.0.1:1") // port 1 is unlikely to be listening
+	providers := []*Provider{
+		{Name: "broken-provider", BaseURL: badURL, Token: "t1", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadGateway)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "broken-provider") {
+		t.Errorf("502 body should mention broken-provider, got:\n%s", body)
+	}
+	if !strings.Contains(body, "error:") {
+		t.Errorf("502 body should contain 'error:' for connection failures, got:\n%s", body)
+	}
+	if !strings.Contains(body, "ms") {
+		t.Errorf("502 body should contain elapsed time in ms, got:\n%s", body)
+	}
+}
+
+// TestCopyResponse_NoTagInjection verifies that responses are not modified
+// and no provider tags are injected into the response body.
+func TestCopyResponse_NoTagInjection(t *testing.T) {
+	tests := []struct {
+		name           string
+		responseBody   string
+		contentType    string
+		wantUnmodified bool
+	}{
+		{
+			name:           "non-streaming JSON response",
+			responseBody:   `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"model":"claude-sonnet-4"}`,
+			contentType:    "application/json",
+			wantUnmodified: true,
+		},
+		{
+			name: "streaming SSE response",
+			responseBody: "event: message_start\n" +
+				"data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-sonnet-4\"}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n" +
+				"event: message_stop\n" +
+				"data: {\"type\":\"message_stop\"}\n\n",
+			contentType:    "text/event-stream",
+			wantUnmodified: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(200)
+				w.Write([]byte(tt.responseBody))
+			}))
+			defer backend.Close()
+
+			u, _ := url.Parse(backend.URL)
+			providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
+			srv := NewProxyServer(providers, discardLogger())
+
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("anthropic-version", "2023-06-01")
+			w := httptest.NewRecorder()
+
+			srv.ServeHTTP(w, req)
+
+			body := w.Body.String()
+
+			// Verify no provider tag is present
+			if strings.Contains(body, "[provider:") || strings.Contains(body, "provider: test-provider") {
+				t.Errorf("response contains provider tag, but should be unmodified:\n%s", body)
+			}
+
+			// Verify response is identical to backend response
+			if tt.wantUnmodified && body != tt.responseBody {
+				t.Errorf("response was modified\nwant: %s\ngot:  %s", tt.responseBody, body)
+			}
+		})
+	}
+}
+
+// TestCopyResponse_ThinkingBlockPreserved verifies that thinking blocks
+// are not modified and remain valid for Bedrock API validation.
+func TestCopyResponse_ThinkingBlockPreserved(t *testing.T) {
+	thinkingResponse := `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this"},{"type":"text","text":"Here is my response"}],"model":"claude-sonnet-4"}`
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(thinkingResponse))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
+	srv := NewProxyServer(providers, discardLogger())
+
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", "2023-06-01")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	body := w.Body.String()
+
+	// Verify thinking block is preserved exactly
+	if !strings.Contains(body, `"type":"thinking"`) {
+		t.Error("thinking block was removed or modified")
+	}
+
+	// Verify no tag injection in thinking block
+	if strings.Contains(body, "[provider:") {
+		t.Error("provider tag was injected into response with thinking block")
+	}
+
+	// Verify response is byte-for-byte identical
+	if body != thinkingResponse {
+		t.Errorf("response with thinking block was modified\nwant: %s\ngot:  %s", thinkingResponse, body)
 	}
 }

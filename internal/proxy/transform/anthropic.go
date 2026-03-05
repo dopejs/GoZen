@@ -1,8 +1,29 @@
 package transform
 
+import (
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
 // AnthropicTransformer handles Anthropic Messages API format.
 // This is the default format used by Claude Code.
 type AnthropicTransformer struct{}
+
+var debugLogger *log.Logger
+
+func init() {
+	// Write debug logs to a file
+	homeDir, _ := os.UserHomeDir()
+	logPath := filepath.Join(homeDir, ".zen-dev", "transform.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		debugLogger = log.New(os.Stderr, "[transform] ", log.LstdFlags)
+	} else {
+		debugLogger = log.New(f, "[transform] ", log.LstdFlags)
+	}
+}
 
 func (t *AnthropicTransformer) Name() string {
 	return "anthropic"
@@ -17,16 +38,51 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 		return body, nil
 	}
 
+	// Debug: log incoming request
+	debugLogger.Printf("OpenAI request body: %s", string(body))
+
 	// OpenAI → Anthropic transformation
 	data, err := parseJSON(body)
 	if err != nil {
 		return body, nil // Return original on parse error
 	}
 
-	// Transform max_completion_tokens → max_tokens
+	// Handle OpenAI Responses API format (uses "input" instead of "messages")
+	if input, ok := data["input"]; ok {
+		// Convert input to messages format
+		messages := convertInputToMessages(input)
+		if len(messages) > 0 {
+			// Check for _system marker in first message
+			if first, ok := messages[0].(map[string]interface{}); ok {
+				if sysContent, ok := first["_system"].(string); ok {
+					// Extract system content and remove marker
+					if existing, ok := data["system"].(string); ok && existing != "" {
+						data["system"] = existing + "\n\n" + sysContent
+					} else {
+						data["system"] = sysContent
+					}
+					messages = messages[1:] // Remove the marker
+				}
+			}
+			data["messages"] = messages
+			delete(data, "input")
+		}
+	}
+
+	// Handle "instructions" field (system prompt in Responses API)
+	if instructions, ok := data["instructions"].(string); ok && instructions != "" {
+		data["system"] = instructions
+		delete(data, "instructions")
+	}
+
+	// Transform max_completion_tokens → max_tokens (also used by Responses API as max_output_tokens)
 	if maxCompletionTokens, ok := data["max_completion_tokens"]; ok {
 		data["max_tokens"] = maxCompletionTokens
 		delete(data, "max_completion_tokens")
+	}
+	if maxOutputTokens, ok := data["max_output_tokens"]; ok {
+		data["max_tokens"] = maxOutputTokens
+		delete(data, "max_output_tokens")
 	}
 
 	// Transform n parameter (OpenAI uses n for number of completions)
@@ -83,7 +139,15 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 		}
 	}
 
-	return toJSON(data)
+	result, err := toJSON(data)
+	if err != nil {
+		return body, err
+	}
+
+	// Debug: log transformed request
+	debugLogger.Printf("Anthropic request body: %s", string(result))
+
+	return result, nil
 }
 
 // TransformResponse transforms a response from Anthropic format.
@@ -167,4 +231,155 @@ func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat strin
 	}
 
 	return toJSON(openAIResponse)
+}
+
+// convertInputToMessages converts OpenAI Responses API "input" field to Anthropic messages format.
+// The input can be a string or an array of message objects.
+func convertInputToMessages(input interface{}) []interface{} {
+	var messages []interface{}
+	var systemParts []string // Collect developer/system messages
+
+	switch v := input.(type) {
+	case string:
+		// Simple string input → single user message
+		messages = append(messages, map[string]interface{}{
+			"role":    "user",
+			"content": v,
+		})
+	case []interface{}:
+		// Array of messages or content items
+		for _, item := range v {
+			switch msg := item.(type) {
+			case string:
+				// String item → user message
+				messages = append(messages, map[string]interface{}{
+					"role":    "user",
+					"content": msg,
+				})
+			case map[string]interface{}:
+				// Check if it's a message with type: "message"
+				if msgType, ok := msg["type"].(string); ok && msgType == "message" {
+					role, _ := msg["role"].(string)
+					content := convertContent(msg["content"])
+
+					// Handle developer role → collect as system prompt
+					if role == "developer" || role == "system" {
+						if text := extractTextFromContent(content); text != "" {
+							systemParts = append(systemParts, text)
+						}
+						continue
+					}
+
+					// Map roles
+					anthropicRole := mapRole(role)
+					messages = append(messages, map[string]interface{}{
+						"role":    anthropicRole,
+						"content": content,
+					})
+				} else if role, ok := msg["role"].(string); ok {
+					// Direct message with role (not wrapped in type: "message")
+					content := convertContent(msg["content"])
+
+					if role == "developer" || role == "system" {
+						if text := extractTextFromContent(content); text != "" {
+							systemParts = append(systemParts, text)
+						}
+						continue
+					}
+
+					anthropicRole := mapRole(role)
+					messages = append(messages, map[string]interface{}{
+						"role":    anthropicRole,
+						"content": content,
+					})
+				} else if msgType, ok := msg["type"].(string); ok {
+					// Content item (e.g., {type: "input_text", text: "..."})
+					if msgType == "input_text" || msgType == "text" {
+						if text, ok := msg["text"].(string); ok {
+							messages = append(messages, map[string]interface{}{
+								"role":    "user",
+								"content": text,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// If we collected system parts, prepend as first message or handle separately
+	// For now, we'll return them in a special way that TransformRequest can handle
+	if len(systemParts) > 0 && len(messages) > 0 {
+		// Insert system content marker that TransformRequest will extract
+		messages = append([]interface{}{
+			map[string]interface{}{
+				"_system": strings.Join(systemParts, "\n\n"),
+			},
+		}, messages...)
+	}
+
+	return messages
+}
+
+// convertContent transforms OpenAI content format to Anthropic format.
+// OpenAI uses "input_text" type, Anthropic uses "text" type.
+func convertContent(content interface{}) interface{} {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []interface{}:
+		var result []interface{}
+		for _, item := range c {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				itemType, _ := itemMap["type"].(string)
+				// Convert input_text → text
+				if itemType == "input_text" {
+					result = append(result, map[string]interface{}{
+						"type": "text",
+						"text": itemMap["text"],
+					})
+				} else if itemType == "text" {
+					result = append(result, itemMap)
+				} else {
+					// Pass through other types (images, etc.)
+					result = append(result, itemMap)
+				}
+			}
+		}
+		if len(result) > 0 {
+			return result
+		}
+	}
+	return content
+}
+
+// extractTextFromContent extracts plain text from content (string or array).
+func extractTextFromContent(content interface{}) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []interface{}:
+		var parts []string
+		for _, item := range c {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if text, ok := itemMap["text"].(string); ok {
+					parts = append(parts, text)
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	return ""
+}
+
+// mapRole converts OpenAI roles to Anthropic roles.
+func mapRole(role string) string {
+	switch role {
+	case "developer", "system":
+		return "user" // Will be handled separately as system prompt
+	case "assistant":
+		return "assistant"
+	default:
+		return "user"
+	}
 }

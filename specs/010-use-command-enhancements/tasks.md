@@ -183,7 +183,7 @@ This is a CLI tool with embedded web UI:
 - [X] T066 [P] Automated test: Config migration v11→v12 (TestVerify_ConfigMigrationV11ToV12)
 - [X] T067 [P] Automated test: Backward compatibility v12 config (TestVerify_BackwardCompatV12Config)
 - [X] T068 [P] Automated test: All three user stories end-to-end (TestVerify_AllUserStoriesE2E)
-- [ ] T069 Update cmd/root.go Version constant if preparing for release
+- [X] T069 Update cmd/root.go Version constant to 3.0.0-alpha.15
 
 **Checkpoint**: Feature complete and ready for PR
 

@@ -74,7 +74,8 @@ zen --cli codex
 | `zen -p <profile>` | Iniciar con un perfil específico |
 | `zen -p` | Seleccionar perfil interactivamente |
 | `zen --cli <cli>` | Usar un CLI específico (claude/codex/opencode) |
-| `zen -y` / `zen --yes` | Aprobar automáticamente permisos CLI (claude `--permission-mode acceptEdits`, codex `-a never`) |
+| `zen -y` / `zen --yes` | Aprobar automáticamente permisos CLI (claude `--permission-mode bypassPermissions`, codex `-a never`) |
+| `zen -- <flags>` | Pasar flags adicionales directamente al cliente CLI |
 | `zen use <provider>` | Usar directamente un proveedor específico (sin proxy) |
 | `zen pick` | Seleccionar interactivamente un proveedor para iniciar |
 | `zen list` | Listar todos los proveedores y perfiles |

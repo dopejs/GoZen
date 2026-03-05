@@ -111,6 +111,7 @@ Quick Start:
   zen -p <profile>          Start with specific profile
   zen --cli codex           Start with specific CLI
   zen -y                    Start with auto-approve permissions
+  zen -- --verbose          Pass extra flags to the CLI client
 
 Configuration:
   config add provider [name]   Add a new provider

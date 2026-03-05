@@ -168,18 +168,18 @@ This is a CLI tool with embedded web UI:
 
 ### Documentation Updates
 
-- [ ] T057 [P] Update zen --help text to document --yes behavior change in cmd/root.go
-- [ ] T058 [P] Update zen --help text to document -- separator usage in cmd/root.go
-- [ ] T059 [P] Update README.md (English) with new features and priority order
-- [ ] T060 [P] Update docs/README.zh-CN.md (简体中文) with new features
-- [ ] T061 [P] Update docs/README.zh-TW.md (繁體中文) with new features
-- [ ] T062 [P] Update docs/README.es.md (Español) with new features
+- [X] T057 [P] Update zen --help text to document --yes behavior change in cmd/root.go
+- [X] T058 [P] Update zen --help text to document -- separator usage in cmd/root.go
+- [X] T059 [P] Update README.md (English) with new features and priority order
+- [X] T060 [P] Update docs/README.zh-CN.md (简体中文) with new features
+- [X] T061 [P] Update docs/README.zh-TW.md (繁體中文) with new features
+- [X] T062 [P] Update docs/README.es.md (Español) with new features
 
 ### Final Testing & Verification
 
-- [ ] T063 Run go test ./... and verify all tests pass
-- [ ] T064 Run go test -cover ./internal/config and verify ≥80% coverage
-- [ ] T065 Run pnpm run test:coverage in web/ and verify ≥70% branch coverage
+- [X] T063 Run go test ./... and verify all tests pass
+- [X] T064 Run go test -cover ./internal/config and verify ≥80% coverage
+- [X] T065 Run pnpm run test:coverage in web/ and verify ≥70% branch coverage
 - [ ] T066 [P] Test config migration: Create v11 config, run zen, verify migration to v12
 - [ ] T067 [P] Test backward compatibility: Use old zen with v12 config, verify graceful handling
 - [ ] T068 [P] Test all three user stories end-to-end in sequence

@@ -74,7 +74,8 @@ zen --cli codex
 | `zen -p <profile>` | 使用指定 profile 启动 |
 | `zen -p` | 交互选择 profile |
 | `zen --cli <cli>` | 使用指定 CLI（claude/codex/opencode） |
-| `zen -y` / `zen --yes` | 自动批准 CLI 权限（claude `--permission-mode acceptEdits`, codex `-a never`） |
+| `zen -y` / `zen --yes` | 自动批准 CLI 权限（claude `--permission-mode bypassPermissions`, codex `-a never`） |
+| `zen -- <flags>` | 将额外参数直接传递给 CLI 客户端 |
 | `zen use <provider>` | 直接使用指定 provider（无代理） |
 | `zen pick` | 交互选择 provider 启动 |
 | `zen list` | 列出所有 provider 和 profile |

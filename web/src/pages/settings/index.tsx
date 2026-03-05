@@ -5,6 +5,7 @@ import { GeneralSettings } from './tabs/GeneralSettings'
 import { BindingsSettings } from './tabs/BindingsSettings'
 import { SyncSettings } from './tabs/SyncSettings'
 import { PasswordSettings } from './tabs/PasswordSettings'
+import { PermissionSettings } from './tabs/PermissionSettings'
 
 export function SettingsPage() {
   const { t } = useTranslation()
@@ -25,6 +26,7 @@ export function SettingsPage() {
       <Tabs value={currentTab} onValueChange={setCurrentTab}>
         <TabsList>
           <TabsTrigger value="general">{t('settings.general')}</TabsTrigger>
+          <TabsTrigger value="permissions">{t('settings.permissions')}</TabsTrigger>
           <TabsTrigger value="bindings">{t('settings.bindings')}</TabsTrigger>
           <TabsTrigger value="sync">{t('settings.sync')}</TabsTrigger>
           <TabsTrigger value="password">{t('settings.webPassword')}</TabsTrigger>
@@ -32,6 +34,10 @@ export function SettingsPage() {
 
         <TabsContent value="general" className="mt-4">
           <GeneralSettings />
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-4">
+          <PermissionSettings />
         </TabsContent>
 
         <TabsContent value="bindings" className="mt-4">

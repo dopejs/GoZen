@@ -211,6 +211,22 @@ export interface ProviderHealth {
   error?: string
 }
 
+// Auto-permission types
+export interface AutoPermissionConfig {
+  enabled: boolean
+  mode?: string
+}
+
+export interface AutoPermissionAll {
+  claude: AutoPermissionConfig | null
+  codex: AutoPermissionConfig | null
+  opencode: AutoPermissionConfig | null
+}
+
+// Client-specific permission modes
+export const CLAUDE_PERMISSION_MODES = ['default', 'acceptEdits', 'bypassPermissions', 'plan'] as const
+export const CODEX_PERMISSION_MODES = ['auto-edit', 'full-auto', 'suggest'] as const
+
 // Settings types
 export interface Settings {
   default_profile?: string
@@ -219,6 +235,9 @@ export interface Settings {
   proxy_port?: number
   profiles?: string[]
   clients?: string[]
+  claude_auto_permission?: AutoPermissionConfig
+  codex_auto_permission?: AutoPermissionConfig
+  opencode_auto_permission?: AutoPermissionConfig
 }
 
 // Binding types

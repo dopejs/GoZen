@@ -257,6 +257,24 @@ export const handlers = [
     return HttpResponse.json({ status: 'ok' })
   }),
 
+  // Auto-Permission
+  http.get('/api/v1/auto-permission', () => {
+    return HttpResponse.json({
+      claude: null,
+      codex: null,
+      opencode: null,
+    })
+  }),
+
+  http.get('/api/v1/auto-permission/:client', () => {
+    return HttpResponse.json({ enabled: false, mode: '' })
+  }),
+
+  http.put('/api/v1/auto-permission/:client', async ({ request }) => {
+    const body = await request.json() as { enabled: boolean; mode: string }
+    return HttpResponse.json({ enabled: body.enabled, mode: body.mode })
+  }),
+
   // Sync test & create-gist
   http.post('/api/v1/sync/test', () => {
     return HttpResponse.json({ success: true })

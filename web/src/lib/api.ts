@@ -21,6 +21,8 @@ import type {
   HealthResponse,
   BotConfig,
   MiddlewareConfig,
+  AutoPermissionConfig,
+  AutoPermissionAll,
 } from '@/types/api'
 
 const API_BASE = '/api/v1'
@@ -228,6 +230,18 @@ export const settingsApi = {
         current_password: currentPassword,
         new_password: newPassword,
       }),
+    }),
+}
+
+// Auto-Permission API
+export const autoPermissionApi = {
+  getAll: () => request<AutoPermissionAll>('/auto-permission'),
+  get: (client: string) =>
+    request<AutoPermissionConfig>(`/auto-permission/${encodeURIComponent(client)}`),
+  update: (client: string, config: { enabled: boolean; mode: string }) =>
+    request<AutoPermissionConfig>(`/auto-permission/${encodeURIComponent(client)}`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
     }),
 }
 

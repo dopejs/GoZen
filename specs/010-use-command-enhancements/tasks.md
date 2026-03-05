@@ -105,9 +105,9 @@ This is a CLI tool with embedded web UI:
 
 #### Frontend Tests
 
-- [ ] T029 [P] [US2] Write test for PermissionConfig component rendering in web/tests/components/PermissionConfig.test.tsx
-- [ ] T030 [P] [US2] Write test for client-specific dropdown options in web/tests/components/PermissionConfig.test.tsx
-- [ ] T031 [P] [US2] Write test for save configuration API call in web/tests/components/PermissionConfig.test.tsx
+- [X] T029 [P] [US2] Write test for PermissionConfig component rendering in web/src/pages/settings/tabs/PermissionSettings.test.tsx
+- [X] T030 [P] [US2] Write test for client-specific dropdown options in web/src/pages/settings/tabs/PermissionSettings.test.tsx
+- [X] T031 [P] [US2] Write test for save configuration API call in web/src/pages/settings/tabs/PermissionSettings.test.tsx
 
 ### Implementation for User Story 2
 
@@ -120,14 +120,14 @@ This is a CLI tool with embedded web UI:
 
 #### Frontend Implementation
 
-- [ ] T036 [P] [US2] Create PermissionConfig component in web/src/components/Settings/PermissionConfig.tsx
-- [ ] T037 [P] [US2] Add client selector dropdown to PermissionConfig component
-- [ ] T038 [P] [US2] Add enable/disable toggle to PermissionConfig component
-- [ ] T039 [P] [US2] Add permission mode dropdown with client-specific options to PermissionConfig component
-- [ ] T040 [US2] Wire PermissionConfig component to Settings page in web/src/pages/Settings.tsx
-- [ ] T041 [US2] Add TypeScript types for auto-permission config in web/src/types/config.ts
-- [ ] T042 [US2] Update config API client to handle auto-permission fields in web/src/api/config.ts
-- [ ] T043 [US2] Run frontend tests to verify PermissionConfig component (T029-T031 should now pass)
+- [X] T036 [P] [US2] Create PermissionConfig component in web/src/pages/settings/tabs/PermissionSettings.tsx
+- [X] T037 [P] [US2] Add client selector dropdown to PermissionConfig component
+- [X] T038 [P] [US2] Add enable/disable toggle to PermissionConfig component
+- [X] T039 [P] [US2] Add permission mode dropdown with client-specific options to PermissionConfig component
+- [X] T040 [US2] Wire PermissionConfig component to Settings page in web/src/pages/settings/index.tsx
+- [X] T041 [US2] Add TypeScript types for auto-permission config in web/src/types/api.ts
+- [X] T042 [US2] Update config API client to handle auto-permission fields in web/src/lib/api.ts
+- [X] T043 [US2] Run frontend tests to verify PermissionConfig component (T029-T031 should now pass)
 - [ ] T044 [US2] Manual test: Enable auto-permission in Web UI and verify zen command uses it
 
 **Checkpoint**: User Story 2 complete - Web UI auto-permission configuration working

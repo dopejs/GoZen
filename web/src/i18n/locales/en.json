@@ -283,7 +283,12 @@
     "proxyPort": "Proxy Port",
     "proxyPortHint": "Change via CLI: zen config set proxy_port <port>",
     "defaultProfile": "Default Profile",
-    "defaultClient": "Default Client"
+    "defaultClient": "Default Client",
+    "permissions": "Permissions",
+    "permissionsDesc": "Configure auto-permission modes for CLI clients. When enabled, zen automatically passes permission flags to the selected client.",
+    "autoPermissionHint": "Auto-approve permissions for {{client}}",
+    "permissionMode": "Permission Mode",
+    "permissionPriority": "Priority: explicit -- flags > --yes flag > this config > default behavior"
   },
   "auth": {
     "login": "Login",

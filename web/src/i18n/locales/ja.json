@@ -170,7 +170,12 @@
     "passwordMismatch": "パスワードが一致しません",
     "webPort": "Webポート",
     "proxyPort": "プロキシポート",
-    "proxyPortHint": "CLIで変更: zen config set proxy_port <ポート>"
+    "proxyPortHint": "CLIで変更: zen config set proxy_port <ポート>",
+    "permissions": "権限",
+    "permissionsDesc": "CLIクライアントの自動権限モードを設定します。有効にすると、zenは自動的に権限フラグを選択したクライアントに渡します。",
+    "autoPermissionHint": "{{client}} の権限を自動承認",
+    "permissionMode": "権限モード",
+    "permissionPriority": "優先順位: 明示的 -- フラグ > --yes フラグ > この設定 > デフォルト動作"
   },
   "auth": {
     "login": "ログイン",

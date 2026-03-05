@@ -237,7 +237,12 @@
     "passwordMismatch": "两次输入的密码不一致",
     "webPort": "Web 端口",
     "proxyPort": "代理端口",
-    "proxyPortHint": "通过命令行更改：zen config set proxy_port <端口>"
+    "proxyPortHint": "通过命令行更改：zen config set proxy_port <端口>",
+    "permissions": "权限",
+    "permissionsDesc": "配置 CLI 客户端的自动权限模式。启用后，zen 会自动将权限标志传递给所选客户端。",
+    "autoPermissionHint": "自动批准 {{client}} 的权限",
+    "permissionMode": "权限模式",
+    "permissionPriority": "优先级：显式 -- 参数 > --yes 标志 > 此配置 > 默认行为"
   },
   "auth": {
     "login": "登录",

@@ -170,7 +170,12 @@
     "passwordMismatch": "Las contraseñas no coinciden",
     "webPort": "Puerto Web",
     "proxyPort": "Puerto Proxy",
-    "proxyPortHint": "Cambiar vía CLI: zen config set proxy_port <puerto>"
+    "proxyPortHint": "Cambiar vía CLI: zen config set proxy_port <puerto>",
+    "permissions": "Permisos",
+    "permissionsDesc": "Configurar modos de auto-permiso para clientes CLI. Cuando está habilitado, zen pasa automáticamente los flags de permisos al cliente seleccionado.",
+    "autoPermissionHint": "Auto-aprobar permisos para {{client}}",
+    "permissionMode": "Modo de Permiso",
+    "permissionPriority": "Prioridad: flags explícitos -- > flag --yes > esta configuración > comportamiento predeterminado"
   },
   "auth": {
     "login": "Iniciar Sesión",

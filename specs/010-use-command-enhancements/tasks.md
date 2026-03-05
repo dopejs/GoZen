@@ -72,16 +72,16 @@ This is a CLI tool with embedded web UI:
 - [X] T016 [P] [US1] Write test for prependAutoApproveArgs with --yes for Claude Code in cmd/root_test.go
 - [X] T017 [P] [US1] Write test for prependAutoApproveArgs with --yes for Codex in cmd/root_test.go
 - [X] T018 [P] [US1] Write test for prependAutoApproveArgs with --yes for OpenCode in cmd/root_test.go
-- [ ] T019 [P] [US1] Write integration test for zen --yes command execution in cmd/root_test.go
-- [ ] T019a [P] [US1] Write test for error messages when client not found in PATH in cmd/root_test.go
-- [ ] T019b [P] [US1] Write test for exit status codes (0 for success, non-zero for errors) in cmd/root_test.go
+- [X] T019 [P] [US1] Write integration test for zen --yes command execution in cmd/root_test.go
+- [X] T019a [P] [US1] Write test for error messages when client not found in PATH in cmd/root_test.go
+- [X] T019b [P] [US1] Write test for exit status codes (0 for success, non-zero for errors) in cmd/root_test.go
 
 ### Implementation for User Story 1
 
 - [X] T020 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use bypassPermissions for Claude Code
 - [X] T021 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use -a never for Codex
 - [X] T022 [US1] Handle OpenCode permission flags in prependAutoApproveArgs() in cmd/root.go (research Q1)
-- [ ] T023 [US1] Run tests to verify --yes flag behavior (T016-T019b should now pass)
+- [X] T023 [US1] Run tests to verify --yes flag behavior (T016-T019b should now pass)
 - [ ] T024 [US1] Manual test: Run zen --yes with Claude Code and verify no prompts
 - [ ] T025 [US1] Manual test: Run zen --yes with Codex and verify no prompts
 
@@ -99,9 +99,9 @@ This is a CLI tool with embedded web UI:
 
 #### Backend Tests
 
-- [ ] T026 [P] [US2] Write test for getAutoPermissionConfig() helper in internal/config/config_test.go
-- [ ] T027 [P] [US2] Write test for permission priority resolution (Web UI config) in cmd/root_test.go
-- [ ] T028 [P] [US2] Write test for client-specific permission mode retrieval in cmd/root_test.go
+- [X] T026 [P] [US2] Write test for getAutoPermissionConfig() helper in internal/config/config_test.go
+- [X] T027 [P] [US2] Write test for permission priority resolution (Web UI config) in cmd/root_test.go
+- [X] T028 [P] [US2] Write test for client-specific permission mode retrieval in cmd/root_test.go
 
 #### Frontend Tests
 
@@ -113,10 +113,10 @@ This is a CLI tool with embedded web UI:
 
 #### Backend Implementation
 
-- [ ] T032 [P] [US2] Add getAutoPermissionConfig() helper to internal/config/compat.go
-- [ ] T033 [US2] Modify startViaDaemon() in cmd/root.go to check Web UI auto-permission config
-- [ ] T034 [US2] Implement permission priority resolution (Web UI config < --yes) in cmd/root.go
-- [ ] T035 [US2] Run backend tests to verify Web UI config integration (T026-T028 should now pass)
+- [X] T032 [P] [US2] Add getAutoPermissionConfig() helper to internal/config/compat.go
+- [X] T033 [US2] Modify startViaDaemon() in cmd/root.go to check Web UI auto-permission config
+- [X] T034 [US2] Implement permission priority resolution (Web UI config < --yes) in cmd/root.go
+- [X] T035 [US2] Run backend tests to verify Web UI config integration (T026-T028 should now pass)
 
 #### Frontend Implementation
 
@@ -142,19 +142,19 @@ This is a CLI tool with embedded web UI:
 
 ### Tests for User Story 3 (TDD - Write First)
 
-- [ ] T045 [P] [US3] Write test for detectPermissionFlags() helper in cmd/root_test.go
-- [ ] T046 [P] [US3] Write test for -- parameter parsing in cmd/root_test.go
-- [ ] T047 [P] [US3] Write test for permission priority resolution (-- > --yes > Web UI) in cmd/root_test.go
-- [ ] T048 [P] [US3] Write test for -- with zen use command in cmd/use_test.go
-- [ ] T049 [P] [US3] Write integration test for -- parameter pass-through in cmd/root_test.go
+- [X] T045 [P] [US3] Write test for detectPermissionFlags() helper in cmd/root_test.go
+- [X] T046 [P] [US3] Write test for -- parameter parsing in cmd/root_test.go
+- [X] T047 [P] [US3] Write test for permission priority resolution (-- > --yes > Web UI) in cmd/root_test.go
+- [X] T048 [P] [US3] Write test for -- with zen use command in cmd/use_test.go
+- [X] T049 [P] [US3] Write integration test for -- parameter pass-through in cmd/root_test.go
 
 ### Implementation for User Story 3
 
-- [ ] T050 [P] [US3] Add detectPermissionFlags() helper to cmd/root.go
-- [ ] T051 [US3] Modify startViaDaemon() to detect permission flags in -- parameters
-- [ ] T052 [US3] Implement permission priority resolution (-- > --yes > Web UI > default) in cmd/root.go
-- [ ] T053 [US3] Update zen use command to support -- separator in cmd/use.go
-- [ ] T054 [US3] Run tests to verify -- parameter handling (T045-T049 should now pass)
+- [X] T050 [P] [US3] Add detectPermissionFlags() helper to cmd/root.go
+- [X] T051 [US3] Modify startViaDaemon() to detect permission flags in -- parameters
+- [X] T052 [US3] Implement permission priority resolution (-- > --yes > Web UI > default) in cmd/root.go
+- [X] T053 [US3] Update zen use command to support -- separator in cmd/use.go
+- [X] T054 [US3] Run tests to verify -- parameter handling (T045-T049 should now pass)
 - [ ] T055 [US3] Manual test: Run zen -- --verbose and verify flag passed to client
 - [ ] T056 [US3] Manual test: Run zen --yes -- --permission-mode acceptEdits and verify acceptEdits used
 

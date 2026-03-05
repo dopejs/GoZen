@@ -1046,3 +1046,42 @@ func (s *Store) SetSkillsConfig(sc *SkillsConfig) error {
 	s.config.Bot.Skills = sc
 	return s.saveLocked()
 }
+
+// GetAutoPermission returns the auto-permission config for a specific client.
+func (s *Store) GetAutoPermission(client string) *AutoPermissionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil {
+		return nil
+	}
+	switch client {
+	case ClientClaude:
+		return s.config.ClaudeAutoPermission
+	case ClientCodex:
+		return s.config.CodexAutoPermission
+	case ClientOpenCode:
+		return s.config.OpenCodeAutoPermission
+	default:
+		return nil
+	}
+}
+
+// SetAutoPermission sets the auto-permission config for a specific client and saves.
+func (s *Store) SetAutoPermission(client string, ap *AutoPermissionConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	switch client {
+	case ClientClaude:
+		s.config.ClaudeAutoPermission = ap
+	case ClientCodex:
+		s.config.CodexAutoPermission = ap
+	case ClientOpenCode:
+		s.config.OpenCodeAutoPermission = ap
+	default:
+		return fmt.Errorf("unknown client: %q", client)
+	}
+	return s.saveLocked()
+}

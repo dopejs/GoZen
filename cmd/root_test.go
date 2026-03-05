@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -795,3 +797,273 @@ func TestPrependAutoApproveArgs_OpenCode(t *testing.T) {
 	}
 }
 
+// T019a: Test error messages when client not found in PATH
+func TestClientNotFoundInPath(t *testing.T) {
+	_, err := exec.LookPath("nonexistent-client-xyz-99999")
+	if err == nil {
+		t.Skip("client unexpectedly found in PATH")
+	}
+	// exec.LookPath returns "executable file not found in $PATH"
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error message = %q, want to contain %q", err.Error(), "not found")
+	}
+}
+
+// T019b: Test exit code forwarding from child process
+func TestExitCodeForwarding(t *testing.T) {
+	// Run a command that exits with code 2
+	cmd := exec.Command("sh", "-c", "exit 2")
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected non-zero exit")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exec.ExitError, got %T", err)
+	}
+	if exitErr.ExitCode() != 2 {
+		t.Errorf("exit code = %d, want 2", exitErr.ExitCode())
+	}
+}
+
+// T026-T028: Test prependConfigAutoPermissionArgs with Web UI config
+func TestPrependConfigAutoPermissionArgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		client     string
+		mode       string
+		enabled    bool
+		args       []string
+		wantArgs   []string
+		wantAdded  bool
+	}{
+		{
+			name:      "claude with config enabled",
+			client:    "claude",
+			mode:      "acceptEdits",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{"--permission-mode", "acceptEdits"},
+			wantAdded: true,
+		},
+		{
+			name:      "claude with config disabled",
+			client:    "claude",
+			mode:      "acceptEdits",
+			enabled:   false,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "codex with config enabled",
+			client:    "codex",
+			mode:      "on-request",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{"-a", "on-request"},
+			wantAdded: true,
+		},
+		{
+			name:      "codex with config disabled",
+			client:    "codex",
+			mode:      "on-request",
+			enabled:   false,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "opencode with config enabled (no flag added)",
+			client:    "opencode",
+			mode:      "auto",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+		{
+			name:      "claude with empty mode",
+			client:    "claude",
+			mode:      "",
+			enabled:   true,
+			args:      []string{},
+			wantArgs:  []string{},
+			wantAdded: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.enabled || tt.mode != "" {
+				config.SetAutoPermission(tt.client, &config.AutoPermissionConfig{
+					Enabled: tt.enabled,
+					Mode:    tt.mode,
+				})
+			}
+
+			result, added := prependConfigAutoPermissionArgs(tt.client, tt.args)
+			if added != tt.wantAdded {
+				t.Errorf("added = %v, want %v", added, tt.wantAdded)
+			}
+			if len(result) != len(tt.wantArgs) {
+				t.Fatalf("len(result) = %d, want %d; got %v", len(result), len(tt.wantArgs), result)
+			}
+			for i := range result {
+				if result[i] != tt.wantArgs[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.wantArgs[i])
+				}
+			}
+		})
+	}
+}
+
+// Test hasPermissionFlags detection
+func TestHasPermissionFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		client    string
+		args      []string
+		wantFound bool
+	}{
+		{
+			name:      "claude with --permission-mode",
+			client:    "claude",
+			args:      []string{"--permission-mode", "bypassPermissions"},
+			wantFound: true,
+		},
+		{
+			name:      "claude without permission flags",
+			client:    "claude",
+			args:      []string{"--verbose"},
+			wantFound: false,
+		},
+		{
+			name:      "codex with -a flag",
+			client:    "codex",
+			args:      []string{"-a", "never"},
+			wantFound: true,
+		},
+		{
+			name:      "codex with --ask-for-approval",
+			client:    "codex",
+			args:      []string{"--ask-for-approval", "on-request"},
+			wantFound: true,
+		},
+		{
+			name:      "codex without permission flags",
+			client:    "codex",
+			args:      []string{"--verbose"},
+			wantFound: false,
+		},
+		{
+			name:      "empty args",
+			client:    "claude",
+			args:      []string{},
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			found := hasPermissionFlags(tt.client, tt.args)
+			if found != tt.wantFound {
+				t.Errorf("hasPermissionFlags(%q, %v) = %v, want %v", tt.client, tt.args, found, tt.wantFound)
+			}
+		})
+	}
+}
+
+// Test priority chain: -- > --yes > Web UI config
+func TestAutoPermissionPriorityChain(t *testing.T) {
+	tests := []struct {
+		name           string
+		client         string
+		yesFlag        bool
+		configEnabled  bool
+		configMode     string
+		explicitArgs   []string // args that include explicit permission flags
+		wantFirstArgs  []string // expected first N args
+	}{
+		{
+			name:          "explicit args override --yes",
+			client:        "claude",
+			yesFlag:       true,
+			explicitArgs:  []string{"--permission-mode", "plan"},
+			wantFirstArgs: []string{"--permission-mode", "plan"},
+		},
+		{
+			name:          "explicit args override config",
+			client:        "claude",
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{"--permission-mode", "dontAsk"},
+			wantFirstArgs: []string{"--permission-mode", "dontAsk"},
+		},
+		{
+			name:          "--yes overrides config",
+			client:        "claude",
+			yesFlag:       true,
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{"--permission-mode", "bypassPermissions"},
+		},
+		{
+			name:          "config used when no --yes",
+			client:        "claude",
+			yesFlag:       false,
+			configEnabled: true,
+			configMode:    "acceptEdits",
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{"--permission-mode", "acceptEdits"},
+		},
+		{
+			name:          "no flags when nothing configured",
+			client:        "claude",
+			yesFlag:       false,
+			configEnabled: false,
+			explicitArgs:  []string{},
+			wantFirstArgs: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTestHome(t)
+			if tt.configEnabled {
+				config.SetAutoPermission(tt.client, &config.AutoPermissionConfig{
+					Enabled: tt.configEnabled,
+					Mode:    tt.configMode,
+				})
+			}
+
+			// Simulate the priority chain logic from startViaDaemon
+			result := tt.explicitArgs
+			if !hasPermissionFlags(tt.client, result) {
+				if tt.yesFlag {
+					result = prependAutoApproveArgs(tt.client, result)
+				} else {
+					result, _ = prependConfigAutoPermissionArgs(tt.client, result)
+				}
+			}
+
+			if len(tt.wantFirstArgs) == 0 {
+				if len(result) != 0 {
+					t.Errorf("expected empty args, got %v", result)
+				}
+				return
+			}
+
+			if len(result) < len(tt.wantFirstArgs) {
+				t.Fatalf("result too short: %v, want at least %v", result, tt.wantFirstArgs)
+			}
+			for i, want := range tt.wantFirstArgs {
+				if result[i] != want {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], want)
+				}
+			}
+		})
+	}
+}

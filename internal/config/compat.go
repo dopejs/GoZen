@@ -302,3 +302,13 @@ func GetSkillsConfig() *SkillsConfig {
 func SetSkillsConfig(sc *SkillsConfig) error {
 	return DefaultStore().SetSkillsConfig(sc)
 }
+
+// GetAutoPermission returns the auto-permission config for a specific client.
+func GetAutoPermission(client string) *AutoPermissionConfig {
+	return DefaultStore().GetAutoPermission(client)
+}
+
+// SetAutoPermission sets the auto-permission config for a specific client and saves.
+func SetAutoPermission(client string, ap *AutoPermissionConfig) error {
+	return DefaultStore().SetAutoPermission(client, ap)
+}

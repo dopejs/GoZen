@@ -147,6 +147,10 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 	s.mux.HandleFunc("/api/v1/agent/guardrails", s.handleAgentGuardrails)
 	s.mux.HandleFunc("/api/v1/agent/guardrails/", s.handleAgentGuardrails)
 
+	// Auto-permission routes
+	s.mux.HandleFunc("/api/v1/auto-permission", s.handleAutoPermission)
+	s.mux.HandleFunc("/api/v1/auto-permission/", s.handleAutoPermission)
+
 	// Static files with SPA fallback
 	staticSub, _ := fs.Sub(staticFS, "dist")
 	s.mux.Handle("/", spaHandler{fs: staticSub})

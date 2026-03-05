@@ -285,10 +285,17 @@ func startViaDaemon(profile, client string, providerNames []string, args []strin
 		return fmt.Errorf("%s not found in PATH: %w", clientBin, err)
 	}
 
-	// Inject auto-approve flags based on client type
+	// Resolve auto-permission with priority chain:
+	// -- explicit args > --yes flag > Web UI config > default (no flags)
 	clientArgs := args
-	if autoApprove {
-		clientArgs = prependAutoApproveArgs(clientBin, args)
+	if !hasPermissionFlags(clientBin, args) {
+		if autoApprove {
+			// --yes flag: use hardcoded defaults
+			clientArgs = prependAutoApproveArgs(clientBin, args)
+		} else {
+			// Try Web UI config
+			clientArgs, _ = prependConfigAutoPermissionArgs(clientBin, args)
+		}
 	}
 
 	// Run client with retry on connection error (daemon recovery)
@@ -916,6 +923,49 @@ func prependAutoApproveArgs(clientBin string, args []string) []string {
 		// OpenCode auto-approves by default
 		return args
 	}
+}
+
+// prependConfigAutoPermissionArgs prepends permission flags based on Web UI config.
+// Returns the modified args and true if flags were added.
+func prependConfigAutoPermissionArgs(clientBin string, args []string) ([]string, bool) {
+	clientName := string(GetClientType(clientBin))
+	ap := config.GetAutoPermission(clientName)
+	if ap == nil || !ap.Enabled || ap.Mode == "" {
+		return args, false
+	}
+
+	switch GetClientType(clientBin) {
+	case ClientClaude:
+		return append([]string{"--permission-mode", ap.Mode}, args...), true
+	case ClientCodex:
+		return append([]string{"-a", ap.Mode}, args...), true
+	default:
+		// OpenCode: no known permission flag
+		return args, false
+	}
+}
+
+// hasPermissionFlags checks if args already contain permission-related flags.
+func hasPermissionFlags(clientBin string, args []string) bool {
+	switch GetClientType(clientBin) {
+	case ClientClaude:
+		for _, arg := range args {
+			if arg == "--permission-mode" {
+				return true
+			}
+		}
+	case ClientCodex:
+		for i, arg := range args {
+			if arg == "-a" || arg == "--ask-for-approval" {
+				return true
+			}
+			// Also check combined form like "-a=never"
+			if (strings.HasPrefix(arg, "-a=") || strings.HasPrefix(arg, "--ask-for-approval=")) && i >= 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // setupClientEnvironment sets the appropriate environment variables for the client.

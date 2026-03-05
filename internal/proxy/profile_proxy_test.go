@@ -162,21 +162,58 @@ func TestProfileProxyGetOrCreateProxy(t *testing.T) {
 	}
 
 	// First call creates
-	srv1 := pp.getOrCreateProxy("prof1", providers)
+	srv1 := pp.getOrCreateProxy("prof1", providers, nil)
 	if srv1 == nil {
 		t.Fatal("expected non-nil proxy server")
 	}
 
 	// Second call returns cached
-	srv2 := pp.getOrCreateProxy("prof1", providers)
+	srv2 := pp.getOrCreateProxy("prof1", providers, nil)
 	if srv1 != srv2 {
 		t.Error("expected same cached proxy server")
 	}
 
 	// Different profile creates new
-	srv3 := pp.getOrCreateProxy("prof2", providers)
+	srv3 := pp.getOrCreateProxy("prof2", providers, nil)
 	if srv3 == srv1 {
 		t.Error("expected different proxy server for different profile")
+	}
+}
+
+func TestProfileProxyGetOrCreateProxyWithRouting(t *testing.T) {
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	defaultProviders := []*Provider{
+		{Name: "standard", Healthy: true},
+	}
+	thinkProviders := []*Provider{
+		{Name: "thinker", Healthy: true},
+	}
+
+	routing := &RoutingConfig{
+		DefaultProviders: defaultProviders,
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioThink: {
+				Providers: thinkProviders,
+			},
+		},
+	}
+
+	srv := pp.getOrCreateProxy("routed", defaultProviders, routing)
+	if srv == nil {
+		t.Fatal("expected non-nil proxy server")
+	}
+	if srv.Routing == nil {
+		t.Fatal("expected proxy server to have routing config")
+	}
+	if len(srv.Routing.ScenarioRoutes) != 1 {
+		t.Errorf("expected 1 scenario route, got %d", len(srv.Routing.ScenarioRoutes))
+	}
+	if sp, ok := srv.Routing.ScenarioRoutes[config.ScenarioThink]; !ok {
+		t.Error("expected think scenario route")
+	} else if len(sp.Providers) != 1 || sp.Providers[0].Name != "thinker" {
+		t.Error("think scenario should route to thinker provider")
 	}
 }
 
@@ -188,6 +225,61 @@ func setupTestConfig(t *testing.T) {
 	os.MkdirAll(filepath.Join(tmpDir, ".zen"), 0755)
 	config.ResetDefaultStore()
 	t.Cleanup(func() { config.ResetDefaultStore() })
+}
+
+func TestResolveProfileConfigWithRouting(t *testing.T) {
+	setupTestConfig(t)
+
+	// Set up providers
+	config.SetProvider("standard", &config.ProviderConfig{
+		BaseURL:   "https://api.standard.com",
+		AuthToken: "tok-std",
+	})
+	config.SetProvider("thinker", &config.ProviderConfig{
+		BaseURL:   "https://api.thinker.com",
+		AuthToken: "tok-think",
+	})
+
+	// Set up profile with routing
+	config.SetProfileConfig("routed", &config.ProfileConfig{
+		Providers: []string{"standard"},
+		Routing: map[config.Scenario]*config.ScenarioRoute{
+			config.ScenarioThink: {
+				Providers: []*config.ProviderRoute{
+					{Name: "thinker", Model: "custom-think-model"},
+				},
+			},
+		},
+		LongContextThreshold: 50000,
+	})
+
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	route := &RouteInfo{Profile: "routed", SessionID: "s1", Remainder: "/v1/messages"}
+	info, err := pp.resolveProfileConfig(route)
+	if err != nil {
+		t.Fatalf("resolveProfileConfig() error: %v", err)
+	}
+	if len(info.providers) != 1 || info.providers[0] != "standard" {
+		t.Errorf("default providers = %v, want [standard]", info.providers)
+	}
+	if info.routing == nil {
+		t.Fatal("expected routing config")
+	}
+	thinkRoute, ok := info.routing[config.ScenarioThink]
+	if !ok {
+		t.Fatal("expected think scenario route")
+	}
+	if len(thinkRoute.Providers) != 1 || thinkRoute.Providers[0].Name != "thinker" {
+		t.Errorf("think route providers = %v", thinkRoute.Providers)
+	}
+	if thinkRoute.Providers[0].Model != "custom-think-model" {
+		t.Errorf("think route model = %q, want custom-think-model", thinkRoute.Providers[0].Model)
+	}
+	if info.longContextThreshold != 50000 {
+		t.Errorf("longContextThreshold = %d, want 50000", info.longContextThreshold)
+	}
 }
 
 // T003: Test that buildProviders propagates ProxyURL and creates per-provider Client.

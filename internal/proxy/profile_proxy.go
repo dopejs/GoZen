@@ -60,22 +60,52 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		bridge.MarkSessionBusy(route.CacheKey(), clientType)
 	}
 
-	// Resolve provider names for this profile
-	providerNames, err := pp.resolveProviderNames(route)
+	// Resolve profile config (providers + routing)
+	profileCfg, err := pp.resolveProfileConfig(route)
 	if err != nil {
 		pp.writeError(w, http.StatusNotFound, "profile_not_found", err.Error())
 		return
 	}
 
-	// Build providers from config
-	providers, err := pp.buildProviders(providerNames)
+	// Build default providers from config
+	providers, err := pp.buildProviders(profileCfg.providers)
 	if err != nil {
 		pp.writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		return
 	}
 
-	// Get or create a proxy server for this profile (no longer tied to clientFormat)
-	srv := pp.getOrCreateProxy(route.Profile, providers)
+	// Build routing config if scenario routing is configured
+	var routing *RoutingConfig
+	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
+		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
+		for scenario, sr := range profileCfg.routing {
+			scenarioProviders, err := pp.buildProviders(sr.ProviderNames())
+			if err != nil {
+				pp.Logger.Printf("[routing] warning: failed to build providers for scenario %s: %v", scenario, err)
+				continue
+			}
+			models := make(map[string]string)
+			for _, pr := range sr.Providers {
+				if pr != nil && pr.Model != "" {
+					models[pr.Name] = pr.Model
+				}
+			}
+			scenarioRoutes[scenario] = &ScenarioProviders{
+				Providers: scenarioProviders,
+				Models:    models,
+			}
+		}
+		if len(scenarioRoutes) > 0 {
+			routing = &RoutingConfig{
+				DefaultProviders:     providers,
+				ScenarioRoutes:       scenarioRoutes,
+				LongContextThreshold: profileCfg.longContextThreshold,
+			}
+		}
+	}
+
+	// Get or create a proxy server for this profile
+	srv := pp.getOrCreateProxy(route.Profile, providers, routing)
 
 	// Rewrite the request URL to strip profile/session prefix
 	r.URL.Path = route.Remainder
@@ -97,8 +127,15 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	srv.ServeHTTP(w, r)
 }
 
-// resolveProviderNames looks up provider names for a profile.
-func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error) {
+// profileInfo holds resolved profile data for proxy construction.
+type profileInfo struct {
+	providers            []string
+	routing              map[config.Scenario]*config.ScenarioRoute
+	longContextThreshold int
+}
+
+// resolveProfileConfig looks up provider names and routing config for a profile.
+func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, error) {
 	if route.IsTempProfile() {
 		if pp.TempProfiles == nil {
 			return nil, fmt.Errorf("temporary profile %q: temp profiles not supported", route.Profile)
@@ -107,7 +144,7 @@ func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error)
 		if len(names) == 0 {
 			return nil, fmt.Errorf("temporary profile %q not found or expired", route.Profile)
 		}
-		return names, nil
+		return &profileInfo{providers: names}, nil
 	}
 
 	// Look up from config
@@ -119,7 +156,11 @@ func (pp *ProfileProxy) resolveProviderNames(route *RouteInfo) ([]string, error)
 	if len(pc.Providers) == 0 {
 		return nil, fmt.Errorf("profile %q has no providers configured", route.Profile)
 	}
-	return pc.Providers, nil
+	return &profileInfo{
+		providers:            pc.Providers,
+		routing:              pc.Routing,
+		longContextThreshold: pc.LongContextThreshold,
+	}, nil
 }
 
 // buildProviders converts provider names to Provider objects.
@@ -197,7 +238,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 }
 
 // getOrCreateProxy returns a cached ProxyServer for the profile, or creates one.
-func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider) *ProxyServer {
+func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig) *ProxyServer {
 	pp.mu.RLock()
 	if srv, ok := pp.cache[profile]; ok {
 		pp.mu.RUnlock()
@@ -213,7 +254,12 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider) 
 		return srv
 	}
 
-	srv := NewProxyServer(providers, pp.Logger)
+	var srv *ProxyServer
+	if routing != nil {
+		srv = NewProxyServerWithRouting(routing, pp.Logger)
+	} else {
+		srv = NewProxyServer(providers, pp.Logger)
+	}
 	pp.cache[profile] = srv
 	return srv
 }

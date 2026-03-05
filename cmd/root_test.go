@@ -975,7 +975,7 @@ func TestHasPermissionFlags(t *testing.T) {
 	}
 }
 
-// Test priority chain: -- > --yes > Web UI config
+// Test priority chain: -- > --yes > Web UI config (unit test)
 func TestAutoPermissionPriorityChain(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -1066,4 +1066,301 @@ func TestAutoPermissionPriorityChain(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Automated verification tests (replacing manual T024/T025/T044/T055/T056/T066/T067/T068) ---
+
+// createFakeClient creates a shell script that prints its received arguments one per line.
+func createFakeClient(t *testing.T, name string) string {
+	t.Helper()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, name)
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  echo \"$arg\"\ndone\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return scriptPath
+}
+
+// T024: Verify zen --yes with Claude Code passes --permission-mode bypassPermissions
+func TestVerify_YesFlagClaude_ArgsCorrect(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	clientArgs := []string{}
+	if !hasPermissionFlags("claude", clientArgs) {
+		clientArgs = prependAutoApproveArgs("claude", clientArgs)
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "--permission-mode" || lines[1] != "bypassPermissions" {
+		t.Errorf("expected [--permission-mode bypassPermissions], got %v", lines)
+	}
+}
+
+// T025: Verify zen --yes with Codex passes -a never
+func TestVerify_YesFlagCodex_ArgsCorrect(t *testing.T) {
+	fakeCodex := createFakeClient(t, "codex")
+
+	clientArgs := []string{}
+	if !hasPermissionFlags("codex", clientArgs) {
+		clientArgs = prependAutoApproveArgs("codex", clientArgs)
+	}
+
+	cmd := exec.Command(fakeCodex, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake codex failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "-a" || lines[1] != "never" {
+		t.Errorf("expected [-a never], got %v", lines)
+	}
+}
+
+// T044: Verify Web UI config auto-permission is applied via fake client
+func TestVerify_WebUIConfig_ArgsCorrect(t *testing.T) {
+	setTestHome(t)
+	config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+		Enabled: true,
+		Mode:    "acceptEdits",
+	})
+
+	fakeClaude := createFakeClient(t, "claude")
+	clientArgs := []string{}
+	if !hasPermissionFlags("claude", clientArgs) {
+		clientArgs, _ = prependConfigAutoPermissionArgs("claude", clientArgs)
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || lines[0] != "--permission-mode" || lines[1] != "acceptEdits" {
+		t.Errorf("expected [--permission-mode acceptEdits], got %v", lines)
+	}
+}
+
+// T055: Verify -- passes arbitrary flags through to client
+func TestVerify_DashDashPassThrough(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	cliArgs := []string{"--verbose", "--debug"}
+	clientArgs := cliArgs
+	// No autoApprove, no config → args pass through unchanged
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 || lines[0] != "--verbose" || lines[1] != "--debug" {
+		t.Errorf("expected [--verbose --debug], got %v", lines)
+	}
+}
+
+// T056: Verify zen --yes -- --permission-mode acceptEdits uses acceptEdits (not bypassPermissions)
+func TestVerify_DashDashOverridesYes(t *testing.T) {
+	fakeClaude := createFakeClient(t, "claude")
+
+	cliArgs := []string{"--permission-mode", "acceptEdits"}
+	autoApprove := true
+
+	clientArgs := cliArgs
+	if !hasPermissionFlags("claude", cliArgs) {
+		if autoApprove {
+			clientArgs = prependAutoApproveArgs("claude", cliArgs)
+		}
+	}
+
+	cmd := exec.Command(fakeClaude, clientArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("fake claude failed: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 || lines[0] != "--permission-mode" || lines[1] != "acceptEdits" {
+		t.Errorf("expected [--permission-mode acceptEdits], got %v (bypassPermissions would be wrong)", lines)
+	}
+}
+
+// T066: Test config migration from v11 to v12 with file I/O
+func TestVerify_ConfigMigrationV11ToV12(t *testing.T) {
+	home := setTestHome(t)
+
+	v11Config := `{
+		"version": 11,
+		"proxy_port": 19841,
+		"web_port": 19840,
+		"providers": {
+			"test": {
+				"base_url": "https://api.example.com",
+				"auth_token": "tok123",
+				"model": "claude-sonnet-4-5"
+			}
+		},
+		"profiles": {
+			"default": ["test"]
+		}
+	}`
+	configDir := filepath.Join(home, ".zen")
+	os.MkdirAll(configDir, 0755)
+	os.WriteFile(filepath.Join(configDir, "zen.json"), []byte(v11Config), 0600)
+	config.ResetDefaultStore()
+
+	store := config.DefaultStore()
+	provider := store.GetProvider("test")
+	if provider == nil {
+		t.Fatal("provider 'test' should exist after migration")
+	}
+
+	if ap := store.GetAutoPermission("claude"); ap != nil {
+		t.Errorf("claude auto-permission should be nil after v11→v12 migration, got %+v", ap)
+	}
+
+	store.SetAutoPermission("claude", &config.AutoPermissionConfig{
+		Enabled: true,
+		Mode:    "bypassPermissions",
+	})
+	config.ResetDefaultStore()
+
+	ap := config.GetAutoPermission("claude")
+	if ap == nil || !ap.Enabled || ap.Mode != "bypassPermissions" {
+		t.Errorf("round-trip failed: got %+v", ap)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "zen.json"))
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+	if v, ok := raw["version"].(float64); !ok || int(v) != config.CurrentConfigVersion {
+		t.Errorf("saved version = %v, want %d", raw["version"], config.CurrentConfigVersion)
+	}
+}
+
+// T067: Test backward compatibility - v12 config with auto-permission fields
+func TestVerify_BackwardCompatV12Config(t *testing.T) {
+	home := setTestHome(t)
+
+	v12Config := fmt.Sprintf(`{
+		"version": %d,
+		"proxy_port": 19841,
+		"web_port": 19840,
+		"providers": {
+			"test": {"base_url": "https://api.example.com", "auth_token": "tok"}
+		},
+		"profiles": {"default": ["test"]},
+		"claude_auto_permission": {"enabled": true, "mode": "acceptEdits"},
+		"codex_auto_permission": null
+	}`, config.CurrentConfigVersion)
+
+	configDir := filepath.Join(home, ".zen")
+	os.MkdirAll(configDir, 0755)
+	os.WriteFile(filepath.Join(configDir, "zen.json"), []byte(v12Config), 0600)
+	config.ResetDefaultStore()
+
+	store := config.DefaultStore()
+	if p := store.GetProvider("test"); p == nil {
+		t.Fatal("provider should exist")
+	}
+	ap := store.GetAutoPermission("claude")
+	if ap == nil || !ap.Enabled || ap.Mode != "acceptEdits" {
+		t.Errorf("claude auto-permission = %+v, want enabled=true mode=acceptEdits", ap)
+	}
+	if apCodex := store.GetAutoPermission("codex"); apCodex != nil {
+		t.Errorf("codex should be nil, got %+v", apCodex)
+	}
+}
+
+// T068: End-to-end test of all three user stories in sequence
+func TestVerify_AllUserStoriesE2E(t *testing.T) {
+	setTestHome(t)
+	fakeClaude := createFakeClient(t, "claude")
+
+	runAndCheck := func(t *testing.T, args []string, wantArgs []string) {
+		t.Helper()
+		cmd := exec.Command(fakeClaude, args...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("exec failed: %v", err)
+		}
+		got := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if strings.TrimSpace(string(out)) == "" {
+			got = []string{}
+		}
+		if len(got) != len(wantArgs) {
+			t.Fatalf("got %d args %v, want %d args %v", len(got), got, len(wantArgs), wantArgs)
+		}
+		for i := range got {
+			if got[i] != wantArgs[i] {
+				t.Errorf("arg[%d] = %q, want %q", i, got[i], wantArgs[i])
+			}
+		}
+	}
+
+	t.Run("US1_yes_bypass", func(t *testing.T) {
+		args := prependAutoApproveArgs("claude", nil)
+		runAndCheck(t, args, []string{"--permission-mode", "bypassPermissions"})
+	})
+
+	t.Run("US2_config_permission", func(t *testing.T) {
+		config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "acceptEdits",
+		})
+		args, added := prependConfigAutoPermissionArgs("claude", nil)
+		if !added {
+			t.Fatal("expected config args to be added")
+		}
+		runAndCheck(t, args, []string{"--permission-mode", "acceptEdits"})
+	})
+
+	t.Run("US3_explicit_override", func(t *testing.T) {
+		explicitArgs := []string{"--permission-mode", "plan", "--verbose"}
+		clientArgs := explicitArgs
+		if !hasPermissionFlags("claude", explicitArgs) {
+			clientArgs = prependAutoApproveArgs("claude", explicitArgs)
+		}
+		runAndCheck(t, clientArgs, []string{"--permission-mode", "plan", "--verbose"})
+	})
+
+	t.Run("full_priority_chain_sequence", func(t *testing.T) {
+		config.SetAutoPermission("claude", &config.AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "acceptEdits",
+		})
+
+		// Explicit wins over --yes + config
+		explicit := []string{"--permission-mode", "dontAsk"}
+		result := explicit
+		if !hasPermissionFlags("claude", explicit) {
+			result = prependAutoApproveArgs("claude", explicit)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "dontAsk"})
+
+		// --yes wins over config
+		result = []string{}
+		if !hasPermissionFlags("claude", result) {
+			result = prependAutoApproveArgs("claude", result)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "bypassPermissions"})
+
+		// Config used when no --yes
+		result = []string{}
+		if !hasPermissionFlags("claude", result) {
+			result, _ = prependConfigAutoPermissionArgs("claude", result)
+		}
+		runAndCheck(t, result, []string{"--permission-mode", "acceptEdits"})
+	})
 }

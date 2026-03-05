@@ -27,9 +27,9 @@ This is a CLI tool with embedded web UI:
 
 **Purpose**: Project initialization and config schema foundation
 
-- [ ] T001 Read current config version from internal/config/config.go
-- [ ] T002 [P] Review existing prependAutoApproveArgs() function in cmd/root.go
-- [ ] T003 [P] Review existing config migration patterns in internal/config/
+- [X] T001 Read current config version from internal/config/config.go
+- [X] T002 [P] Review existing prependAutoApproveArgs() function in cmd/root.go
+- [X] T003 [P] Review existing config migration patterns in internal/config/
 
 ---
 
@@ -41,21 +41,21 @@ This is a CLI tool with embedded web UI:
 
 ### Tests for Config Schema (TDD - Write First)
 
-- [ ] T004 [P] Write test for AutoPermissionConfig type validation in internal/config/config_test.go
-- [ ] T005 [P] Write test for config version migration (v11→v12) in internal/config/config_test.go
-- [ ] T006 [P] Write test for backward compatibility (old configs without new fields) in internal/config/config_test.go
-- [ ] T007 [P] Write test for forward compatibility (new configs read by old code) in internal/config/config_test.go
-- [ ] T008 [P] Write test for config round-trip marshaling in internal/config/config_test.go
+- [X] T004 [P] Write test for AutoPermissionConfig type validation in internal/config/config_test.go
+- [X] T005 [P] Write test for config version migration (v11→v12) in internal/config/config_test.go
+- [X] T006 [P] Write test for backward compatibility (old configs without new fields) in internal/config/config_test.go
+- [X] T007 [P] Write test for forward compatibility (new configs read by old code) in internal/config/config_test.go
+- [X] T008 [P] Write test for config round-trip marshaling in internal/config/config_test.go
 
 ### Config Schema Implementation
 
-- [ ] T009 Add AutoPermissionConfig type to internal/config/config.go
-- [ ] T010 Add claude_auto_permission field to OpenCCConfig in internal/config/config.go
-- [ ] T011 Add codex_auto_permission field to OpenCCConfig in internal/config/config.go
-- [ ] T012 Add opencode_auto_permission field to OpenCCConfig in internal/config/config.go
-- [ ] T013 Bump CurrentConfigVersion to 12 in internal/config/config.go
-- [ ] T014 Add config migration logic for v11→v12 in internal/config/store.go or UnmarshalJSON
-- [ ] T015 Run tests to verify config schema changes (T004-T008 should now pass)
+- [X] T009 Add AutoPermissionConfig type to internal/config/config.go
+- [X] T010 Add claude_auto_permission field to OpenCCConfig in internal/config/config.go
+- [X] T011 Add codex_auto_permission field to OpenCCConfig in internal/config/config.go
+- [X] T012 Add opencode_auto_permission field to OpenCCConfig in internal/config/config.go
+- [X] T013 Bump CurrentConfigVersion to 12 in internal/config/config.go
+- [X] T014 Add config migration logic for v11→v12 in internal/config/store.go or UnmarshalJSON
+- [X] T015 Run tests to verify config schema changes (T004-T008 should now pass)
 
 **Checkpoint**: Config schema ready - user story implementation can now begin in parallel
 
@@ -69,18 +69,18 @@ This is a CLI tool with embedded web UI:
 
 ### Tests for User Story 1 (TDD - Write First)
 
-- [ ] T016 [P] [US1] Write test for prependAutoApproveArgs with --yes for Claude Code in cmd/root_test.go
-- [ ] T017 [P] [US1] Write test for prependAutoApproveArgs with --yes for Codex in cmd/root_test.go
-- [ ] T018 [P] [US1] Write test for prependAutoApproveArgs with --yes for OpenCode in cmd/root_test.go
+- [X] T016 [P] [US1] Write test for prependAutoApproveArgs with --yes for Claude Code in cmd/root_test.go
+- [X] T017 [P] [US1] Write test for prependAutoApproveArgs with --yes for Codex in cmd/root_test.go
+- [X] T018 [P] [US1] Write test for prependAutoApproveArgs with --yes for OpenCode in cmd/root_test.go
 - [ ] T019 [P] [US1] Write integration test for zen --yes command execution in cmd/root_test.go
 - [ ] T019a [P] [US1] Write test for error messages when client not found in PATH in cmd/root_test.go
 - [ ] T019b [P] [US1] Write test for exit status codes (0 for success, non-zero for errors) in cmd/root_test.go
 
 ### Implementation for User Story 1
 
-- [ ] T020 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use bypassPermissions for Claude Code
-- [ ] T021 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use -a never for Codex
-- [ ] T022 [US1] Handle OpenCode permission flags in prependAutoApproveArgs() in cmd/root.go (research Q1)
+- [X] T020 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use bypassPermissions for Claude Code
+- [X] T021 [US1] Modify prependAutoApproveArgs() in cmd/root.go to use -a never for Codex
+- [X] T022 [US1] Handle OpenCode permission flags in prependAutoApproveArgs() in cmd/root.go (research Q1)
 - [ ] T023 [US1] Run tests to verify --yes flag behavior (T016-T019b should now pass)
 - [ ] T024 [US1] Manual test: Run zen --yes with Claude Code and verify no prompts
 - [ ] T025 [US1] Manual test: Run zen --yes with Codex and verify no prompts

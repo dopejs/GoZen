@@ -684,3 +684,114 @@ func TestProxyListenAddress(t *testing.T) {
 	}
 }
 
+// T016: Test prependAutoApproveArgs with --yes for Claude Code
+func TestPrependAutoApproveArgs_ClaudeCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "claude with empty args",
+			client:   "claude",
+			args:     []string{},
+			expected: []string{"--permission-mode", "bypassPermissions"},
+		},
+		{
+			name:     "claude with existing args",
+			client:   "claude",
+			args:     []string{"--verbose"},
+			expected: []string{"--permission-mode", "bypassPermissions", "--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// T017: Test prependAutoApproveArgs with --yes for Codex
+func TestPrependAutoApproveArgs_Codex(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "codex with empty args",
+			client:   "codex",
+			args:     []string{},
+			expected: []string{"-a", "never"},
+		},
+		{
+			name:     "codex with existing args",
+			client:   "codex",
+			args:     []string{"--verbose"},
+			expected: []string{"-a", "never", "--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// T018: Test prependAutoApproveArgs with --yes for OpenCode
+func TestPrependAutoApproveArgs_OpenCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		client   string
+		args     []string
+		expected []string
+	}{
+		{
+			name:     "opencode with empty args (no flag needed)",
+			client:   "opencode",
+			args:     []string{},
+			expected: []string{},
+		},
+		{
+			name:     "opencode with existing args (no flag added)",
+			client:   "opencode",
+			args:     []string{"--verbose"},
+			expected: []string{"--verbose"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := prependAutoApproveArgs(tt.client, tt.args)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("len(result) = %d, want %d", len(result), len(tt.expected))
+			}
+			for i := range result {
+				if result[i] != tt.expected[i] {
+					t.Errorf("result[%d] = %q, want %q", i, result[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+

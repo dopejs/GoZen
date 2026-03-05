@@ -398,7 +398,15 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 8 (v2.2.0+): added pricing, budgets, webhooks, health_check; profile strategy; compression; middleware
 // - Version 9 (v2.3.0+): added agent infrastructure (coordinator, observatory, guardrails, task queue, runtime)
 // - Version 10 (v3.0.0+): added skills config to bot (skill-based intent recognition)
-const CurrentConfigVersion = 11
+// - Version 11 (v3.0.0-alpha.14): added show_provider_tag (deprecated in v3.0.0-alpha.14)
+// - Version 12 (v3.0.0+): added auto-permission configuration (claude_auto_permission, codex_auto_permission, opencode_auto_permission)
+const CurrentConfigVersion = 12
+
+// AutoPermissionConfig holds auto-permission settings for a specific client.
+type AutoPermissionConfig struct {
+	Enabled bool   `json:"enabled"`           // whether auto-permission is enabled
+	Mode    string `json:"mode,omitempty"`    // permission mode (client-specific: bypassPermissions, acceptEdits, never, etc.)
+}
 
 // --- Model Pricing ---
 
@@ -787,27 +795,31 @@ type SyncConfig struct {
 
 // OpenCCConfig is the top-level configuration structure stored in opencc.json.
 type OpenCCConfig struct {
-	Version         int                         `json:"version,omitempty"`           // config file version
-	DefaultProfile  string                      `json:"default_profile,omitempty"`   // default profile name (defaults to "default")
-	DefaultClient   string                      `json:"default_client,omitempty"`    // default client (claude, codex, opencode)
-	ProxyPort       int                         `json:"proxy_port,omitempty"`        // proxy port (defaults to 19841)
-	WebPort         int                         `json:"web_port,omitempty"`          // web UI port (defaults to 19840)
-	WebPasswordHash string                      `json:"web_password_hash,omitempty"` // bcrypt hash for Web UI access password
-	Providers       map[string]*ProviderConfig  `json:"providers"`                   // provider configurations
-	Profiles        map[string]*ProfileConfig   `json:"profiles"`                    // profile configurations
-	ProjectBindings map[string]*ProjectBinding  `json:"project_bindings,omitempty"`  // directory path -> binding config
-	Sync            *SyncConfig                 `json:"sync,omitempty"`              // remote sync configuration
-	Pricing         map[string]*ModelPricing    `json:"pricing,omitempty"`           // custom model pricing overrides
-	Budgets         *BudgetConfig               `json:"budgets,omitempty"`           // budget configuration
-	Webhooks        []*WebhookConfig            `json:"webhooks,omitempty"`          // webhook configurations
-	HealthCheck     *HealthCheckConfig          `json:"health_check,omitempty"`      // health check configuration
-	Compression     *CompressionConfig          `json:"compression,omitempty"`       // [BETA] context compression
-	Middleware      *MiddlewareConfig           `json:"middleware,omitempty"`        // [BETA] middleware pipeline
-	Agent           *AgentConfig                `json:"agent,omitempty"`             // [BETA] agent infrastructure
-	Bot             *BotConfig                  `json:"bot,omitempty"`               // [BETA] bot gateway configuration
+	Version                int                         `json:"version,omitempty"`                  // config file version
+	DefaultProfile         string                      `json:"default_profile,omitempty"`          // default profile name (defaults to "default")
+	DefaultClient          string                      `json:"default_client,omitempty"`           // default client (claude, codex, opencode)
+	ProxyPort              int                         `json:"proxy_port,omitempty"`               // proxy port (defaults to 19841)
+	WebPort                int                         `json:"web_port,omitempty"`                 // web UI port (defaults to 19840)
+	WebPasswordHash        string                      `json:"web_password_hash,omitempty"`        // bcrypt hash for Web UI access password
+	ClaudeAutoPermission   *AutoPermissionConfig       `json:"claude_auto_permission,omitempty"`   // auto-permission config for Claude Code
+	CodexAutoPermission    *AutoPermissionConfig       `json:"codex_auto_permission,omitempty"`    // auto-permission config for Codex
+	OpenCodeAutoPermission *AutoPermissionConfig       `json:"opencode_auto_permission,omitempty"` // auto-permission config for OpenCode
+	Providers              map[string]*ProviderConfig  `json:"providers"`                          // provider configurations
+	Profiles               map[string]*ProfileConfig   `json:"profiles"`                           // profile configurations
+	ProjectBindings        map[string]*ProjectBinding  `json:"project_bindings,omitempty"`         // directory path -> binding config
+	Sync                   *SyncConfig                 `json:"sync,omitempty"`                     // remote sync configuration
+	Pricing                map[string]*ModelPricing    `json:"pricing,omitempty"`                  // custom model pricing overrides
+	Budgets                *BudgetConfig               `json:"budgets,omitempty"`                  // budget configuration
+	Webhooks               []*WebhookConfig            `json:"webhooks,omitempty"`                 // webhook configurations
+	HealthCheck            *HealthCheckConfig          `json:"health_check,omitempty"`             // health check configuration
+	Compression            *CompressionConfig          `json:"compression,omitempty"`              // [BETA] context compression
+	Middleware             *MiddlewareConfig           `json:"middleware,omitempty"`               // [BETA] middleware pipeline
+	Agent                  *AgentConfig                `json:"agent,omitempty"`                    // [BETA] agent infrastructure
+	Bot                    *BotConfig                  `json:"bot,omitempty"`                      // [BETA] bot gateway configuration
 }
 
 // UnmarshalJSON supports multiple config versions:
+// - v12+: auto-permission fields (claude_auto_permission, codex_auto_permission, opencode_auto_permission)
 // - v7+: current format with "default_client" and "client" keys
 // - v5-v6: "default_cli" and "cli" keys (auto-migrated)
 // - v3: project_bindings as map[string]string (profile name only)
@@ -815,26 +827,29 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	// Use a raw struct that reads both old and new field names.
 	// This handles all versions in a single pass.
 	var raw struct {
-		Version         int                            `json:"version,omitempty"`
-		DefaultProfile  string                         `json:"default_profile,omitempty"`
-		DefaultClient   string                         `json:"default_client,omitempty"` // v7+
-		DefaultCLI      string                         `json:"default_cli,omitempty"`    // v6 compat
-		ProxyPort       int                            `json:"proxy_port,omitempty"`
-		WebPort         int                            `json:"web_port,omitempty"`
-		WebPasswordHash string                         `json:"web_password_hash,omitempty"` // v7+
-		ShowProviderTag bool                           `json:"show_provider_tag,omitempty"` // v11+
-		Providers       map[string]*ProviderConfig     `json:"providers"`
-		Profiles        map[string]*ProfileConfig      `json:"profiles"`
-		ProjectBindings map[string]json.RawMessage     `json:"project_bindings,omitempty"`
-		Sync            *SyncConfig                    `json:"sync,omitempty"`
-		Pricing         map[string]*ModelPricing       `json:"pricing,omitempty"`
-		Budgets         *BudgetConfig                  `json:"budgets,omitempty"`
-		Webhooks        []*WebhookConfig               `json:"webhooks,omitempty"`
-		HealthCheck     *HealthCheckConfig             `json:"health_check,omitempty"`
-		Compression     *CompressionConfig             `json:"compression,omitempty"`
-		Middleware      *MiddlewareConfig              `json:"middleware,omitempty"`
-		Agent           *AgentConfig                   `json:"agent,omitempty"`
-		Bot             *BotConfig                     `json:"bot,omitempty"`
+		Version                int                            `json:"version,omitempty"`
+		DefaultProfile         string                         `json:"default_profile,omitempty"`
+		DefaultClient          string                         `json:"default_client,omitempty"`          // v7+
+		DefaultCLI             string                         `json:"default_cli,omitempty"`             // v6 compat
+		ProxyPort              int                            `json:"proxy_port,omitempty"`
+		WebPort                int                            `json:"web_port,omitempty"`
+		WebPasswordHash        string                         `json:"web_password_hash,omitempty"`        // v7+
+		ShowProviderTag        bool                           `json:"show_provider_tag,omitempty"`        // v11+ (deprecated)
+		ClaudeAutoPermission   *AutoPermissionConfig          `json:"claude_auto_permission,omitempty"`   // v12+
+		CodexAutoPermission    *AutoPermissionConfig          `json:"codex_auto_permission,omitempty"`    // v12+
+		OpenCodeAutoPermission *AutoPermissionConfig          `json:"opencode_auto_permission,omitempty"` // v12+
+		Providers              map[string]*ProviderConfig     `json:"providers"`
+		Profiles               map[string]*ProfileConfig      `json:"profiles"`
+		ProjectBindings        map[string]json.RawMessage     `json:"project_bindings,omitempty"`
+		Sync                   *SyncConfig                    `json:"sync,omitempty"`
+		Pricing                map[string]*ModelPricing       `json:"pricing,omitempty"`
+		Budgets                *BudgetConfig                  `json:"budgets,omitempty"`
+		Webhooks               []*WebhookConfig               `json:"webhooks,omitempty"`
+		HealthCheck            *HealthCheckConfig             `json:"health_check,omitempty"`
+		Compression            *CompressionConfig             `json:"compression,omitempty"`
+		Middleware             *MiddlewareConfig              `json:"middleware,omitempty"`
+		Agent                  *AgentConfig                   `json:"agent,omitempty"`
+		Bot                    *BotConfig                     `json:"bot,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -846,6 +861,9 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.WebPort = raw.WebPort
 	c.WebPasswordHash = raw.WebPasswordHash
 	// Note: ShowProviderTag is parsed but ignored (deprecated field)
+	c.ClaudeAutoPermission = raw.ClaudeAutoPermission
+	c.CodexAutoPermission = raw.CodexAutoPermission
+	c.OpenCodeAutoPermission = raw.OpenCodeAutoPermission
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 	c.Sync = raw.Sync

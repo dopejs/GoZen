@@ -47,6 +47,328 @@ func TestConfigVersion(t *testing.T) {
 	}
 }
 
+// T004: Test AutoPermissionConfig type validation
+func TestAutoPermissionConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  AutoPermissionConfig
+		wantErr bool
+	}{
+		{
+			name: "valid config with all fields",
+			config: AutoPermissionConfig{
+				Enabled: true,
+				Mode:    "bypassPermissions",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config disabled",
+			config: AutoPermissionConfig{
+				Enabled: false,
+				Mode:    "",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with empty mode when disabled",
+			config: AutoPermissionConfig{
+				Enabled: false,
+				Mode:    "acceptEdits",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test JSON marshaling
+			data, err := json.Marshal(tt.config)
+			if err != nil {
+				t.Fatalf("failed to marshal: %v", err)
+			}
+
+			// Test JSON unmarshaling
+			var decoded AutoPermissionConfig
+			if err := json.Unmarshal(data, &decoded); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
+			}
+
+			if decoded.Enabled != tt.config.Enabled {
+				t.Errorf("Enabled = %v, want %v", decoded.Enabled, tt.config.Enabled)
+			}
+			if decoded.Mode != tt.config.Mode {
+				t.Errorf("Mode = %q, want %q", decoded.Mode, tt.config.Mode)
+			}
+		})
+	}
+}
+
+// T005: Test config version migration (v11→v12)
+func TestConfigMigrationV11ToV12(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v11 config (without auto-permission fields)
+	v11Config := `{
+  "version": 11,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v11Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config (should trigger migration)
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Verify version was upgraded
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Version != 12 {
+		t.Errorf("version after migration = %d, want 12", cfg.Version)
+	}
+
+	// Verify new fields exist with default values (nil/empty)
+	if cfg.ClaudeAutoPermission != nil {
+		t.Errorf("claude_auto_permission should be nil after migration, got %+v", cfg.ClaudeAutoPermission)
+	}
+	if cfg.CodexAutoPermission != nil {
+		t.Errorf("codex_auto_permission should be nil after migration, got %+v", cfg.CodexAutoPermission)
+	}
+	if cfg.OpenCodeAutoPermission != nil {
+		t.Errorf("opencode_auto_permission should be nil after migration, got %+v", cfg.OpenCodeAutoPermission)
+	}
+}
+
+// T006: Test backward compatibility (old configs without new fields)
+func TestBackwardCompatibility(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write old config without auto-permission fields
+	oldConfig := `{
+  "version": 11,
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(oldConfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and verify it works
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load old config: %v", err)
+	}
+
+	// Verify provider still accessible
+	provider := store.GetProvider("test")
+	if provider == nil {
+		t.Fatal("provider 'test' not found after loading old config")
+	}
+	if provider.BaseURL != "https://api.test.com" {
+		t.Errorf("provider base_url = %q, want %q", provider.BaseURL, "https://api.test.com")
+	}
+}
+
+// T007: Test forward compatibility (new configs read by old code)
+func TestForwardCompatibility(t *testing.T) {
+	home := setTestHome(t)
+	configPath := filepath.Join(home, ConfigDir, ConfigFile)
+
+	// Create config directory
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write v12 config with new fields
+	v12Config := `{
+  "version": 12,
+  "claude_auto_permission": {
+    "enabled": true,
+    "mode": "bypassPermissions"
+  },
+  "codex_auto_permission": {
+    "enabled": true,
+    "mode": "never"
+  },
+  "providers": {
+    "test": {
+      "base_url": "https://api.test.com",
+      "auth_token": "test-token"
+    }
+  },
+  "profiles": {
+    "default": {
+      "providers": ["test"]
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(v12Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load config
+	store := DefaultStore()
+	if err := store.Load(); err != nil {
+		t.Fatalf("failed to load v12 config: %v", err)
+	}
+
+	// Verify new fields are loaded
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.ClaudeAutoPermission == nil {
+		t.Fatal("claude_auto_permission should not be nil")
+	}
+	if !cfg.ClaudeAutoPermission.Enabled {
+		t.Error("claude_auto_permission.enabled should be true")
+	}
+	if cfg.ClaudeAutoPermission.Mode != "bypassPermissions" {
+		t.Errorf("claude_auto_permission.mode = %q, want %q", cfg.ClaudeAutoPermission.Mode, "bypassPermissions")
+	}
+
+	if cfg.CodexAutoPermission == nil {
+		t.Fatal("codex_auto_permission should not be nil")
+	}
+	if !cfg.CodexAutoPermission.Enabled {
+		t.Error("codex_auto_permission.enabled should be true")
+	}
+	if cfg.CodexAutoPermission.Mode != "never" {
+		t.Errorf("codex_auto_permission.mode = %q, want %q", cfg.CodexAutoPermission.Mode, "never")
+	}
+}
+
+// T008: Test config round-trip marshaling
+func TestConfigRoundTripMarshaling(t *testing.T) {
+	original := OpenCCConfig{
+		Version:        12,
+		DefaultProfile: "default",
+		DefaultClient:  "claude",
+		ClaudeAutoPermission: &AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "bypassPermissions",
+		},
+		CodexAutoPermission: &AutoPermissionConfig{
+			Enabled: true,
+			Mode:    "never",
+		},
+		OpenCodeAutoPermission: &AutoPermissionConfig{
+			Enabled: false,
+			Mode:    "",
+		},
+		Providers: map[string]*ProviderConfig{
+			"test": {
+				BaseURL:   "https://api.test.com",
+				AuthToken: "test-token",
+			},
+		},
+		Profiles: map[string]*ProfileConfig{
+			"default": {
+				Providers: []string{"test"},
+			},
+		},
+	}
+
+	// Marshal to JSON
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	// Unmarshal back
+	var decoded OpenCCConfig
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Verify all fields match
+	if decoded.Version != original.Version {
+		t.Errorf("Version = %d, want %d", decoded.Version, original.Version)
+	}
+	if decoded.DefaultProfile != original.DefaultProfile {
+		t.Errorf("DefaultProfile = %q, want %q", decoded.DefaultProfile, original.DefaultProfile)
+	}
+	if decoded.DefaultClient != original.DefaultClient {
+		t.Errorf("DefaultClient = %q, want %q", decoded.DefaultClient, original.DefaultClient)
+	}
+
+	// Verify auto-permission configs
+	if decoded.ClaudeAutoPermission == nil {
+		t.Fatal("ClaudeAutoPermission is nil after round-trip")
+	}
+	if decoded.ClaudeAutoPermission.Enabled != original.ClaudeAutoPermission.Enabled {
+		t.Errorf("ClaudeAutoPermission.Enabled = %v, want %v", decoded.ClaudeAutoPermission.Enabled, original.ClaudeAutoPermission.Enabled)
+	}
+	if decoded.ClaudeAutoPermission.Mode != original.ClaudeAutoPermission.Mode {
+		t.Errorf("ClaudeAutoPermission.Mode = %q, want %q", decoded.ClaudeAutoPermission.Mode, original.ClaudeAutoPermission.Mode)
+	}
+
+	if decoded.CodexAutoPermission == nil {
+		t.Fatal("CodexAutoPermission is nil after round-trip")
+	}
+	if decoded.CodexAutoPermission.Enabled != original.CodexAutoPermission.Enabled {
+		t.Errorf("CodexAutoPermission.Enabled = %v, want %v", decoded.CodexAutoPermission.Enabled, original.CodexAutoPermission.Enabled)
+	}
+	if decoded.CodexAutoPermission.Mode != original.CodexAutoPermission.Mode {
+		t.Errorf("CodexAutoPermission.Mode = %q, want %q", decoded.CodexAutoPermission.Mode, original.CodexAutoPermission.Mode)
+	}
+
+	if decoded.OpenCodeAutoPermission == nil {
+		t.Fatal("OpenCodeAutoPermission is nil after round-trip")
+	}
+	if decoded.OpenCodeAutoPermission.Enabled != original.OpenCodeAutoPermission.Enabled {
+		t.Errorf("OpenCodeAutoPermission.Enabled = %v, want %v", decoded.OpenCodeAutoPermission.Enabled, original.OpenCodeAutoPermission.Enabled)
+	}
+}
+
 func TestConfigVersionOldFormat(t *testing.T) {
 	home := setTestHome(t)
 	configPath := filepath.Join(home, ConfigDir, ConfigFile)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -87,8 +88,52 @@ func SortLocalesByName(locales map[string]*LocaleReport) []*LocaleReport {
 
 // GenerateJSONReport generates a JSON report (placeholder for future implementation)
 func GenerateJSONReport(report *AuditReport) string {
-	// TODO: Implement JSON marshaling
-	return "{}"
+	// Build JSON structure
+	type JSONLocale struct {
+		Code            string   `json:"code"`
+		Name            string   `json:"name"`
+		TranslatedFiles int      `json:"translated_files"`
+		MissingFiles    int      `json:"missing_files"`
+		OutdatedFiles   int      `json:"outdated_files"`
+		CoveragePercent float64  `json:"coverage_percent"`
+		MissingFileList []string `json:"missing_file_list"`
+	}
+
+	type JSONReport struct {
+		Timestamp        string                 `json:"timestamp"`
+		SourceDocsPath   string                 `json:"source_docs_path"`
+		TotalSourceFiles int                    `json:"total_source_files"`
+		OverallCoverage  float64                `json:"overall_coverage"`
+		Locales          map[string]JSONLocale  `json:"locales"`
+	}
+
+	jsonReport := JSONReport{
+		Timestamp:        report.Timestamp.Format(time.RFC3339),
+		SourceDocsPath:   report.SourceDocsPath,
+		TotalSourceFiles: report.TotalSourceFiles,
+		OverallCoverage:  report.OverallCoverage,
+		Locales:          make(map[string]JSONLocale),
+	}
+
+	for code, localeReport := range report.Locales {
+		jsonReport.Locales[code] = JSONLocale{
+			Code:            localeReport.Locale.Code,
+			Name:            localeReport.Locale.Name,
+			TranslatedFiles: localeReport.Locale.TranslatedFiles,
+			MissingFiles:    localeReport.Locale.MissingFiles,
+			OutdatedFiles:   localeReport.Locale.OutdatedFiles,
+			CoveragePercent: localeReport.Locale.CoveragePercent,
+			MissingFileList: localeReport.MissingFiles,
+		}
+	}
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(jsonReport, "", "  ")
+	if err != nil {
+		return fmt.Sprintf(`{"error": "failed to marshal JSON: %s"}`, err.Error())
+	}
+
+	return string(jsonBytes)
 }
 
 // GenerateMarkdownReport generates a Markdown report (placeholder for future implementation)

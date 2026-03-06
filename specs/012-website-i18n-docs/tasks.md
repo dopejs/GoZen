@@ -136,22 +136,22 @@
 
 **Goal**: Production-ready features and documentation
 
-- [ ] T042 [P] Add --format flag (table|json|markdown) to audit command in website/tools/i18n-audit/cmd_audit.go
-- [ ] T043 [P] Implement GenerateJSONReport() in website/tools/i18n-audit/reporter.go
-- [ ] T044 [P] Implement GenerateMarkdownReport() in website/tools/i18n-audit/reporter.go
-- [ ] T045 [P] Add --output flag to write report to file in website/tools/i18n-audit/cmd_audit.go
-- [ ] T046 [P] Add --min-coverage flag with exit code 1 if below threshold in website/tools/i18n-audit/cmd_audit.go
+- [x] T042 [P] Add --format flag (table|json|markdown) to audit command in website/tools/i18n-audit/cmd_audit.go
+- [x] T043 [P] Implement GenerateJSONReport() in website/tools/i18n-audit/reporter.go
+- [x] T044 [P] Implement GenerateMarkdownReport() in website/tools/i18n-audit/reporter.go
+- [x] T045 [P] Add --output flag to write report to file in website/tools/i18n-audit/cmd_audit.go
+- [x] T046 [P] Add --min-coverage flag with exit code 1 if below threshold in website/tools/i18n-audit/cmd_audit.go
 - [ ] T047 [P] Add --verbose flag for detailed file-by-file output in website/tools/i18n-audit/cmd_audit.go
-- [ ] T048 [P] Implement version command in website/tools/i18n-audit/cmd_version.go
-- [ ] T049 [P] Add global flags (--help, --quiet, --color, --no-color) in website/tools/i18n-audit/main.go
+- [x] T048 [P] Implement version command in website/tools/i18n-audit/cmd_version.go
+- [x] T049 [P] Add global flags (--help, --quiet, --color, --no-color) in website/tools/i18n-audit/main.go
 - [ ] T050 [P] Load .i18n-audit.yaml config file if present in website/tools/i18n-audit/config.go
 - [ ] T051 [P] Implement exclusion rule matching in website/tools/i18n-audit/analyzer.go
-- [ ] T052 Create README.md with installation and usage examples in website/tools/i18n-audit/README.md
-- [ ] T053 Create CI/CD integration examples in website/tools/i18n-audit/examples/github-actions.yml
-- [ ] T054 Create pre-commit hook example in website/tools/i18n-audit/examples/pre-commit
-- [ ] T055 Run `go test ./... -race -cover` and verify >80% coverage
-- [ ] T056 Build binary with `go build -o i18n-audit` and test installation
-- [ ] T057 Update website documentation with i18n audit tool usage
+- [x] T052 Create README.md with installation and usage examples in website/tools/i18n-audit/README.md
+- [x] T053 Create CI/CD integration examples in website/tools/i18n-audit/examples/github-actions.yml
+- [x] T054 Create pre-commit hook example in website/tools/i18n-audit/examples/pre-commit
+- [x] T055 Run `go test ./... -race -cover` and verify >80% coverage
+- [x] T056 Build binary with `go build -o i18n-audit` and test installation
+- [x] T057 Update website documentation with i18n audit tool usage
 
 ---
 

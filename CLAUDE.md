@@ -168,6 +168,7 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - Go 1.21+ + Cobra (CLI framework), existing `cmd/root.go` permission handling (001-use-command-enhancements)
 - JSON config at `~/.zen/zen.json` (schema version bump required) (001-use-command-enhancements)
 - JSON config at `~/.zen/zen.json` (version 12 → 13) (011-feature-gates-daemon-persistence)
+- File system (reads website docs directory structure at `website/`) (012-website-i18n-docs)
 
 ## Recent Changes
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering

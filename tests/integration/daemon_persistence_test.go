@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,22 @@ func TestDaemonSurvivesCLITermination(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 	t.Setenv("GOZEN_CONFIG_DIR", filepath.Join(tmpDir, ".zen"))
+
+	// Cleanup function to fix permissions before TempDir cleanup
+	t.Cleanup(func() {
+		// Fix permissions on go module cache to allow cleanup
+		modCache := filepath.Join(tmpDir, "go", "pkg", "mod")
+		if err := filepath.Walk(modCache, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil // Skip errors during walk
+			}
+			// Make everything writable for cleanup
+			os.Chmod(path, 0755)
+			return nil
+		}); err != nil {
+			t.Logf("warning: failed to fix permissions: %v", err)
+		}
+	})
 
 	// Build zen binary
 	zenBinary := filepath.Join(tmpDir, "zen")
@@ -46,22 +63,25 @@ func TestDaemonSurvivesCLITermination(t *testing.T) {
 	}
 
 	// Extract daemon PID from status output
+	// Expected format: "zend is running (PID 12345)"
 	var daemonPID int
-	for _, line := range strings.Split(string(statusOutput), "\n") {
-		if strings.Contains(line, "PID:") {
-			// Parse PID from line like "PID: 12345"
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				if pid, err := strconv.Atoi(parts[1]); err == nil {
-					daemonPID = pid
-					break
-				}
+	statusStr := string(statusOutput)
+
+	// Look for pattern "(PID 12345)"
+	if idx := strings.Index(statusStr, "(PID "); idx != -1 {
+		// Extract the number after "(PID "
+		start := idx + 5 // length of "(PID "
+		end := strings.Index(statusStr[start:], ")")
+		if end != -1 {
+			pidStr := statusStr[start : start+end]
+			if pid, err := strconv.Atoi(pidStr); err == nil {
+				daemonPID = pid
 			}
 		}
 	}
 
 	if daemonPID == 0 {
-		t.Fatal("could not find daemon PID in status output")
+		t.Fatalf("could not find daemon PID in status output:\n%s", statusOutput)
 	}
 
 	// Verify daemon is running

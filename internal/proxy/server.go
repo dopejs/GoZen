@@ -470,6 +470,16 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 		}
 	}
 
+	// Deduplicate /v1 prefix when base_url already ends with /v1
+	// e.g., base_url "https://host/v1" + targetPath "/v1/chat/completions"
+	// should produce "https://host/v1/chat/completions", not "https://host/v1/v1/chat/completions"
+	basePath := strings.TrimSuffix(p.BaseURL.Path, "/")
+	if strings.HasSuffix(basePath, "/v1") && strings.HasPrefix(targetPath, "/v1") {
+		originalTarget := targetPath
+		targetPath = targetPath[3:] // strip "/v1", keep e.g. "/chat/completions"
+		s.Logger.Printf("[%s] path dedup: %s → %s (base_url has /v1)", p.Name, originalTarget, targetPath)
+	}
+
 	targetURL := singleJoiningSlash(p.BaseURL.String(), targetPath)
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery

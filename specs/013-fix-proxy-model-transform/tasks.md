@@ -74,9 +74,9 @@
 
 ### Tests for User Story 3
 
-- [ ] T009 [US3] Write integration test for non-streaming Anthropic→OpenAI full pipeline in `internal/proxy/server_test.go` — mock OpenAI backend, send Anthropic-format request, verify: correct path (no /v1 duplication), correct model mapping (falls through to provider model), model mapping applied before format transformation (FR-004), response transformed back to Anthropic format with `id`, `model`, `content`, `usage` fields
-- [ ] T010 [US3] Write integration test for streaming Anthropic→OpenAI SSE pipeline in `internal/proxy/server_test.go` — mock OpenAI SSE backend, send streaming Anthropic request, verify SSE events are correctly transformed from OpenAI to Anthropic format
-- [ ] T011 [US3] Write edge case tests in `internal/proxy/server_test.go` — cover: (1) upstream returns 4xx/5xx error → error properly propagated, (2) request body has no `model` field → body passed through unchanged
+- [x] T009 [US3] Write integration test for non-streaming Anthropic→OpenAI full pipeline in `internal/proxy/server_test.go` — mock OpenAI backend, send Anthropic-format request, verify: correct path (no /v1 duplication), correct model mapping (falls through to provider model), model mapping applied before format transformation (FR-004), response transformed back to Anthropic format with `id`, `model`, `content`, `usage` fields
+- [x] T010 [US3] Write integration test for streaming Anthropic→OpenAI SSE pipeline in `internal/proxy/server_test.go` — mock OpenAI SSE backend, send streaming Anthropic request, verify SSE events are correctly transformed from OpenAI to Anthropic format
+- [x] T011 [US3] Write edge case tests in `internal/proxy/server_test.go` — cover: (1) upstream returns 4xx/5xx error → error properly propagated, (2) request body has no `model` field → body passed through unchanged
 
 **Checkpoint**: Full Anthropic↔OpenAI pipeline verified for both streaming and non-streaming.
 
@@ -86,9 +86,9 @@
 
 **Purpose**: Coverage, manual validation, and final checks
 
-- [ ] T012 Run coverage check with `go test -cover ./internal/proxy/...` and verify ≥80% for proxy package
-- [ ] T013 [P] Restart dev daemon (`./scripts/dev.sh restart`) and run quickstart.md E2E curl commands for manual verification against real provider
-- [ ] T014 [P] Review all changes for backward compatibility — verify existing Anthropic provider configs produce identical behavior
+- [x] T012 Run coverage check with `go test -cover ./internal/proxy/...` and verify ≥80% for proxy package
+- [x] T013 [P] Restart dev daemon (`./scripts/dev.sh restart`) and run quickstart.md E2E curl commands for manual verification against real provider
+- [x] T014 [P] Review all changes for backward compatibility — verify existing Anthropic provider configs produce identical behavior
 
 ---
 

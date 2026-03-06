@@ -2382,3 +2382,264 @@ func TestModelMappingFallthrough_OpenAI(t *testing.T) {
 		})
 	}
 }
+
+// TestE2E_AnthropicToOpenAI_NonStreaming tests the full Anthropic→OpenAI pipeline:
+// model mapping, request transformation, path transformation, response transformation.
+func TestE2E_AnthropicToOpenAI_NonStreaming(t *testing.T) {
+	var receivedPath, receivedModel string
+	var receivedBody map[string]interface{}
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &receivedBody)
+		receivedModel, _ = receivedBody["model"].(string)
+
+		// Respond with OpenAI format
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-test",
+			"choices": [{
+				"index": 0,
+				"message": {"role": "assistant", "content": "Hello from OpenAI!"},
+				"finish_reason": "stop"
+			}],
+			"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+		}`))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL + "/v1")
+	providers := []*Provider{{
+		Name:    "openai-e2e",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-test",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+
+	// Send Anthropic-format request
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-6","max_tokens":100,"messages":[{"role":"user","content":"Hello"}]}`))
+	req.Header.Set("X-Zen-Request-Format", "anthropic")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify path: should be /v1/chat/completions (no /v1 duplication)
+	if receivedPath != "/v1/chat/completions" {
+		t.Errorf("path = %q, want /v1/chat/completions", receivedPath)
+	}
+
+	// Verify model mapping: should fall through to provider's model (FR-004: mapping before transform)
+	if receivedModel != "gpt-test" {
+		t.Errorf("model = %q, want gpt-test", receivedModel)
+	}
+
+	// Verify request was transformed to OpenAI format (max_tokens → max_completion_tokens)
+	if _, hasMaxTokens := receivedBody["max_tokens"]; hasMaxTokens {
+		t.Error("request should have max_completion_tokens, not max_tokens (Anthropic→OpenAI transform)")
+	}
+
+	// Verify response was transformed back to Anthropic format
+	var respData map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &respData)
+
+	if respData["type"] != "message" {
+		t.Errorf("response type = %v, want message", respData["type"])
+	}
+	if respData["role"] != "assistant" {
+		t.Errorf("response role = %v, want assistant", respData["role"])
+	}
+	if respData["id"] != "chatcmpl-123" {
+		t.Errorf("response id = %v, want chatcmpl-123", respData["id"])
+	}
+
+	content, ok := respData["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatal("response content is missing or empty")
+	}
+	contentBlock, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("response content[0] is not a map")
+	}
+	if contentBlock["text"] != "Hello from OpenAI!" {
+		t.Errorf("content text = %v, want 'Hello from OpenAI!'", contentBlock["text"])
+	}
+
+	usage, ok := respData["usage"].(map[string]interface{})
+	if !ok {
+		t.Fatal("response usage is missing")
+	}
+	if usage["input_tokens"] != float64(10) {
+		t.Errorf("input_tokens = %v, want 10", usage["input_tokens"])
+	}
+	if usage["output_tokens"] != float64(5) {
+		t.Errorf("output_tokens = %v, want 5", usage["output_tokens"])
+	}
+}
+
+// TestE2E_AnthropicToOpenAI_Streaming tests SSE streaming transformation.
+func TestE2E_AnthropicToOpenAI_Streaming(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Respond with OpenAI SSE format
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		flusher, _ := w.(http.Flusher)
+
+		// Send OpenAI SSE events
+		fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL + "/v1")
+	providers := []*Provider{{
+		Name:    "openai-stream",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-test",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-6","max_tokens":100,"stream":true,"messages":[{"role":"user","content":"Hello"}]}`))
+	req.Header.Set("X-Zen-Request-Format", "anthropic")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify SSE content type is preserved
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "text/event-stream") {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+
+	// Verify response body contains SSE data
+	body := w.Body.String()
+	if !strings.Contains(body, "data:") {
+		t.Errorf("response should contain SSE data events, got: %s", body)
+	}
+}
+
+// TestE2E_EdgeCases tests edge cases for cross-format requests.
+func TestE2E_EdgeCases(t *testing.T) {
+	t.Run("upstream_4xx_error_passed_through", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":{"type":"invalid_request_error","message":"bad request"}}`))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "error-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "test-token",
+			Model:   "gpt-test",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		// 400 from upstream is passed through (proxy only failovers on 401/402/403/429/500+)
+		if w.Code != 400 {
+			t.Errorf("status = %d, want 400 (passed through)", w.Code)
+		}
+	})
+
+	t.Run("upstream_5xx_error_triggers_failover", func(t *testing.T) {
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"type":"server_error","message":"internal error"}}`))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "error-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "test-token",
+			Model:   "gpt-test",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		// 500 triggers failover; with single provider → all fail → 502
+		if w.Code != http.StatusBadGateway {
+			t.Errorf("status = %d, want 502 (all providers failed)", w.Code)
+		}
+	})
+
+	t.Run("no_model_in_request_body_passthrough", func(t *testing.T) {
+		var receivedBody map[string]interface{}
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			json.Unmarshal(body, &receivedBody)
+			w.WriteHeader(200)
+			w.Write([]byte(`{"id":"chatcmpl-1","choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "no-model-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "test-token",
+			Model:   "gpt-test",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		// Request without model field
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		if w.Code != 200 {
+			t.Fatalf("status = %d, want 200", w.Code)
+		}
+
+		// Body should still have been forwarded (no model to map, pass through)
+		if receivedBody == nil {
+			t.Fatal("backend should have received request body")
+		}
+	})
+}

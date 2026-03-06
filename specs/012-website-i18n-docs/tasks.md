@@ -91,20 +91,20 @@
 
 ### Tests
 
-- [ ] T027 [P] [US2] Write priority sorting tests in website/tools/i18n-audit/analyzer_test.go (sort by file size, group by priority tiers)
-- [ ] T028 [P] [US2] Write path suggestion tests in website/tools/i18n-audit/reporter_test.go (correct i18n path format for each locale)
+- [x] T027 [P] [US2] Write priority sorting tests in website/tools/i18n-audit/analyzer_test.go (sort by file size, group by priority tiers)
+- [x] T028 [P] [US2] Write path suggestion tests in website/tools/i18n-audit/reporter_test.go (correct i18n path format for each locale)
 
 ### Implementation
 
-- [ ] T029 [US2] Implement PrioritizeMissingFiles() in website/tools/i18n-audit/analyzer.go (sort by size, categorize as P1/P2/P3)
-- [ ] T030 [US2] Implement GenerateMissingReport() in website/tools/i18n-audit/reporter.go (list with suggested paths)
-- [ ] T031 [US2] Implement list-missing command in website/tools/i18n-audit/cmd_list_missing.go (require --locale flag)
-- [ ] T032 [US2] Add --priority flag to list-missing command in website/tools/i18n-audit/cmd_list_missing.go
+- [x] T029 [US2] Implement PrioritizeMissingFiles() in website/tools/i18n-audit/analyzer.go (sort by size, categorize as P1/P2/P3)
+- [x] T030 [US2] Implement GenerateMissingReport() in website/tools/i18n-audit/reporter.go (list with suggested paths)
+- [x] T031 [US2] Implement list-missing command in website/tools/i18n-audit/cmd_list_missing.go (require --locale flag)
+- [x] T032 [US2] Add --priority flag to list-missing command in website/tools/i18n-audit/cmd_list_missing.go
 
 ### Integration
 
-- [ ] T033 [US2] Test list-missing against real website/docs/ directory
-- [ ] T034 [US2] Verify priority sorting (agent-infrastructure.md and webhooks.md should be P1)
+- [x] T033 [US2] Test list-missing against real website/docs/ directory
+- [x] T034 [US2] Verify priority sorting (agent-infrastructure.md and webhooks.md should be P1)
 
 ---
 

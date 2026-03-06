@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -120,4 +121,38 @@ func GenerateMarkdownReport(report *AuditReport) string {
 // FormatTimestamp formats a timestamp for display
 func FormatTimestamp(t time.Time) string {
 	return t.Format("2006-01-02")
+}
+
+// GenerateMissingReport generates a report of missing translations with suggested paths
+func GenerateMissingReport(locale string, missing []string, i18nPath string) string {
+	var output strings.Builder
+
+	output.WriteString(titleStyle.Render(fmt.Sprintf("Missing Translations for %s", locale)))
+	output.WriteString("\n")
+
+	if len(missing) == 0 {
+		output.WriteString("\nNo missing translations found.\n")
+		output.WriteString("All files are translated! ✓\n")
+		return output.String()
+	}
+
+	output.WriteString(fmt.Sprintf("Total: %d files\n\n", len(missing)))
+
+	for _, filePath := range missing {
+		suggestedPath := filepath.Join(i18nPath, locale, "docusaurus-plugin-content-docs", "current", filePath)
+		output.WriteString(fmt.Sprintf("  %s\n", filePath))
+		output.WriteString(fmt.Sprintf("  → Create: %s\n\n", suggestedPath))
+	}
+
+	return output.String()
+}
+
+// CategorizePriority categorizes a file by size into priority tiers
+func CategorizePriority(size int64) string {
+	if size >= 5000 {
+		return "Priority 1"
+	} else if size >= 1000 {
+		return "Priority 2"
+	}
+	return "Priority 3"
 }

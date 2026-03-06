@@ -150,3 +150,82 @@ func TestSortLocalesByName(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateMissingReport(t *testing.T) {
+	tests := []struct {
+		name        string
+		locale      string
+		missing     []string
+		i18nPath    string
+		wantContain []string
+		description string
+	}{
+		{
+			name:     "basic missing report",
+			locale:   "zh-Hans",
+			missing:  []string{"getting-started.md", "configuration.md"},
+			i18nPath: "./i18n",
+			wantContain: []string{
+				"Missing Translations for zh-Hans",
+				"getting-started.md",
+				"configuration.md",
+				"i18n/zh-Hans/docusaurus-plugin-content-docs/current/getting-started.md",
+				"i18n/zh-Hans/docusaurus-plugin-content-docs/current/configuration.md",
+			},
+			description: "should show missing files with suggested paths",
+		},
+		{
+			name:        "no missing files",
+			locale:      "zh-Hans",
+			missing:     []string{},
+			i18nPath:    "./i18n",
+			wantContain: []string{"No missing translations"},
+			description: "should show success message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := GenerateMissingReport(tt.locale, tt.missing, tt.i18nPath)
+
+			for _, want := range tt.wantContain {
+				if !strings.Contains(output, want) {
+					t.Errorf("GenerateMissingReport() output missing %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestCategorizePriority(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int64
+		wantTier string
+	}{
+		{
+			name:     "large file",
+			size:     10000,
+			wantTier: "Priority 1",
+		},
+		{
+			name:     "medium file",
+			size:     2000,
+			wantTier: "Priority 2",
+		},
+		{
+			name:     "small file",
+			size:     500,
+			wantTier: "Priority 3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tier := CategorizePriority(tt.size)
+			if tier != tt.wantTier {
+				t.Errorf("CategorizePriority(%d) = %s, want %s", tt.size, tier, tt.wantTier)
+			}
+		})
+	}
+}

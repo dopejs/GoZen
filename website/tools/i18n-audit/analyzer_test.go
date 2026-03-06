@@ -178,3 +178,51 @@ func TestApplyExclusionRules(t *testing.T) {
 		})
 	}
 }
+
+func TestPrioritizeMissingFiles(t *testing.T) {
+	tests := []struct {
+		name        string
+		sourceDocs  []DocumentationPage
+		missing     []string
+		wantOrder   []string
+		description string
+	}{
+		{
+			name: "sort by file size descending",
+			sourceDocs: []DocumentationPage{
+				{Path: "small.md", Size: 100},
+				{Path: "large.md", Size: 10000},
+				{Path: "medium.md", Size: 1000},
+			},
+			missing:     []string{"small.md", "large.md", "medium.md"},
+			wantOrder:   []string{"large.md", "medium.md", "small.md"},
+			description: "should prioritize larger files first",
+		},
+		{
+			name: "empty missing list",
+			sourceDocs: []DocumentationPage{
+				{Path: "doc.md", Size: 100},
+			},
+			missing:     []string{},
+			wantOrder:   []string{},
+			description: "should return empty list",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prioritized := PrioritizeMissingFiles(tt.sourceDocs, tt.missing)
+
+			if len(prioritized) != len(tt.wantOrder) {
+				t.Errorf("PrioritizeMissingFiles() returned %d files, want %d", len(prioritized), len(tt.wantOrder))
+				return
+			}
+
+			for i, path := range tt.wantOrder {
+				if prioritized[i] != path {
+					t.Errorf("PrioritizeMissingFiles() position %d = %s, want %s", i, prioritized[i], path)
+				}
+			}
+		})
+	}
+}

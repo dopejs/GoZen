@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -114,4 +115,44 @@ func MatchPattern(pattern, path string) bool {
 
 	// Exact match
 	return pattern == path
+}
+
+// PrioritizeMissingFiles sorts missing files by size (largest first)
+func PrioritizeMissingFiles(sourceDocs []DocumentationPage, missing []string) []string {
+	if len(missing) == 0 {
+		return []string{}
+	}
+
+	// Create a map for quick lookup of file sizes
+	sizeMap := make(map[string]int64)
+	for _, doc := range sourceDocs {
+		sizeMap[doc.Path] = doc.Size
+	}
+
+	// Create a slice of missing files with their sizes
+	type fileWithSize struct {
+		path string
+		size int64
+	}
+
+	var files []fileWithSize
+	for _, path := range missing {
+		files = append(files, fileWithSize{
+			path: path,
+			size: sizeMap[path],
+		})
+	}
+
+	// Sort by size descending (largest first)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].size > files[j].size
+	})
+
+	// Extract sorted paths
+	var sorted []string
+	for _, f := range files {
+		sorted = append(sorted, f.path)
+	}
+
+	return sorted
 }

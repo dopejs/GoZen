@@ -229,3 +229,52 @@ func TestCategorizePriority(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateSyncReport(t *testing.T) {
+	now := time.Now()
+	oneWeekAgo := now.Add(-7 * 24 * time.Hour)
+
+	tests := []struct {
+		name        string
+		outdated    map[string][]OutdatedFile
+		wantContain []string
+		description string
+	}{
+		{
+			name: "basic sync report",
+			outdated: map[string][]OutdatedFile{
+				"zh-Hans": {
+					{
+						Path:             "getting-started.md",
+						SourceModified:   now,
+						TranslationModified: oneWeekAgo,
+					},
+				},
+			},
+			wantContain: []string{
+				"Outdated Translations Report",
+				"zh-Hans",
+				"getting-started.md",
+			},
+			description: "should show outdated files",
+		},
+		{
+			name:        "no outdated files",
+			outdated:    map[string][]OutdatedFile{},
+			wantContain: []string{"No outdated translations found"},
+			description: "should show success message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := GenerateSyncReport(tt.outdated)
+
+			for _, want := range tt.wantContain {
+				if !strings.Contains(output, want) {
+					t.Errorf("GenerateSyncReport() output missing %q", want)
+				}
+			}
+		})
+	}
+}

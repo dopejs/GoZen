@@ -156,3 +156,56 @@ func CategorizePriority(size int64) string {
 	}
 	return "Priority 3"
 }
+
+// GenerateSyncReport generates a report of outdated translations
+func GenerateSyncReport(outdated map[string][]OutdatedFile) string {
+	var output strings.Builder
+
+	output.WriteString(titleStyle.Render("Outdated Translations Report"))
+	output.WriteString("\n\n")
+
+	// Check if there are any outdated files
+	totalOutdated := 0
+	for _, files := range outdated {
+		totalOutdated += len(files)
+	}
+
+	if totalOutdated == 0 {
+		output.WriteString("No outdated translations found.\n")
+		output.WriteString("All translations are up-to-date! ✓\n")
+		return output.String()
+	}
+
+	// Table header
+	output.WriteString("┌──────────┬────────────────────────┬─────────────┬──────────────┐\n")
+	output.WriteString("│ Locale   │ File                   │ Source Date │ Translation  │\n")
+	output.WriteString("├──────────┼────────────────────────┼─────────────┼──────────────┤\n")
+
+	// Table rows
+	for locale, files := range outdated {
+		for _, file := range files {
+			output.WriteString(fmt.Sprintf("│ %-8s │ %-22s │ %-11s │ %-12s │\n",
+				locale,
+				truncateString(file.Path, 22),
+				FormatTimestamp(file.SourceModified),
+				FormatTimestamp(file.TranslationModified),
+			))
+		}
+	}
+
+	output.WriteString("└──────────┴────────────────────────┴─────────────┴──────────────┘\n\n")
+
+	// Summary
+	localeCount := len(outdated)
+	output.WriteString(fmt.Sprintf("Total Outdated: %d files across %d locale(s)\n", totalOutdated, localeCount))
+
+	return output.String()
+}
+
+// truncateString truncates a string to a maximum length
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}

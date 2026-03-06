@@ -156,3 +156,16 @@ func PrioritizeMissingFiles(sourceDocs []DocumentationPage, missing []string) []
 
 	return sorted
 }
+
+// DetectOutdatedTranslations returns a list of translations that are outdated
+func DetectOutdatedTranslations(translations []Translation) []string {
+	var outdated []string
+
+	for _, trans := range translations {
+		if trans.Status == StatusExists && trans.IsOutdated {
+			outdated = append(outdated, trans.SourcePath)
+		}
+	}
+
+	return outdated
+}

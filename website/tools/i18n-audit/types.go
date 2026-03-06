@@ -71,3 +71,10 @@ type ExclusionRule struct {
 	Reason    string   // Why this file doesn't need translation
 	AppliesTo []string // List of locale codes (empty = all locales)
 }
+
+// OutdatedFile represents a file where the source is newer than the translation
+type OutdatedFile struct {
+	Path                string    // File path
+	SourceModified      time.Time // Source file modification time
+	TranslationModified time.Time // Translation file modification time
+}

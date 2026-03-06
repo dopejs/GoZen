@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestAnalyzeCoverage(t *testing.T) {
@@ -222,6 +223,67 @@ func TestPrioritizeMissingFiles(t *testing.T) {
 				if prioritized[i] != path {
 					t.Errorf("PrioritizeMissingFiles() position %d = %s, want %s", i, prioritized[i], path)
 				}
+			}
+		})
+	}
+}
+
+func TestDetectOutdatedTranslations(t *testing.T) {
+	now := time.Now()
+	oneWeekAgo := now.Add(-7 * 24 * time.Hour)
+
+	tests := []struct {
+		name        string
+		translations []Translation
+		wantOutdated int
+		description string
+	}{
+		{
+			name: "source newer than translation",
+			translations: []Translation{
+				{
+					SourcePath:   "getting-started.md",
+					Status:       StatusExists,
+					ModifiedTime: oneWeekAgo,
+					IsOutdated:   true,
+				},
+			},
+			wantOutdated: 1,
+			description:  "should detect outdated translation",
+		},
+		{
+			name: "translation up to date",
+			translations: []Translation{
+				{
+					SourcePath:   "getting-started.md",
+					Status:       StatusExists,
+					ModifiedTime: now,
+					IsOutdated:   false,
+				},
+			},
+			wantOutdated: 0,
+			description:  "should not flag up-to-date translation",
+		},
+		{
+			name: "missing translation",
+			translations: []Translation{
+				{
+					SourcePath: "getting-started.md",
+					Status:     StatusMissing,
+					IsOutdated: false,
+				},
+			},
+			wantOutdated: 0,
+			description:  "should not flag missing translations as outdated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outdated := DetectOutdatedTranslations(tt.translations)
+
+			if len(outdated) != tt.wantOutdated {
+				t.Errorf("DetectOutdatedTranslations() found %d outdated, want %d", len(outdated), tt.wantOutdated)
 			}
 		})
 	}

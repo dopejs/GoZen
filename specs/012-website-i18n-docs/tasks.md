@@ -116,19 +116,19 @@
 
 ### Tests
 
-- [ ] T035 [P] [US3] Write staleness detection tests in website/tools/i18n-audit/analyzer_test.go (compare modification times, git log integration)
-- [ ] T036 [P] [US3] Write sync-check report tests in website/tools/i18n-audit/reporter_test.go (outdated file list, date formatting)
+- [x] T035 [P] [US3] Write staleness detection tests in website/tools/i18n-audit/analyzer_test.go (compare modification times, git log integration)
+- [x] T036 [P] [US3] Write sync-check report tests in website/tools/i18n-audit/reporter_test.go (outdated file list, date formatting)
 
 ### Implementation
 
-- [ ] T037 [US3] Implement DetectOutdatedTranslations() in website/tools/i18n-audit/analyzer.go (compare source vs translation mtime)
-- [ ] T038 [US3] Implement GetGitModTime() helper in website/tools/i18n-audit/git.go (exec git log -1 --format=%ct)
-- [ ] T039 [US3] Implement GenerateSyncReport() in website/tools/i18n-audit/reporter.go (table with source date vs translation date)
-- [ ] T040 [US3] Implement sync-check command in website/tools/i18n-audit/cmd_sync_check.go
+- [x] T037 [US3] Implement DetectOutdatedTranslations() in website/tools/i18n-audit/analyzer.go (compare source vs translation mtime)
+- [x] T038 [US3] Implement GetGitModTime() helper in website/tools/i18n-audit/git.go (exec git log -1 --format=%ct)
+- [x] T039 [US3] Implement GenerateSyncReport() in website/tools/i18n-audit/reporter.go (table with source date vs translation date)
+- [x] T040 [US3] Implement sync-check command in website/tools/i18n-audit/cmd_sync_check.go
 
 ### Integration
 
-- [ ] T041 [US3] Test sync-check with artificially outdated translations (touch source file)
+- [x] T041 [US3] Test sync-check with artificially outdated translations (touch source file)
 
 ---
 

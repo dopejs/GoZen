@@ -400,7 +400,16 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 10 (v3.0.0+): added skills config to bot (skill-based intent recognition)
 // - Version 11 (v3.0.0-alpha.14): added show_provider_tag (deprecated in v3.0.0-alpha.14)
 // - Version 12 (v3.0.0+): added auto-permission configuration (claude_auto_permission, codex_auto_permission, opencode_auto_permission)
-const CurrentConfigVersion = 12
+// - Version 13 (v3.0.0+): added feature_gates for experimental features (bot, compression, middleware, agent)
+const CurrentConfigVersion = 13
+
+// FeatureGates controls experimental features.
+type FeatureGates struct {
+	Bot         bool `json:"bot"`         // Bot gateway (BETA)
+	Compression bool `json:"compression"` // Context compression (BETA)
+	Middleware  bool `json:"middleware"`  // Middleware pipeline (BETA)
+	Agent       bool `json:"agent"`       // Agent infrastructure (BETA)
+}
 
 // AutoPermissionConfig holds auto-permission settings for a specific client.
 type AutoPermissionConfig struct {
@@ -804,6 +813,7 @@ type OpenCCConfig struct {
 	ClaudeAutoPermission   *AutoPermissionConfig       `json:"claude_auto_permission,omitempty"`   // auto-permission config for Claude Code
 	CodexAutoPermission    *AutoPermissionConfig       `json:"codex_auto_permission,omitempty"`    // auto-permission config for Codex
 	OpenCodeAutoPermission *AutoPermissionConfig       `json:"opencode_auto_permission,omitempty"` // auto-permission config for OpenCode
+	FeatureGates           *FeatureGates               `json:"feature_gates,omitempty"`            // experimental feature toggles
 	Providers              map[string]*ProviderConfig  `json:"providers"`                          // provider configurations
 	Profiles               map[string]*ProfileConfig   `json:"profiles"`                           // profile configurations
 	ProjectBindings        map[string]*ProjectBinding  `json:"project_bindings,omitempty"`         // directory path -> binding config
@@ -838,6 +848,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		ClaudeAutoPermission   *AutoPermissionConfig          `json:"claude_auto_permission,omitempty"`   // v12+
 		CodexAutoPermission    *AutoPermissionConfig          `json:"codex_auto_permission,omitempty"`    // v12+
 		OpenCodeAutoPermission *AutoPermissionConfig          `json:"opencode_auto_permission,omitempty"` // v12+
+		FeatureGates           *FeatureGates                  `json:"feature_gates,omitempty"`            // v13+
 		Providers              map[string]*ProviderConfig     `json:"providers"`
 		Profiles               map[string]*ProfileConfig      `json:"profiles"`
 		ProjectBindings        map[string]json.RawMessage     `json:"project_bindings,omitempty"`
@@ -864,6 +875,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.ClaudeAutoPermission = raw.ClaudeAutoPermission
 	c.CodexAutoPermission = raw.CodexAutoPermission
 	c.OpenCodeAutoPermission = raw.OpenCodeAutoPermission
+	c.FeatureGates = raw.FeatureGates
 	c.Providers = raw.Providers
 	c.Profiles = raw.Profiles
 	c.Sync = raw.Sync

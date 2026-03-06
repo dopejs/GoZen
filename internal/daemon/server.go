@@ -50,6 +50,9 @@ type Daemon struct {
 	proxyPort int
 	webPort   int
 
+	// Feature gates tracking (for detecting changes on reload)
+	currentGates *config.FeatureGates
+
 	// Shutdown channel - closed when shutdown is requested via API
 	shutdownCh chan struct{}
 }
@@ -102,6 +105,9 @@ func (d *Daemon) Start() error {
 
 	d.proxyPort = config.GetProxyPort()
 	d.webPort = config.GetWebPort()
+
+	// Initialize current feature gates for change detection
+	d.currentGates = config.GetFeatureGates()
 
 	// Initialize structured logger for proxy logs (SQLite)
 	if err := proxy.InitGlobalLogger(config.ConfigDirPath()); err != nil {
@@ -358,10 +364,63 @@ func (d *Daemon) sessionCleanupLoop() {
 	}
 }
 
+// gatesChanged compares two FeatureGates and returns true if any field differs.
+func gatesChanged(old, new *config.FeatureGates) bool {
+	// Treat nil as empty struct
+	if old == nil {
+		old = &config.FeatureGates{}
+	}
+	if new == nil {
+		new = &config.FeatureGates{}
+	}
+
+	return old.Bot != new.Bot ||
+		old.Compression != new.Compression ||
+		old.Middleware != new.Middleware ||
+		old.Agent != new.Agent
+}
+
+// logFeatureGateChanges logs each changed field in FeatureGates.
+func (d *Daemon) logFeatureGateChanges(old, new *config.FeatureGates) {
+	// Treat nil as empty struct
+	if old == nil {
+		old = &config.FeatureGates{}
+	}
+	if new == nil {
+		new = &config.FeatureGates{}
+	}
+
+	if old.Bot != new.Bot {
+		d.logger.Printf("Feature gate changed: bot: %v → %v", old.Bot, new.Bot)
+	}
+	if old.Compression != new.Compression {
+		d.logger.Printf("Feature gate changed: compression: %v → %v", old.Compression, new.Compression)
+	}
+	if old.Middleware != new.Middleware {
+		d.logger.Printf("Feature gate changed: middleware: %v → %v", old.Middleware, new.Middleware)
+	}
+	if old.Agent != new.Agent {
+		d.logger.Printf("Feature gate changed: agent: %v → %v", old.Agent, new.Agent)
+	}
+}
+
 // onConfigReload is called when the config file changes.
 func (d *Daemon) onConfigReload() {
 	d.logger.Println("config file changed, reloading...")
+
+	// Capture old feature gates from daemon state (before reload)
+	oldGates := d.currentGates
+
 	config.ResetDefaultStore()
+
+	// Detect and log feature gate changes
+	newGates := config.GetFeatureGates()
+	if gatesChanged(oldGates, newGates) {
+		d.logFeatureGateChanges(oldGates, newGates)
+	}
+
+	// Update current gates
+	d.currentGates = newGates
 
 	// Protect running ports: revert any port changes to preserve active sessions.
 	// Port changes only take effect on daemon restart.

@@ -323,3 +323,180 @@ func TestCompatAgent(t *testing.T) {
 		t.Error("Expected agent to be enabled")
 	}
 }
+
+// TestGetFeatureGates tests GetFeatureGates with various states (table-driven).
+func TestGetFeatureGates(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupFunc func(*Store)
+		want      *FeatureGates
+	}{
+		{
+			name:      "nil FeatureGates returns empty struct",
+			setupFunc: func(s *Store) {
+				// Don't set FeatureGates - should be nil
+			},
+			want: &FeatureGates{},
+		},
+		{
+			name: "existing FeatureGates returned",
+			setupFunc: func(s *Store) {
+				s.SetFeatureGates(&FeatureGates{Bot: true, Agent: true})
+			},
+			want: &FeatureGates{Bot: true, Agent: true},
+		},
+		{
+			name: "all features enabled",
+			setupFunc: func(s *Store) {
+				s.SetFeatureGates(&FeatureGates{Bot: true, Compression: true, Middleware: true, Agent: true})
+			},
+			want: &FeatureGates{Bot: true, Compression: true, Middleware: true, Agent: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			oldHome := os.Getenv("HOME")
+			os.Setenv("HOME", tmpDir)
+			defer os.Setenv("HOME", oldHome)
+
+			configDir := filepath.Join(tmpDir, ".zen")
+			os.MkdirAll(configDir, 0755)
+			ResetDefaultStore()
+
+			store := DefaultStore()
+			tt.setupFunc(store)
+
+			got := GetFeatureGates()
+			if *got != *tt.want {
+				t.Errorf("GetFeatureGates() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSetFeatureGatesCreate tests SetFeatureGates creating new FeatureGates (table-driven).
+func TestSetFeatureGatesCreate(t *testing.T) {
+	tests := []struct {
+		name  string
+		gates *FeatureGates
+	}{
+		{
+			name:  "create with bot enabled",
+			gates: &FeatureGates{Bot: true},
+		},
+		{
+			name:  "create with all enabled",
+			gates: &FeatureGates{Bot: true, Compression: true, Middleware: true, Agent: true},
+		},
+		{
+			name:  "create with mixed state",
+			gates: &FeatureGates{Compression: true, Agent: true},
+		},
+		{
+			name:  "create with all disabled",
+			gates: &FeatureGates{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			oldHome := os.Getenv("HOME")
+			os.Setenv("HOME", tmpDir)
+			defer os.Setenv("HOME", oldHome)
+
+			configDir := filepath.Join(tmpDir, ".zen")
+			os.MkdirAll(configDir, 0755)
+			ResetDefaultStore()
+
+			// Initially nil
+			got := GetFeatureGates()
+			if *got != (FeatureGates{}) {
+				t.Errorf("Initial GetFeatureGates() = %+v, want empty", got)
+			}
+
+			// Set feature gates
+			if err := SetFeatureGates(tt.gates); err != nil {
+				t.Fatalf("SetFeatureGates() error = %v", err)
+			}
+
+			// Verify it was set
+			got = GetFeatureGates()
+			if *got != *tt.gates {
+				t.Errorf("After SetFeatureGates(), GetFeatureGates() = %+v, want %+v", got, tt.gates)
+			}
+		})
+	}
+}
+
+// TestSetFeatureGatesModify tests SetFeatureGates modifying existing FeatureGates (table-driven).
+func TestSetFeatureGatesModify(t *testing.T) {
+	tests := []struct {
+		name     string
+		initial  *FeatureGates
+		modified *FeatureGates
+	}{
+		{
+			name:     "enable bot",
+			initial:  &FeatureGates{},
+			modified: &FeatureGates{Bot: true},
+		},
+		{
+			name:     "disable bot",
+			initial:  &FeatureGates{Bot: true},
+			modified: &FeatureGates{},
+		},
+		{
+			name:     "enable multiple features",
+			initial:  &FeatureGates{Bot: true},
+			modified: &FeatureGates{Bot: true, Compression: true, Agent: true},
+		},
+		{
+			name:     "toggle features",
+			initial:  &FeatureGates{Bot: true, Compression: true},
+			modified: &FeatureGates{Middleware: true, Agent: true},
+		},
+		{
+			name:     "enable all then disable all",
+			initial:  &FeatureGates{Bot: true, Compression: true, Middleware: true, Agent: true},
+			modified: &FeatureGates{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			oldHome := os.Getenv("HOME")
+			os.Setenv("HOME", tmpDir)
+			defer os.Setenv("HOME", oldHome)
+
+			configDir := filepath.Join(tmpDir, ".zen")
+			os.MkdirAll(configDir, 0755)
+			ResetDefaultStore()
+
+			// Set initial state
+			if err := SetFeatureGates(tt.initial); err != nil {
+				t.Fatalf("SetFeatureGates(initial) error = %v", err)
+			}
+
+			// Verify initial state
+			got := GetFeatureGates()
+			if *got != *tt.initial {
+				t.Errorf("Initial GetFeatureGates() = %+v, want %+v", got, tt.initial)
+			}
+
+			// Modify feature gates
+			if err := SetFeatureGates(tt.modified); err != nil {
+				t.Fatalf("SetFeatureGates(modified) error = %v", err)
+			}
+
+			// Verify modified state
+			got = GetFeatureGates()
+			if *got != *tt.modified {
+				t.Errorf("After modification, GetFeatureGates() = %+v, want %+v", got, tt.modified)
+			}
+		})
+	}
+}

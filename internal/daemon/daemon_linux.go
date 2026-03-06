@@ -20,7 +20,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart={{.Executable}} daemon start --foreground
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

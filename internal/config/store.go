@@ -1085,3 +1085,25 @@ func (s *Store) SetAutoPermission(client string, ap *AutoPermissionConfig) error
 	}
 	return s.saveLocked()
 }
+
+// SetFeatureGates sets the feature gates configuration and saves.
+func (s *Store) SetFeatureGates(fg *FeatureGates) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+	s.config.FeatureGates = fg
+	return s.saveLocked()
+}
+
+// GetFeatureGates returns the feature gates configuration.
+// Returns an empty FeatureGates struct if not set (all features disabled).
+func (s *Store) GetFeatureGates() *FeatureGates {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	if s.config == nil || s.config.FeatureGates == nil {
+		return &FeatureGates{}
+	}
+	return s.config.FeatureGates
+}

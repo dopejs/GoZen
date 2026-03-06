@@ -104,7 +104,7 @@ func TestAutoPermissionConfig(t *testing.T) {
 	}
 }
 
-// T005: Test config version migration (v11→v12)
+// T005: Test config version migration (v11→v13)
 func TestConfigMigrationV11ToV12(t *testing.T) {
 	home := setTestHome(t)
 	configPath := filepath.Join(home, ConfigDir, ConfigFile)
@@ -150,8 +150,8 @@ func TestConfigMigrationV11ToV12(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Version != 12 {
-		t.Errorf("version after migration = %d, want 12", cfg.Version)
+	if cfg.Version != 13 {
+		t.Errorf("version after migration = %d, want 13", cfg.Version)
 	}
 
 	// Verify new fields exist with default values (nil/empty)
@@ -2263,4 +2263,56 @@ func TestConfig_DeprecatedFieldIgnored(t *testing.T) {
 
 	// Verify deprecated field is ignored (no error, field not accessible)
 	// The field should be parsed but not stored or used
+}
+
+// TestFeatureGatesJSONSerialization tests FeatureGates struct JSON serialization (table-driven).
+func TestFeatureGatesJSONSerialization(t *testing.T) {
+	tests := []struct {
+		name     string
+		gates    *FeatureGates
+		wantJSON string
+	}{
+		{
+			name:     "all disabled",
+			gates:    &FeatureGates{},
+			wantJSON: `{"bot":false,"compression":false,"middleware":false,"agent":false}`,
+		},
+		{
+			name:     "bot enabled",
+			gates:    &FeatureGates{Bot: true},
+			wantJSON: `{"bot":true,"compression":false,"middleware":false,"agent":false}`,
+		},
+		{
+			name:     "all enabled",
+			gates:    &FeatureGates{Bot: true, Compression: true, Middleware: true, Agent: true},
+			wantJSON: `{"bot":true,"compression":true,"middleware":true,"agent":true}`,
+		},
+		{
+			name:     "mixed state",
+			gates:    &FeatureGates{Bot: true, Agent: true},
+			wantJSON: `{"bot":true,"compression":false,"middleware":false,"agent":true}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test Marshal
+			data, err := json.Marshal(tt.gates)
+			if err != nil {
+				t.Fatalf("Marshal error: %v", err)
+			}
+			if string(data) != tt.wantJSON {
+				t.Errorf("Marshal = %s, want %s", string(data), tt.wantJSON)
+			}
+
+			// Test Unmarshal
+			var gates FeatureGates
+			if err := json.Unmarshal([]byte(tt.wantJSON), &gates); err != nil {
+				t.Fatalf("Unmarshal error: %v", err)
+			}
+			if gates != *tt.gates {
+				t.Errorf("Unmarshal = %+v, want %+v", gates, *tt.gates)
+			}
+		})
+	}
 }

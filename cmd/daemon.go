@@ -314,6 +314,12 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 		ProxyPort      int    `json:"proxy_port"`
 		WebPort        int    `json:"web_port"`
 		ActiveSessions int    `json:"active_sessions"`
+		FeatureGates   *struct {
+			Bot         bool `json:"bot"`
+			Compression bool `json:"compression"`
+			Middleware  bool `json:"middleware"`
+			Agent       bool `json:"agent"`
+		} `json:"feature_gates,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 		if pid == -1 {
@@ -334,7 +340,25 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Proxy:    http://127.0.0.1:%d\n", status.ProxyPort)
 	fmt.Printf("  Web UI:   http://127.0.0.1:%d\n", status.WebPort)
 	fmt.Printf("  Sessions: %d active\n", status.ActiveSessions)
+
+	// Show feature gates if available
+	if status.FeatureGates != nil {
+		fmt.Println("  Feature Gates:")
+		fmt.Printf("    bot:         %s\n", formatFeatureStatus(status.FeatureGates.Bot))
+		fmt.Printf("    compression: %s\n", formatFeatureStatus(status.FeatureGates.Compression))
+		fmt.Printf("    middleware:  %s\n", formatFeatureStatus(status.FeatureGates.Middleware))
+		fmt.Printf("    agent:       %s\n", formatFeatureStatus(status.FeatureGates.Agent))
+	}
+
 	return nil
+}
+
+// formatFeatureStatus formats a boolean feature gate status as enabled/disabled.
+func formatFeatureStatus(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // queryActiveSessions queries the daemon API for active session count.

@@ -30,11 +30,11 @@
 
 **Goal**: Initialize project structure and dependencies
 
-- [ ] T001 Create project directory structure at website/tools/i18n-audit/
-- [ ] T002 Initialize Go module with `go mod init github.com/dopejs/gozen/website/tools/i18n-audit`
-- [ ] T003 Add dependencies: github.com/yuin/goldmark, gopkg.in/yaml.v3, github.com/spf13/cobra, github.com/charmbracelet/lipgloss
-- [ ] T004 Create main.go entry point with Cobra root command in website/tools/i18n-audit/main.go
-- [ ] T005 Create testdata/ directory with sample docs structure in website/tools/i18n-audit/testdata/
+- [x] T001 Create project directory structure at website/tools/i18n-audit/
+- [x] T002 Initialize Go module with `go mod init github.com/dopejs/gozen/website/tools/i18n-audit`
+- [x] T003 Add dependencies: github.com/yuin/goldmark, gopkg.in/yaml.v3, github.com/spf13/cobra, github.com/charmbracelet/lipgloss
+- [x] T004 Create main.go entry point with Cobra root command in website/tools/i18n-audit/main.go
+- [x] T005 Create testdata/ directory with sample docs structure in website/tools/i18n-audit/testdata/
 
 ---
 
@@ -42,13 +42,13 @@
 
 **Goal**: Core types and interfaces that all user stories depend on
 
-- [ ] T006 [P] Define DocumentationPage struct in website/tools/i18n-audit/types.go
-- [ ] T007 [P] Define Translation struct with TranslationStatus enum in website/tools/i18n-audit/types.go
-- [ ] T008 [P] Define Locale struct in website/tools/i18n-audit/types.go
-- [ ] T009 [P] Define AuditReport and LocaleReport structs in website/tools/i18n-audit/types.go
-- [ ] T010 [P] Define ExclusionRule struct in website/tools/i18n-audit/types.go
-- [ ] T011 Create test fixtures in website/tools/i18n-audit/testdata/sample-docs/ (English source files)
-- [ ] T012 Create test fixtures in website/tools/i18n-audit/testdata/sample-i18n/ (partial translations)
+- [x] T006 [P] Define DocumentationPage struct in website/tools/i18n-audit/types.go
+- [x] T007 [P] Define Translation struct with TranslationStatus enum in website/tools/i18n-audit/types.go
+- [x] T008 [P] Define Locale struct in website/tools/i18n-audit/types.go
+- [x] T009 [P] Define AuditReport and LocaleReport structs in website/tools/i18n-audit/types.go
+- [x] T010 [P] Define ExclusionRule struct in website/tools/i18n-audit/types.go
+- [x] T011 Create test fixtures in website/tools/i18n-audit/testdata/sample-docs/ (English source files)
+- [x] T012 Create test fixtures in website/tools/i18n-audit/testdata/sample-i18n/ (partial translations)
 
 ---
 
@@ -60,26 +60,26 @@
 
 ### Tests
 
-- [ ] T013 [P] [US1] Write scanner tests in website/tools/i18n-audit/scanner_test.go (table-driven: valid paths, empty dirs, invalid paths)
-- [ ] T014 [P] [US1] Write analyzer tests in website/tools/i18n-audit/analyzer_test.go (coverage calculation, missing detection, exclusion rules)
-- [ ] T015 [P] [US1] Write reporter tests in website/tools/i18n-audit/reporter_test.go (table format, coverage percentage, locale sorting)
+- [x] T013 [P] [US1] Write scanner tests in website/tools/i18n-audit/scanner_test.go (table-driven: valid paths, empty dirs, invalid paths)
+- [x] T014 [P] [US1] Write analyzer tests in website/tools/i18n-audit/analyzer_test.go (coverage calculation, missing detection, exclusion rules)
+- [x] T015 [P] [US1] Write reporter tests in website/tools/i18n-audit/reporter_test.go (table format, coverage percentage, locale sorting)
 
 ### Implementation
 
-- [ ] T016 [US1] Implement ScanSourceDocs() in website/tools/i18n-audit/scanner.go (filepath.Walk, .md/.mdx filter, frontmatter parsing)
-- [ ] T017 [US1] Implement ScanTranslations() in website/tools/i18n-audit/scanner.go (detect locales, map translated files)
-- [ ] T018 [US1] Implement AnalyzeCoverage() in website/tools/i18n-audit/analyzer.go (compare source vs translations, calculate percentages)
-- [ ] T019 [US1] Implement DetectMissingFiles() in website/tools/i18n-audit/analyzer.go (identify missing translations per locale)
-- [ ] T020 [US1] Implement GenerateTableReport() in website/tools/i18n-audit/reporter.go (lipgloss table with locale rows)
-- [ ] T021 [US1] Implement audit command in website/tools/i18n-audit/cmd_audit.go (wire scanner → analyzer → reporter)
-- [ ] T022 [US1] Add --docs-path and --i18n-path flags to audit command in website/tools/i18n-audit/cmd_audit.go
-- [ ] T023 [US1] Add --locale flag to filter specific locale in website/tools/i18n-audit/cmd_audit.go
+- [x] T016 [US1] Implement ScanSourceDocs() in website/tools/i18n-audit/scanner.go (filepath.Walk, .md/.mdx filter, frontmatter parsing)
+- [x] T017 [US1] Implement ScanTranslations() in website/tools/i18n-audit/scanner.go (detect locales, map translated files)
+- [x] T018 [US1] Implement AnalyzeCoverage() in website/tools/i18n-audit/analyzer.go (compare source vs translations, calculate percentages)
+- [x] T019 [US1] Implement DetectMissingFiles() in website/tools/i18n-audit/analyzer.go (identify missing translations per locale)
+- [x] T020 [US1] Implement GenerateTableReport() in website/tools/i18n-audit/reporter.go (lipgloss table with locale rows)
+- [x] T021 [US1] Implement audit command in website/tools/i18n-audit/cmd_audit.go (wire scanner → analyzer → reporter)
+- [x] T022 [US1] Add --docs-path and --i18n-path flags to audit command in website/tools/i18n-audit/cmd_audit.go
+- [x] T023 [US1] Add --locale flag to filter specific locale in website/tools/i18n-audit/cmd_audit.go
 
 ### Integration
 
-- [ ] T024 [US1] Test audit command against real website/docs/ directory
-- [ ] T025 [US1] Verify coverage calculation matches manual count (9/16 for zh-Hans)
-- [ ] T026 [US1] Verify missing files list matches expected 7 files (agent-infrastructure.md, bot.md, etc.)
+- [x] T024 [US1] Test audit command against real website/docs/ directory
+- [x] T025 [US1] Verify coverage calculation matches manual count (9/16 for zh-Hans)
+- [x] T026 [US1] Verify missing files list matches expected 7 files (agent-infrastructure.md, bot.md, etc.)
 
 ---
 

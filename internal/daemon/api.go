@@ -18,13 +18,14 @@ func getBotBridge() *proxy.BotBridge {
 // --- Daemon Status API ---
 
 type daemonStatusResponse struct {
-	Status         string `json:"status"`
-	Version        string `json:"version"`
-	Uptime         string `json:"uptime"`
-	UptimeSeconds  int64  `json:"uptime_seconds"`
-	ProxyPort      int    `json:"proxy_port"`
-	WebPort        int    `json:"web_port"`
-	ActiveSessions int    `json:"active_sessions"`
+	Status         string                `json:"status"`
+	Version        string                `json:"version"`
+	Uptime         string                `json:"uptime"`
+	UptimeSeconds  int64                 `json:"uptime_seconds"`
+	ProxyPort      int                   `json:"proxy_port"`
+	WebPort        int                   `json:"web_port"`
+	ActiveSessions int                   `json:"active_sessions"`
+	FeatureGates   *config.FeatureGates  `json:"feature_gates,omitempty"`
 }
 
 func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +43,7 @@ func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
 		ProxyPort:      d.proxyPort,
 		WebPort:        d.webPort,
 		ActiveSessions: d.ActiveSessionCount(),
+		FeatureGates:   config.GetFeatureGates(),
 	})
 }
 

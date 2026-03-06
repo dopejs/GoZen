@@ -312,3 +312,16 @@ func GetAutoPermission(client string) *AutoPermissionConfig {
 func SetAutoPermission(client string, ap *AutoPermissionConfig) error {
 	return DefaultStore().SetAutoPermission(client, ap)
 }
+
+// --- Feature Gates convenience functions ---
+
+// GetFeatureGates returns the feature gates configuration.
+// Returns an empty FeatureGates struct if not set (all features disabled).
+func GetFeatureGates() *FeatureGates {
+	return DefaultStore().GetFeatureGates()
+}
+
+// SetFeatureGates sets the feature gates configuration and saves.
+func SetFeatureGates(fg *FeatureGates) error {
+	return DefaultStore().SetFeatureGates(fg)
+}

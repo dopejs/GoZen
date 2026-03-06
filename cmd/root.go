@@ -87,6 +87,7 @@ func init() {
 	rootCmd.AddCommand(bindCmd)
 	rootCmd.AddCommand(unbindCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(experienceCmd)
 
 	// Set custom help function only for root command
 	defaultHelp := rootCmd.HelpFunc()

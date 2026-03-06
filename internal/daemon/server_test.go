@@ -974,3 +974,175 @@ func getFreePort(t *testing.T) int {
 	ln.Close()
 	return port
 }
+
+// TestGatesChanged tests the gatesChanged helper function (table-driven per constitution)
+func TestGatesChanged(t *testing.T) {
+	tests := []struct {
+		name string
+		old  *config.FeatureGates
+		new  *config.FeatureGates
+		want bool
+	}{
+		{
+			name: "both nil",
+			old:  nil,
+			new:  nil,
+			want: false,
+		},
+		{
+			name: "old nil, new empty",
+			old:  nil,
+			new:  &config.FeatureGates{},
+			want: false,
+		},
+		{
+			name: "old empty, new nil",
+			old:  &config.FeatureGates{},
+			new:  nil,
+			want: false,
+		},
+		{
+			name: "no changes",
+			old:  &config.FeatureGates{Bot: true, Compression: false},
+			new:  &config.FeatureGates{Bot: true, Compression: false},
+			want: false,
+		},
+		{
+			name: "bot changed",
+			old:  &config.FeatureGates{Bot: false},
+			new:  &config.FeatureGates{Bot: true},
+			want: true,
+		},
+		{
+			name: "compression changed",
+			old:  &config.FeatureGates{Compression: false},
+			new:  &config.FeatureGates{Compression: true},
+			want: true,
+		},
+		{
+			name: "middleware changed",
+			old:  &config.FeatureGates{Middleware: false},
+			new:  &config.FeatureGates{Middleware: true},
+			want: true,
+		},
+		{
+			name: "agent changed",
+			old:  &config.FeatureGates{Agent: false},
+			new:  &config.FeatureGates{Agent: true},
+			want: true,
+		},
+		{
+			name: "multiple changes",
+			old:  &config.FeatureGates{Bot: true, Agent: false},
+			new:  &config.FeatureGates{Bot: false, Agent: true},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := gatesChanged(tt.old, tt.new)
+			if got != tt.want {
+				t.Errorf("gatesChanged() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestOnConfigReloadDetectsFeatureGateChanges tests that onConfigReload detects and logs feature gate changes (table-driven per constitution)
+func TestOnConfigReloadDetectsFeatureGateChanges(t *testing.T) {
+	tests := []struct {
+		name        string
+		initialGates *config.FeatureGates
+		newGates     *config.FeatureGates
+		expectLog    string
+	}{
+		{
+			name:         "no changes",
+			initialGates: &config.FeatureGates{Bot: true},
+			newGates:     &config.FeatureGates{Bot: true},
+			expectLog:    "",
+		},
+		{
+			name:         "bot enabled",
+			initialGates: &config.FeatureGates{Bot: false},
+			newGates:     &config.FeatureGates{Bot: true},
+			expectLog:    "bot: false → true",
+		},
+		{
+			name:         "bot disabled",
+			initialGates: &config.FeatureGates{Bot: true},
+			newGates:     &config.FeatureGates{Bot: false},
+			expectLog:    "bot: true → false",
+		},
+		{
+			name:         "compression enabled",
+			initialGates: &config.FeatureGates{Compression: false},
+			newGates:     &config.FeatureGates{Compression: true},
+			expectLog:    "compression: false → true",
+		},
+		{
+			name:         "middleware enabled",
+			initialGates: &config.FeatureGates{Middleware: false},
+			newGates:     &config.FeatureGates{Middleware: true},
+			expectLog:    "middleware: false → true",
+		},
+		{
+			name:         "agent enabled",
+			initialGates: &config.FeatureGates{Agent: false},
+			newGates:     &config.FeatureGates{Agent: true},
+			expectLog:    "agent: false → true",
+		},
+		{
+			name:         "multiple changes",
+			initialGates: &config.FeatureGates{Bot: true, Agent: false},
+			newGates:     &config.FeatureGates{Bot: false, Agent: true},
+			expectLog:    "bot: true → false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test environment
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", tmpDir)
+			config.ResetDefaultStore()
+
+			// Set initial gates
+			if err := config.SetFeatureGates(tt.initialGates); err != nil {
+				t.Fatalf("failed to set initial gates: %v", err)
+			}
+
+			// Create daemon with captured logs and initial gates
+			var logBuf strings.Builder
+			d := &Daemon{
+				logger:       log.New(&logBuf, "", 0),
+				proxyPort:    19841,
+				webPort:      19840,
+				currentGates: tt.initialGates,
+			}
+
+			// Update gates in config file
+			if err := config.SetFeatureGates(tt.newGates); err != nil {
+				t.Fatalf("failed to set new gates: %v", err)
+			}
+
+			// Call onConfigReload
+			d.onConfigReload()
+
+			// Check logs
+			logOutput := logBuf.String()
+			if tt.expectLog == "" {
+				// Should not contain feature gate change logs
+				if strings.Contains(logOutput, "→") {
+					t.Errorf("expected no feature gate change logs, but got: %s", logOutput)
+				}
+			} else {
+				// Should contain expected log
+				if !strings.Contains(logOutput, tt.expectLog) {
+					t.Errorf("expected log to contain %q, but got: %s", tt.expectLog, logOutput)
+				}
+			}
+		})
+	}
+}

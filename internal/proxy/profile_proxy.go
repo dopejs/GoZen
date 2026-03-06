@@ -179,25 +179,34 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			return nil, fmt.Errorf("provider %q: invalid base URL: %w", name, err)
 		}
 
+		// Only fill Anthropic default model names for Anthropic providers.
+		// OpenAI providers should leave empty tier fields as-is so mapModel()
+		// falls through to the provider's default model.
+		isAnthropic := pc.GetType() == config.ProviderTypeAnthropic
+
 		model := pc.Model
-		if model == "" {
+		if model == "" && isAnthropic {
 			model = "claude-sonnet-4-5"
 		}
 		reasoningModel := pc.ReasoningModel
-		if reasoningModel == "" {
+		if reasoningModel == "" && isAnthropic {
 			reasoningModel = "claude-sonnet-4-5-thinking"
 		}
 		haikuModel := pc.HaikuModel
-		if haikuModel == "" {
+		if haikuModel == "" && isAnthropic {
 			haikuModel = "claude-haiku-4-5"
 		}
 		opusModel := pc.OpusModel
-		if opusModel == "" {
+		if opusModel == "" && isAnthropic {
 			opusModel = "claude-opus-4-5"
 		}
 		sonnetModel := pc.SonnetModel
-		if sonnetModel == "" {
+		if sonnetModel == "" && isAnthropic {
 			sonnetModel = "claude-sonnet-4-5"
+		}
+
+		if !isAnthropic {
+			pp.Logger.Printf("[%s] openai provider: using model=%q, skipping Anthropic tier defaults", name, model)
 		}
 
 		p := &Provider{

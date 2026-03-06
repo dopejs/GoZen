@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -2057,5 +2059,326 @@ func TestCopyResponse_ThinkingBlockPreserved(t *testing.T) {
 	// Verify response is byte-for-byte identical
 	if body != thinkingResponse {
 		t.Errorf("response with thinking block was modified\nwant: %s\ngot:  %s", thinkingResponse, body)
+	}
+}
+
+// TestPathDeduplication_CrossFormat tests that path deduplication works correctly
+// when base_url already contains /v1 and TransformPath returns /v1/chat/completions.
+// Bug: singleJoiningSlash(base_url_with_v1, "/v1/chat/completions") produces /v1/v1/chat/completions.
+func TestPathDeduplication_CrossFormat(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseURL    string
+		wantPath   string
+		clientType string // "anthropic" triggers transform to openai path
+	}{
+		{
+			name:       "base_url with /v1 should not duplicate",
+			baseURL:    "BACKEND/v1",
+			wantPath:   "/v1/chat/completions",
+			clientType: "anthropic",
+		},
+		{
+			name:       "base_url without /v1 should append correctly",
+			baseURL:    "BACKEND",
+			wantPath:   "/v1/chat/completions",
+			clientType: "anthropic",
+		},
+		{
+			name:       "base_url with trailing slash /v1/ should not duplicate",
+			baseURL:    "BACKEND/v1/",
+			wantPath:   "/v1/chat/completions",
+			clientType: "anthropic",
+		},
+		{
+			name:       "base_url with /api/v1 should not duplicate",
+			baseURL:    "BACKEND/api/v1",
+			wantPath:   "/api/v1/chat/completions",
+			clientType: "anthropic",
+		},
+		{
+			name:       "openai client same-format pass-through with /v1 base_url",
+			baseURL:    "BACKEND/v1",
+			wantPath:   "/v1/chat/completions",
+			clientType: "openai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedPath string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedPath = r.URL.Path
+				w.WriteHeader(200)
+				w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"model":"test","usage":{"input_tokens":10,"output_tokens":5}}`))
+			}))
+			defer backend.Close()
+
+			// Replace BACKEND placeholder with actual backend URL
+			baseURLStr := strings.Replace(tt.baseURL, "BACKEND", backend.URL, 1)
+			u, _ := url.Parse(baseURLStr)
+
+			providers := []*Provider{{
+				Name:    "test-openai",
+				Type:    config.ProviderTypeOpenAI,
+				BaseURL: u,
+				Token:   "test-token",
+				Model:   "gpt-test",
+				Healthy: true,
+			}}
+
+			srv := NewProxyServer(providers, discardLogger())
+			var reqPath string
+			if tt.clientType == "anthropic" {
+				reqPath = "/v1/messages"
+			} else {
+				reqPath = "/v1/chat/completions"
+			}
+			req := httptest.NewRequest("POST", reqPath, strings.NewReader(`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("X-Zen-Request-Format", tt.clientType)
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+
+			if w.Code != 200 {
+				t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+			}
+			if receivedPath != tt.wantPath {
+				t.Errorf("backend received path %q, want %q", receivedPath, tt.wantPath)
+			}
+		})
+	}
+}
+
+// TestBuildProviders_TypeAwareDefaults tests that buildProviders() only fills
+// Anthropic default model names for providers of type "anthropic".
+// For "openai" providers, tier-specific fields should remain empty.
+func TestBuildProviders_TypeAwareDefaults(t *testing.T) {
+	// Set up temp config directory
+	tmpDir := t.TempDir()
+	t.Setenv("GOZEN_CONFIG_DIR", tmpDir)
+	config.ResetDefaultStore()
+	t.Cleanup(func() { config.ResetDefaultStore() })
+
+	// Write config with both openai and anthropic providers
+	cfg := map[string]interface{}{
+		"version": config.CurrentConfigVersion,
+		"providers": map[string]interface{}{
+			"openai-only-default": map[string]interface{}{
+				"type":       "openai",
+				"base_url":   "https://api.openai.test",
+				"auth_token": "test-token",
+				"model":      "gpt-test-model",
+				// No tier-specific models
+			},
+			"openai-with-tier": map[string]interface{}{
+				"type":         "openai",
+				"base_url":     "https://api.openai.test",
+				"auth_token":   "test-token",
+				"model":        "gpt-test-model",
+				"sonnet_model": "gpt-custom-sonnet",
+			},
+			"anthropic-no-tiers": map[string]interface{}{
+				"type":       "anthropic",
+				"base_url":   "https://api.anthropic.test",
+				"auth_token": "test-token",
+				// No model or tier-specific models
+			},
+			"empty-type": map[string]interface{}{
+				"base_url":   "https://api.test",
+				"auth_token": "test-token",
+				// type is empty → defaults to "anthropic"
+			},
+		},
+	}
+
+	cfgBytes, _ := json.Marshal(cfg)
+	os.WriteFile(filepath.Join(tmpDir, "zen.json"), cfgBytes, 0644)
+
+	config.ResetDefaultStore()
+
+	pp := NewProfileProxy(discardLogger())
+
+	tests := []struct {
+		name             string
+		providerName     string
+		wantSonnetEmpty  bool
+		wantHaikuEmpty   bool
+		wantOpusEmpty    bool
+		wantReasonEmpty  bool
+		wantSonnetValue  string
+		wantDefaultModel string
+	}{
+		{
+			name:             "openai provider with only default model: tier fields should be empty",
+			providerName:     "openai-only-default",
+			wantSonnetEmpty:  true,
+			wantHaikuEmpty:   true,
+			wantOpusEmpty:    true,
+			wantReasonEmpty:  true,
+			wantDefaultModel: "gpt-test-model",
+		},
+		{
+			name:             "openai provider with explicit sonnet_model: should preserve it",
+			providerName:     "openai-with-tier",
+			wantSonnetEmpty:  false,
+			wantSonnetValue:  "gpt-custom-sonnet",
+			wantHaikuEmpty:   true,
+			wantOpusEmpty:    true,
+			wantReasonEmpty:  true,
+			wantDefaultModel: "gpt-test-model",
+		},
+		{
+			name:             "anthropic provider with no tiers: should fill Anthropic defaults",
+			providerName:     "anthropic-no-tiers",
+			wantSonnetEmpty:  false,
+			wantHaikuEmpty:   false,
+			wantOpusEmpty:    false,
+			wantReasonEmpty:  false,
+			wantDefaultModel: "claude-sonnet-4-5",
+		},
+		{
+			name:             "empty type defaults to anthropic: should fill Anthropic defaults",
+			providerName:     "empty-type",
+			wantSonnetEmpty:  false,
+			wantHaikuEmpty:   false,
+			wantOpusEmpty:    false,
+			wantReasonEmpty:  false,
+			wantDefaultModel: "claude-sonnet-4-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			providers, err := pp.buildProviders([]string{tt.providerName})
+			if err != nil {
+				t.Fatalf("buildProviders error: %v", err)
+			}
+			if len(providers) != 1 {
+				t.Fatalf("expected 1 provider, got %d", len(providers))
+			}
+			p := providers[0]
+
+			if p.Model != tt.wantDefaultModel {
+				t.Errorf("Model = %q, want %q", p.Model, tt.wantDefaultModel)
+			}
+
+			if tt.wantSonnetEmpty && p.SonnetModel != "" {
+				t.Errorf("SonnetModel = %q, want empty", p.SonnetModel)
+			}
+			if !tt.wantSonnetEmpty && tt.wantSonnetValue != "" && p.SonnetModel != tt.wantSonnetValue {
+				t.Errorf("SonnetModel = %q, want %q", p.SonnetModel, tt.wantSonnetValue)
+			}
+			if !tt.wantSonnetEmpty && tt.wantSonnetValue == "" && p.SonnetModel == "" {
+				t.Errorf("SonnetModel should not be empty for anthropic provider")
+			}
+
+			if tt.wantHaikuEmpty && p.HaikuModel != "" {
+				t.Errorf("HaikuModel = %q, want empty", p.HaikuModel)
+			}
+			if !tt.wantHaikuEmpty && p.HaikuModel == "" {
+				t.Errorf("HaikuModel should not be empty for anthropic provider")
+			}
+
+			if tt.wantOpusEmpty && p.OpusModel != "" {
+				t.Errorf("OpusModel = %q, want empty", p.OpusModel)
+			}
+			if !tt.wantOpusEmpty && p.OpusModel == "" {
+				t.Errorf("OpusModel should not be empty for anthropic provider")
+			}
+
+			if tt.wantReasonEmpty && p.ReasoningModel != "" {
+				t.Errorf("ReasoningModel = %q, want empty", p.ReasoningModel)
+			}
+			if !tt.wantReasonEmpty && p.ReasoningModel == "" {
+				t.Errorf("ReasoningModel should not be empty for anthropic provider")
+			}
+		})
+	}
+}
+
+// TestModelMappingFallthrough_OpenAI tests that mapModel() falls through to p.Model
+// when tier-specific fields are empty (as they should be for OpenAI providers after fix).
+func TestModelMappingFallthrough_OpenAI(t *testing.T) {
+	tests := []struct {
+		name         string
+		requestModel string
+		provider     *Provider
+		wantModel    string
+	}{
+		{
+			name:         "openai provider, empty sonnet_model, request claude-sonnet → fallthrough to p.Model",
+			requestModel: "claude-sonnet-4-6",
+			provider: &Provider{
+				Name:  "openai-p",
+				Type:  config.ProviderTypeOpenAI,
+				Model: "gpt-5.3-codex",
+				// All tier fields empty — simulating post-fix buildProviders behavior
+			},
+			wantModel: "gpt-5.3-codex",
+		},
+		{
+			name:         "openai provider, explicit sonnet_model, request claude-sonnet → returns explicit",
+			requestModel: "claude-sonnet-4-6",
+			provider: &Provider{
+				Name:        "openai-p",
+				Type:        config.ProviderTypeOpenAI,
+				Model:       "gpt-5.3-codex",
+				SonnetModel: "gpt-5.4",
+			},
+			wantModel: "gpt-5.4",
+		},
+		{
+			name:         "openai provider, empty opus_model, request claude-opus → fallthrough to p.Model",
+			requestModel: "claude-opus-4-6",
+			provider: &Provider{
+				Name:  "openai-p",
+				Type:  config.ProviderTypeOpenAI,
+				Model: "gpt-5.3-codex",
+			},
+			wantModel: "gpt-5.3-codex",
+		},
+		{
+			name:         "openai provider, empty haiku_model, request claude-haiku → fallthrough to p.Model",
+			requestModel: "claude-haiku-4-5",
+			provider: &Provider{
+				Name:  "openai-p",
+				Type:  config.ProviderTypeOpenAI,
+				Model: "gpt-5.3-codex",
+			},
+			wantModel: "gpt-5.3-codex",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedModel string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var data map[string]interface{}
+				json.Unmarshal(body, &data)
+				receivedModel, _ = data["model"].(string)
+				w.WriteHeader(200)
+				w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"model":"test","usage":{"input_tokens":10,"output_tokens":5}}`))
+			}))
+			defer backend.Close()
+
+			u, _ := url.Parse(backend.URL)
+			tt.provider.BaseURL = u
+			tt.provider.Token = "test-token"
+			tt.provider.Healthy = true
+
+			srv := NewProxyServer([]*Provider{tt.provider}, discardLogger())
+			body := fmt.Sprintf(`{"model":"%s","messages":[{"role":"user","content":"hi"}]}`, tt.requestModel)
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, req)
+
+			if w.Code != 200 {
+				t.Fatalf("status = %d, want 200", w.Code)
+			}
+			if receivedModel != tt.wantModel {
+				t.Errorf("backend received model %q, want %q", receivedModel, tt.wantModel)
+			}
+		})
 	}
 }

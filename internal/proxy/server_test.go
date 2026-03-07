@@ -2982,3 +2982,203 @@ func TestResponsesAPIRetryToolCall(t *testing.T) {
 		t.Errorf("tool name = %v, want get_weather", block["name"])
 	}
 }
+
+// T008-T010: Tests for disabled provider filtering in proxy
+
+func setupDisabledTestConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("GOZEN_CONFIG_DIR", dir)
+	config.ResetDefaultStore()
+	t.Cleanup(func() {
+		config.ResetDefaultStore()
+		os.Unsetenv("GOZEN_CONFIG_DIR")
+	})
+	return dir
+}
+
+// T008: tryProviders skips a disabled provider and uses the next one
+func TestTryProvidersSkipsDisabledProvider(t *testing.T) {
+	setupDisabledTestConfig(t)
+
+	// Create two backend servers
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("disabled provider should not receive requests")
+		w.WriteHeader(200)
+	}))
+	defer backend1.Close()
+
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{"id":"msg_123","type":"message","content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer backend2.Close()
+
+	u1, _ := url.Parse(backend1.URL)
+	u2, _ := url.Parse(backend2.URL)
+
+	// Set up providers in config store
+	store := config.DefaultStore()
+	store.SetProvider("provider1", &config.ProviderConfig{
+		BaseURL:   backend1.URL,
+		AuthToken: "tok1",
+	})
+	store.SetProvider("provider2", &config.ProviderConfig{
+		BaseURL:   backend2.URL,
+		AuthToken: "tok2",
+	})
+
+	// Disable provider1
+	store.DisableProvider("provider1", config.MarkingTypePermanent)
+
+	providers := []*Provider{
+		{Name: "provider1", BaseURL: u1, Token: "tok1", Healthy: true},
+		{Name: "provider2", BaseURL: u2, Token: "tok2", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+
+	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+}
+
+// T009: ServeHTTP returns 503 when all providers are disabled
+func TestAllProvidersDisabled503(t *testing.T) {
+	setupDisabledTestConfig(t)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("disabled provider should not receive requests")
+		w.WriteHeader(200)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+
+	store := config.DefaultStore()
+	store.SetProvider("p1", &config.ProviderConfig{
+		BaseURL:   backend.URL,
+		AuthToken: "tok1",
+	})
+	store.SetProvider("p2", &config.ProviderConfig{
+		BaseURL:   backend.URL,
+		AuthToken: "tok2",
+	})
+
+	// Disable all providers
+	store.DisableProvider("p1", config.MarkingTypePermanent)
+	store.DisableProvider("p2", config.MarkingTypePermanent)
+
+	providers := []*Provider{
+		{Name: "p1", BaseURL: u, Token: "tok1", Healthy: true},
+		{Name: "p2", BaseURL: u, Token: "tok2", Healthy: true},
+	}
+
+	srv := NewProxyServer(providers, discardLogger())
+
+	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 503 {
+		t.Fatalf("status = %d, want 503; body: %s", w.Code, w.Body.String())
+	}
+
+	// Verify error JSON
+	var errResp struct {
+		Error struct {
+			Type             string   `json:"type"`
+			Message          string   `json:"message"`
+			DisabledProviders []string `json:"disabled_providers"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to parse error response: %v", err)
+	}
+	if errResp.Error.Type != "all_providers_unavailable" {
+		t.Errorf("error type = %q, want %q", errResp.Error.Type, "all_providers_unavailable")
+	}
+	if len(errResp.Error.DisabledProviders) != 2 {
+		t.Errorf("disabled_providers count = %d, want 2", len(errResp.Error.DisabledProviders))
+	}
+}
+
+// T010: Scenario fallback when all scenario providers disabled, falls back to defaults;
+// returns 503 if defaults also all disabled
+func TestScenarioFallbackWithDisabledProviders(t *testing.T) {
+	setupDisabledTestConfig(t)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{"id":"msg_123","type":"message","content":[{"type":"text","text":"ok"}]}`))
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+
+	store := config.DefaultStore()
+	store.SetProvider("scenario-p", &config.ProviderConfig{
+		BaseURL:   backend.URL,
+		AuthToken: "tok1",
+	})
+	store.SetProvider("default-p", &config.ProviderConfig{
+		BaseURL:   backend.URL,
+		AuthToken: "tok2",
+	})
+
+	// Disable the scenario provider
+	store.DisableProvider("scenario-p", config.MarkingTypePermanent)
+
+	scenarioProviders := []*Provider{
+		{Name: "scenario-p", BaseURL: u, Token: "tok1", Healthy: true},
+	}
+	defaultProviders := []*Provider{
+		{Name: "default-p", BaseURL: u, Token: "tok2", Healthy: true},
+	}
+
+	routing := &RoutingConfig{
+		DefaultProviders: defaultProviders,
+		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
+			config.ScenarioDefault: {Providers: scenarioProviders},
+		},
+	}
+
+	srv := NewProxyServerWithRouting(routing, discardLogger())
+
+	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.ServeHTTP(w, req)
+
+	// Should succeed using the default provider (not disabled)
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200 (fallback to default); body: %s", w.Code, w.Body.String())
+	}
+
+	// Now disable the default provider too → should return 503
+	store.DisableProvider("default-p", config.MarkingTypePermanent)
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+
+	srv.ServeHTTP(w2, req2)
+
+	if w2.Code != 503 {
+		t.Fatalf("status = %d, want 503 (all providers disabled); body: %s", w2.Code, w2.Body.String())
+	}
+}

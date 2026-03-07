@@ -116,6 +116,41 @@ func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *Prox
 	}
 }
 
+// isProviderDisabled checks if a provider is manually marked as unavailable via config.
+// Uses lazy evaluation — expiration is handled by the config layer.
+func (s *ProxyServer) isProviderDisabled(name string) bool {
+	return config.IsProviderDisabled(name)
+}
+
+// filterDisabledProviders partitions providers into available and disabled lists.
+// Returns (available, disabledNames).
+func (s *ProxyServer) filterDisabledProviders(providers []*Provider) ([]*Provider, []string) {
+	var available []*Provider
+	var disabledNames []string
+	for _, p := range providers {
+		if s.isProviderDisabled(p.Name) {
+			disabledNames = append(disabledNames, p.Name)
+		} else {
+			available = append(available, p)
+		}
+	}
+	return available, disabledNames
+}
+
+// writeAllProvidersUnavailableError writes a 503 JSON error response when all providers are disabled.
+func (s *ProxyServer) writeAllProvidersUnavailableError(w http.ResponseWriter, disabledNames []string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	errResp := map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":               "all_providers_unavailable",
+			"message":            "All providers are manually marked as unavailable. Please re-enable a provider via Web UI or 'zen enable <provider>'.",
+			"disabled_providers": disabledNames,
+		},
+	}
+	json.NewEncoder(w).Encode(errResp)
+}
+
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -229,6 +264,26 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Track provider failure details for error reporting
 	var failures []providerFailure
 
+	// Pre-check: if all providers in the current chain are disabled, return 503 immediately
+	availableProviders, disabledNames := s.filterDisabledProviders(providers)
+	if len(availableProviders) == 0 && len(disabledNames) > 0 {
+		// If using scenario route, try falling back to default providers first
+		if usingScenarioRoute && len(s.Providers) > 0 {
+			defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)
+			if len(defaultAvailable) == 0 && len(defaultDisabledNames) > 0 {
+				allDisabled := append(disabledNames, defaultDisabledNames...)
+				s.Logger.Printf("[proxy] all providers unavailable (manually disabled): %v", allDisabled)
+				s.writeAllProvidersUnavailableError(w, allDisabled)
+				return
+			}
+			// Fall through — default providers have some available, will be tried below
+		} else {
+			s.Logger.Printf("[proxy] all providers unavailable (manually disabled): %v", disabledNames)
+			s.writeAllProvidersUnavailableError(w, disabledNames)
+			return
+		}
+	}
+
 	// Try scenario providers first, then fallback to default if all fail
 	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures)
 	if success {
@@ -238,6 +293,14 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// If scenario route failed and we have default providers to fallback to
 	if usingScenarioRoute && len(s.Providers) > 0 {
 		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", detectedScenario)
+		// Filter disabled providers from defaults
+		defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)
+		if len(defaultAvailable) == 0 && len(defaultDisabledNames) > 0 {
+			s.Logger.Printf("[proxy] all default providers also unavailable (manually disabled): %v", defaultDisabledNames)
+			allDisabled := append(disabledNames, defaultDisabledNames...)
+			s.writeAllProvidersUnavailableError(w, allDisabled)
+			return
+		}
 		// Clear model overrides for default providers
 		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures)
 		if success {
@@ -273,6 +336,14 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 
 	for i, p := range providers {
 		isLast := i == len(providers)-1
+
+		// Skip manually disabled providers (checked via config, lazy evaluation)
+		if s.isProviderDisabled(p.Name) {
+			msg := "skipping (manually disabled)"
+			s.Logger.Printf("[%s] %s", p.Name, msg)
+			s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelInfo, msg, sessionID, clientType)
+			continue
+		}
 
 		if !p.IsHealthy() && !isLast {
 			msg := fmt.Sprintf("skipping (unhealthy, backoff %v)", p.Backoff)

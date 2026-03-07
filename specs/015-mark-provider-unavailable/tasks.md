@@ -154,7 +154,7 @@
 - [X] T037 Run `go test -cover ./internal/web/...` and verify ≥80% coverage; add tests if below threshold
 - [X] T038 [P] Run `pnpm run test:coverage` in web/ and verify branch coverage ≥70%
 - [X] T039 Run full `go test ./...` and verify all tests pass
-- [ ] T040 Build and restart dev daemon (`./scripts/dev.sh restart`), manually test disable/enable flow end-to-end via Web UI and CLI
+- [X] T040 Build and restart dev daemon (`./scripts/dev.sh restart`), manually test disable/enable flow end-to-end via Web UI and CLI
 
 ---
 

@@ -88,6 +88,8 @@ func init() {
 	rootCmd.AddCommand(unbindCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(experienceCmd)
+	rootCmd.AddCommand(disableCmd)
+	rootCmd.AddCommand(enableCmd)
 
 	// Set custom help function only for root command
 	defaultHelp := rootCmd.HelpFunc()
@@ -133,6 +135,10 @@ Project Binding:
 
 Web Interface:
   web                          Open web UI in browser (starts daemon if needed)
+
+Provider Availability:
+  disable <provider>           Mark a provider as unavailable
+  enable <provider>            Clear unavailability marking
 
 Other Commands:
   list                         List all providers and profiles

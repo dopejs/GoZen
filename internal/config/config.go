@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"time"
 )
 
 const (
@@ -401,7 +402,8 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 11 (v3.0.0-alpha.14): added show_provider_tag (deprecated in v3.0.0-alpha.14)
 // - Version 12 (v3.0.0+): added auto-permission configuration (claude_auto_permission, codex_auto_permission, opencode_auto_permission)
 // - Version 13 (v3.0.0+): added feature_gates for experimental features (bot, compression, middleware, agent)
-const CurrentConfigVersion = 13
+// - Version 14 (v3.0.0+): added disabled_providers map for manual provider unavailability marking
+const CurrentConfigVersion = 14
 
 // FeatureGates controls experimental features.
 type FeatureGates struct {
@@ -775,6 +777,65 @@ const (
 	LoadBalanceLeastCost    LoadBalanceStrategy = "least-cost"
 )
 
+// --- Unavailability Marking ---
+
+// Expiration type constants for UnavailableMarking.
+const (
+	MarkingTypeToday     = "today"
+	MarkingTypeMonth     = "month"
+	MarkingTypePermanent = "permanent"
+)
+
+// UnavailableMarking represents a user's manual decision to mark a provider as unavailable.
+type UnavailableMarking struct {
+	Type      string    `json:"type"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"` // zero for permanent
+}
+
+// IsExpired returns true if the marking has expired.
+// Permanent markings (zero ExpiresAt) never expire.
+func (m *UnavailableMarking) IsExpired() bool {
+	if m == nil {
+		return true
+	}
+	if m.ExpiresAt.IsZero() {
+		return false // permanent
+	}
+	return time.Now().After(m.ExpiresAt)
+}
+
+// IsActive returns true if the marking exists and is not expired.
+func (m *UnavailableMarking) IsActive() bool {
+	return m != nil && !m.IsExpired()
+}
+
+// NewUnavailableMarking creates a new marking with the given type.
+// For "today", ExpiresAt is end of current day (23:59:59 local).
+// For "month", ExpiresAt is end of current month (last day 23:59:59 local).
+// For "permanent", ExpiresAt is zero (never expires).
+func NewUnavailableMarking(markingType string) (*UnavailableMarking, error) {
+	now := time.Now()
+	m := &UnavailableMarking{
+		Type:      markingType,
+		CreatedAt: now,
+	}
+	switch markingType {
+	case MarkingTypeToday:
+		y, mo, d := now.Date()
+		m.ExpiresAt = time.Date(y, mo, d, 23, 59, 59, 0, now.Location())
+	case MarkingTypeMonth:
+		y, mo, _ := now.Date()
+		// First day of next month minus 1 second = last second of current month
+		m.ExpiresAt = time.Date(y, mo+1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
+	case MarkingTypePermanent:
+		// ExpiresAt stays zero
+	default:
+		return nil, fmt.Errorf("invalid marking type: %q (must be %q, %q, or %q)", markingType, MarkingTypeToday, MarkingTypeMonth, MarkingTypePermanent)
+	}
+	return m, nil
+}
+
 // ProjectBinding holds the configuration for a project directory.
 type ProjectBinding struct {
 	Profile string `json:"profile,omitempty"` // profile name (empty = use default)
@@ -826,6 +887,7 @@ type OpenCCConfig struct {
 	Middleware             *MiddlewareConfig           `json:"middleware,omitempty"`               // [BETA] middleware pipeline
 	Agent                  *AgentConfig                `json:"agent,omitempty"`                    // [BETA] agent infrastructure
 	Bot                    *BotConfig                  `json:"bot,omitempty"`                      // [BETA] bot gateway configuration
+	DisabledProviders      map[string]*UnavailableMarking `json:"disabled_providers,omitempty"`    // manually disabled providers
 }
 
 // UnmarshalJSON supports multiple config versions:
@@ -861,6 +923,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 		Middleware             *MiddlewareConfig              `json:"middleware,omitempty"`
 		Agent                  *AgentConfig                   `json:"agent,omitempty"`
 		Bot                    *BotConfig                     `json:"bot,omitempty"`
+		DisabledProviders      map[string]*UnavailableMarking `json:"disabled_providers,omitempty"` // v14+
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -887,6 +950,7 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	c.Middleware = raw.Middleware
 	c.Agent = raw.Agent
 	c.Bot = raw.Bot
+	c.DisabledProviders = raw.DisabledProviders
 
 	// Migrate default_cli → default_client
 	c.DefaultClient = raw.DefaultClient

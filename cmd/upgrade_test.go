@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -191,6 +193,96 @@ func TestResolveVersionFromListPrerelease(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("resolve(%q) = %q, want %q", tt.prefix, got, tt.want)
 		}
+	}
+}
+
+func TestInstallBinaryReplacesFile(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "new-binary")
+	dst := filepath.Join(dir, "zen")
+
+	os.WriteFile(src, []byte("new-version"), 0755)
+	os.WriteFile(dst, []byte("old-version"), 0755)
+
+	if err := installBinary(src, dst, 0755); err != nil {
+		t.Fatalf("installBinary failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(dst)
+	if string(got) != "new-version" {
+		t.Errorf("content = %q, want %q", got, "new-version")
+	}
+}
+
+func TestInstallBinaryPreservesPermissions(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "new-binary")
+	dst := filepath.Join(dir, "zen")
+
+	os.WriteFile(src, []byte("new"), 0755)
+	os.WriteFile(dst, []byte("old"), 0700)
+
+	if err := installBinary(src, dst, 0700); err != nil {
+		t.Fatalf("installBinary failed: %v", err)
+	}
+
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0700 {
+		t.Errorf("permissions = %o, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestInstallBinaryFollowsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "new-binary")
+	actual := filepath.Join(dir, "zen-real")
+	link := filepath.Join(dir, "zen")
+
+	os.WriteFile(src, []byte("new-version"), 0755)
+	os.WriteFile(actual, []byte("old-version"), 0755)
+	os.Symlink(actual, link)
+
+	// Resolve expected path the same way (macOS /var → /private/var)
+	expectedActual, _ := filepath.EvalSymlinks(actual)
+
+	resolved := resolveInstallPath(link)
+	if resolved != expectedActual {
+		t.Errorf("resolveInstallPath = %q, want %q", resolved, expectedActual)
+	}
+
+	if err := installBinary(src, resolved, 0755); err != nil {
+		t.Fatalf("installBinary failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(expectedActual)
+	if string(got) != "new-version" {
+		t.Errorf("content = %q, want %q", got, "new-version")
+	}
+
+	// Symlink should still exist
+	_, err := os.Readlink(link)
+	if err != nil {
+		t.Fatal("symlink should still exist:", err)
+	}
+}
+
+func TestInstallBinaryDestNotExist(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "new-binary")
+	dst := filepath.Join(dir, "zen-new")
+
+	os.WriteFile(src, []byte("content"), 0755)
+
+	if err := installBinary(src, dst, 0755); err != nil {
+		t.Fatalf("installBinary failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(dst)
+	if string(got) != "content" {
+		t.Errorf("content = %q, want %q", got, "content")
 	}
 }
 

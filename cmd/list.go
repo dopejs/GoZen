@@ -40,6 +40,7 @@ func printProviders() {
 		fmt.Println("No providers configured.")
 		return
 	}
+	disabled := config.GetDisabledProviders()
 	fmt.Println("Providers:")
 	for _, name := range names {
 		p := config.GetProvider(name)
@@ -50,7 +51,11 @@ func printProviders() {
 		if model == "" {
 			model = "-"
 		}
-		fmt.Printf("  %-14s %s  model=%s\n", name, p.BaseURL, model)
+		disabledTag := ""
+		if m, ok := disabled[name]; ok {
+			disabledTag = fmt.Sprintf("  [disabled: %s]", m.Type)
+		}
+		fmt.Printf("  %-14s %s  model=%s%s\n", name, p.BaseURL, model, disabledTag)
 	}
 }
 

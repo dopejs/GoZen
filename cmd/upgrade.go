@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -126,14 +127,39 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cannot determine executable path: %w", err)
 	}
 
-	// Try direct copy first, fall back to sudo
+	// Resolve symlinks so we replace the actual file
+	binPath = resolveInstallPath(binPath)
+
+	// Get existing permissions before replacing
+	existingMode := os.FileMode(0755)
+	if info, err := os.Stat(binPath); err == nil {
+		existingMode = info.Mode()
+	}
+
+	// Install using remove-then-create to avoid ETXTBSY on Linux.
+	// Linux prevents writing to a running executable (ETXTBSY), but allows
+	// removing it — the running process keeps its inode reference until exit.
 	usedSudo := false
-	if err := copyFile(binaryPath, binPath); err != nil {
-		fmt.Println("Need elevated privileges, trying sudo...")
-		if sudoErr := exec.Command("sudo", "cp", binaryPath, binPath).Run(); sudoErr != nil {
-			return fmt.Errorf("install failed: %w", sudoErr)
+	if err := installBinary(binaryPath, binPath, existingMode); err != nil {
+		if !isRoot() {
+			fmt.Println("Need elevated privileges, trying sudo...")
+			// sudo rm + cp: remove first to avoid ETXTBSY, then copy creates a new file
+			rmErr := exec.Command("sudo", "rm", "-f", binPath).Run()
+			if rmErr != nil {
+				return fmt.Errorf("install failed (sudo rm): %w", rmErr)
+			}
+			cpErr := exec.Command("sudo", "cp", binaryPath, binPath).Run()
+			if cpErr != nil {
+				return fmt.Errorf("install failed (sudo cp): %w\nInstall manually: sudo cp %s %s && sudo chmod 755 %s",
+					cpErr, binaryPath, binPath, binPath)
+			}
+			if chmodErr := exec.Command("sudo", "chmod", "755", binPath).Run(); chmodErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: chmod failed: %v\n", chmodErr)
+			}
+			usedSudo = true
+		} else {
+			return fmt.Errorf("install failed: %w", err)
 		}
-		usedSudo = true
 	}
 
 	// On macOS, re-sign the binary to clear com.apple.provenance
@@ -250,14 +276,23 @@ func extractTarGz(tarPath string) (string, error) {
 	return "", fmt.Errorf("zen binary not found in archive")
 }
 
-func copyFile(src, dst string) error {
+// installBinary replaces the file at dst with the contents of src.
+// It uses remove-then-create to avoid ETXTBSY on Linux (cannot write
+// to a running executable). Removing a running binary is safe on Linux —
+// the process retains its inode reference until it exits.
+func installBinary(src, dst string, mode os.FileMode) error {
+	// Remove old binary first (avoids ETXTBSY on Linux)
+	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_TRUNC, 0755)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, mode)
 	if err != nil {
 		return err
 	}
@@ -267,6 +302,19 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// resolveInstallPath resolves symlinks so we replace the actual binary file.
+func resolveInstallPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}
+
+// isRoot returns true if the current process is running as root (uid 0).
+func isRoot() bool {
+	return os.Getuid() == 0
 }
 
 // progressReader wraps an io.Reader and prints a download progress bar.

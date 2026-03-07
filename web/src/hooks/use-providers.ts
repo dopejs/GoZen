@@ -47,3 +47,24 @@ export function useDeleteProvider() {
     },
   })
 }
+
+export function useDisableProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name, type }: { name: string; type: 'today' | 'month' | 'permanent' }) =>
+      providersApi.disable(name, type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['providers'] })
+    },
+  })
+}
+
+export function useEnableProvider() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => providersApi.enable(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['providers'] })
+    },
+  })
+}

@@ -21,13 +21,15 @@ func ChatCompletionsToResponsesAPI(body []byte) ([]byte, error) {
 		delete(data, "messages")
 	}
 
-	// Transform content types in input messages: "text" → "input_text"
+	// Transform content types in input messages based on role:
+	// user/system/developer → "input_text", assistant → "output_text"
 	if input, ok := data["input"].([]interface{}); ok {
 		for _, msg := range input {
 			msgMap, ok := msg.(map[string]interface{})
 			if !ok {
 				continue
 			}
+			role, _ := msgMap["role"].(string)
 			parts, ok := msgMap["content"].([]interface{})
 			if !ok {
 				continue // string content passes through unchanged
@@ -38,8 +40,14 @@ func ChatCompletionsToResponsesAPI(body []byte) ([]byte, error) {
 					continue
 				}
 				if partMap["type"] == "text" {
-					partMap["type"] = "input_text"
+					if role == "assistant" {
+						partMap["type"] = "output_text"
+					} else {
+						partMap["type"] = "input_text"
+					}
 				}
+				// Remove Anthropic-specific fields unsupported by Responses API
+				delete(partMap, "cache_control")
 			}
 		}
 	}

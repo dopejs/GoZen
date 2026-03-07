@@ -116,18 +116,23 @@ func TestChatCompletionsToResponsesAPI(t *testing.T) {
 				if len(input) != 3 {
 					t.Fatalf("input length = %d, want 3", len(input))
 				}
-				for i, msg := range input {
-					msgMap := msg.(map[string]interface{})
-					parts := msgMap["content"].([]interface{})
-					for j, part := range parts {
-						partMap := part.(map[string]interface{})
-						if partMap["type"] == "text" {
-							t.Errorf("input[%d].content[%d].type = text, want input_text", i, j)
-						}
-						if partMap["type"] != "input_text" {
-							t.Errorf("input[%d].content[%d].type = %v, want input_text", i, j, partMap["type"])
-						}
-					}
+				// user messages → input_text
+				userMsg := input[0].(map[string]interface{})
+				userPart := userMsg["content"].([]interface{})[0].(map[string]interface{})
+				if userPart["type"] != "input_text" {
+					t.Errorf("user content type = %v, want input_text", userPart["type"])
+				}
+				// assistant messages → output_text
+				assistMsg := input[1].(map[string]interface{})
+				assistPart := assistMsg["content"].([]interface{})[0].(map[string]interface{})
+				if assistPart["type"] != "output_text" {
+					t.Errorf("assistant content type = %v, want output_text", assistPart["type"])
+				}
+				// second user message → input_text
+				user2Msg := input[2].(map[string]interface{})
+				user2Part := user2Msg["content"].([]interface{})[0].(map[string]interface{})
+				if user2Part["type"] != "input_text" {
+					t.Errorf("user2 content type = %v, want input_text", user2Part["type"])
 				}
 			},
 		},
@@ -140,6 +145,25 @@ func TestChatCompletionsToResponsesAPI(t *testing.T) {
 				// String content should pass through unchanged
 				if msg["content"] != "hello" {
 					t.Errorf("string content = %v, want hello", msg["content"])
+				}
+			},
+		},
+		{
+			name:  "cache_control_removed",
+			input: `{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}]}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				input := result["input"].([]interface{})
+				msg := input[0].(map[string]interface{})
+				parts := msg["content"].([]interface{})
+				part := parts[0].(map[string]interface{})
+				if _, ok := part["cache_control"]; ok {
+					t.Error("cache_control should be removed")
+				}
+				if part["type"] != "input_text" {
+					t.Errorf("type = %v, want input_text", part["type"])
+				}
+				if part["text"] != "hello" {
+					t.Errorf("text = %v, want hello", part["text"])
 				}
 			},
 		},

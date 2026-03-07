@@ -149,7 +149,9 @@
     "autoRefresh": "自动刷新",
     "errorsOnly": "仅显示错误",
     "allProviders": "所有服务商",
-    "clearFilters": "清除筛选"
+    "clearFilters": "清除筛选",
+    "level": "级别",
+    "message": "消息"
   },
   "usage": {
     "title": "用量",

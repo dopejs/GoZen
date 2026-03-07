@@ -82,7 +82,9 @@
     "autoRefresh": "자동 새로고침",
     "errorsOnly": "오류만",
     "allProviders": "모든 프로바이더",
-    "clearFilters": "필터 지우기"
+    "clearFilters": "필터 지우기",
+    "level": "레벨",
+    "message": "메시지"
   },
   "usage": {
     "title": "사용량",

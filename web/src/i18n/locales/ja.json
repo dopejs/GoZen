@@ -82,7 +82,9 @@
     "autoRefresh": "自動更新",
     "errorsOnly": "エラーのみ",
     "allProviders": "すべてのプロバイダー",
-    "clearFilters": "フィルターをクリア"
+    "clearFilters": "フィルターをクリア",
+    "level": "レベル",
+    "message": "メッセージ"
   },
   "usage": {
     "title": "使用量",

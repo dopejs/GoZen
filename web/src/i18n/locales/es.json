@@ -82,7 +82,9 @@
     "autoRefresh": "Actualización Automática",
     "errorsOnly": "Solo Errores",
     "allProviders": "Todos los Proveedores",
-    "clearFilters": "Limpiar Filtros"
+    "clearFilters": "Limpiar Filtros",
+    "level": "Nivel",
+    "message": "Mensaje"
   },
   "usage": {
     "title": "Uso",

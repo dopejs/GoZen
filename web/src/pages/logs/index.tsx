@@ -42,7 +42,19 @@ export function LogsPage() {
     return new Date(ts).toLocaleString()
   }
 
+  const getLevelBadge = (level: string) => {
+    switch (level) {
+      case 'error':
+        return <Badge variant="destructive">{level}</Badge>
+      case 'warn':
+        return <Badge variant="warning">{level}</Badge>
+      default:
+        return <Badge variant="secondary">{level}</Badge>
+    }
+  }
+
   const getStatusBadge = (status: number) => {
+    if (!status) return null
     if (status >= 200 && status < 300) {
       return <Badge variant="success">{status}</Badge>
     } else if (status >= 400 && status < 500) {
@@ -115,24 +127,20 @@ export function LogsPage() {
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-3 text-left font-medium">{t('logs.timestamp')}</th>
+                    <th className="px-4 py-3 text-left font-medium">{t('logs.level')}</th>
                     <th className="px-4 py-3 text-left font-medium">{t('logs.provider')}</th>
-                    <th className="px-4 py-3 text-left font-medium">{t('logs.model')}</th>
                     <th className="px-4 py-3 text-left font-medium">{t('logs.status')}</th>
-                    <th className="px-4 py-3 text-left font-medium">{t('logs.latency')}</th>
-                    <th className="px-4 py-3 text-left font-medium">{t('logs.tokens')}</th>
+                    <th className="px-4 py-3 text-left font-medium">{t('logs.message')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.entries.map((entry) => (
-                    <tr key={entry.id} className="border-b hover:bg-muted/50">
-                      <td className="px-4 py-3 text-muted-foreground">{formatTimestamp(entry.timestamp)}</td>
-                      <td className="px-4 py-3">{entry.provider}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{entry.model || '-'}</td>
-                      <td className="px-4 py-3">{getStatusBadge(entry.status)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{entry.latency_ms}ms</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {entry.input_tokens}/{entry.output_tokens}
-                      </td>
+                  {data.entries.map((entry, index) => (
+                    <tr key={index} className="border-b hover:bg-muted/50">
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatTimestamp(entry.timestamp)}</td>
+                      <td className="px-4 py-3">{getLevelBadge(entry.level)}</td>
+                      <td className="px-4 py-3">{entry.provider || '-'}</td>
+                      <td className="px-4 py-3">{getStatusBadge(entry.status_code)}</td>
+                      <td className="px-4 py-3 text-muted-foreground max-w-md truncate" title={entry.message}>{entry.message || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

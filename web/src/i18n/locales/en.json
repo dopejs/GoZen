@@ -150,7 +150,9 @@
     "autoRefresh": "Auto Refresh",
     "errorsOnly": "Errors Only",
     "allProviders": "All Providers",
-    "clearFilters": "Clear Filters"
+    "clearFilters": "Clear Filters",
+    "level": "Level",
+    "message": "Message"
   },
   "monitoring": {
     "title": "Request Monitoring",

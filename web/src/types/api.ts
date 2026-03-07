@@ -88,15 +88,15 @@ export interface Profile {
 
 // Log types
 export interface LogEntry {
-  id: string
   timestamp: string
+  level: string
   provider: string
-  model: string
-  status: number
-  latency_ms: number
-  input_tokens: number
-  output_tokens: number
+  message: string
+  status_code: number
+  method?: string
+  path?: string
   error?: string
+  response_body?: string
   session_id?: string
   client_type?: string
 }

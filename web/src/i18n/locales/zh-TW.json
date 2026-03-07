@@ -149,7 +149,9 @@
     "autoRefresh": "自動重新整理",
     "errorsOnly": "僅顯示錯誤",
     "allProviders": "所有服務商",
-    "clearFilters": "清除篩選"
+    "clearFilters": "清除篩選",
+    "level": "級別",
+    "message": "訊息"
   },
   "usage": {
     "title": "用量",

@@ -2643,3 +2643,342 @@ func TestE2E_EdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestIsResponsesAPIRequired(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "input_is_required_error",
+			body: `{"error":{"message":"input is required (request id: 123)","type":"new_api_error"}}`,
+			want: true,
+		},
+		{
+			name: "server_error",
+			body: `{"error":{"message":"server error","type":"server_error"}}`,
+			want: false,
+		},
+		{
+			name: "invalid_request_error_without_input_required",
+			body: `{"error":{"message":"model not found","type":"invalid_request_error"}}`,
+			want: false,
+		},
+		{
+			name: "empty_body",
+			body: "",
+			want: false,
+		},
+		{
+			name: "malformed_json",
+			body: `{not valid json`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isResponsesAPIRequired([]byte(tt.body))
+			if got != tt.want {
+				t.Errorf("isResponsesAPIRequired(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResponsesAPIRetry(t *testing.T) {
+	t.Run("retry_success", func(t *testing.T) {
+		// Mock server: 500 "input is required" on /chat/completions,
+		// 200 Responses API on /responses
+		var chatCompletionsHit, responsesHit bool
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/chat/completions") {
+				chatCompletionsHit = true
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(500)
+				w.Write([]byte(`{"error":{"message":"input is required (request id: abc123)","type":"new_api_error"}}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/responses") {
+				responsesHit = true
+				// Verify request body has "input" not "messages"
+				body, _ := io.ReadAll(r.Body)
+				var data map[string]interface{}
+				json.Unmarshal(body, &data)
+				if _, ok := data["messages"]; ok {
+					t.Error("retry request should not have messages field")
+				}
+				if _, ok := data["input"]; !ok {
+					t.Error("retry request should have input field")
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(200)
+				w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello from Responses API!"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`))
+				return
+			}
+			w.WriteHeader(404)
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "responses-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "test-token",
+			Model:   "gpt-5",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":1024}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		if !chatCompletionsHit {
+			t.Error("should have hit /chat/completions first")
+		}
+		if !responsesHit {
+			t.Error("should have retried with /responses")
+		}
+		if w.Code != 200 {
+			t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+		}
+
+		// Verify response is in Anthropic format
+		var resp map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		if resp["type"] != "message" {
+			t.Errorf("response type = %v, want message", resp["type"])
+		}
+		content := resp["content"].([]interface{})
+		if len(content) == 0 {
+			t.Fatal("response content should not be empty")
+		}
+		block := content[0].(map[string]interface{})
+		if block["text"] != "Hello from Responses API!" {
+			t.Errorf("text = %v, want Hello from Responses API!", block["text"])
+		}
+	})
+
+	t.Run("no_retry_on_other_errors", func(t *testing.T) {
+		// Mock server: 500 generic error on /chat/completions
+		var responsesHit bool
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/responses") {
+				responsesHit = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"message":"internal server error","type":"server_error"}}`))
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "error-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "test-token",
+			Model:   "gpt-5",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		if responsesHit {
+			t.Error("should NOT have retried with /responses for non-'input is required' error")
+		}
+		// Should get 502 (all providers failed)
+		if w.Code != 502 {
+			t.Errorf("status = %d, want 502", w.Code)
+		}
+	})
+
+	t.Run("retry_failure_reports_responses_api_error", func(t *testing.T) {
+		// Mock server: 500 "input is required" on /chat/completions, 401 on /responses
+		backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Path, "/chat/completions") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(500)
+				w.Write([]byte(`{"error":{"message":"input is required","type":"new_api_error"}}`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "/responses") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(401)
+				w.Write([]byte(`{"error":{"message":"invalid api key","type":"auth_error"}}`))
+				return
+			}
+			w.WriteHeader(404)
+		}))
+		defer backend.Close()
+
+		u, _ := url.Parse(backend.URL)
+		providers := []*Provider{{
+			Name:    "retry-fail-provider",
+			Type:    config.ProviderTypeOpenAI,
+			BaseURL: u,
+			Token:   "bad-token",
+			Model:   "gpt-5",
+			Healthy: true,
+		}}
+
+		srv := NewProxyServer(providers, discardLogger())
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("X-Zen-Request-Format", "anthropic")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+
+		// Should report Responses API error (not the original Chat Completions error)
+		if w.Code != 502 {
+			t.Errorf("status = %d, want 502", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "invalid api key") {
+			t.Errorf("error should contain Responses API error, got: %s", body)
+		}
+	})
+}
+
+func TestResponsesAPIRetryStreaming(t *testing.T) {
+	// Mock server: 500 "input is required" on /chat/completions,
+	// SSE Responses API stream on /responses
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"message":"input is required","type":"new_api_error"}}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/responses") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			flusher, _ := w.(http.Flusher)
+
+			events := []string{
+				"event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_s1\",\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"gpt-5\",\"output\":[]}}\n\n",
+				"event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"msg_s1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[]}}\n\n",
+				"event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\",\"item_id\":\"msg_s1\",\"output_index\":0,\"content_index\":0,\"part\":{\"type\":\"output_text\",\"text\":\"\"}}\n\n",
+				"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_s1\",\"output_index\":0,\"content_index\":0,\"delta\":\"Streamed!\"}\n\n",
+				"event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"msg_s1\",\"type\":\"message\"}}\n\n",
+				"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_s1\",\"status\":\"completed\",\"model\":\"gpt-5\",\"output\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":3,\"total_tokens\":8}}}\n\n",
+			}
+			for _, event := range events {
+				w.Write([]byte(event))
+				flusher.Flush()
+			}
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "stream-responses-provider",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-5",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"stream":true}`))
+	req.Header.Set("X-Zen-Request-Format", "anthropic")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+
+	// Verify Anthropic SSE events in the streamed response
+	if !strings.Contains(body, "event: message_start") {
+		t.Error("should contain message_start event")
+	}
+	if !strings.Contains(body, "event: content_block_delta") {
+		t.Error("should contain content_block_delta event")
+	}
+	if !strings.Contains(body, `"Streamed!"`) {
+		t.Error("should contain streamed text")
+	}
+	if !strings.Contains(body, "event: message_stop") {
+		t.Error("should contain message_stop event")
+	}
+}
+
+func TestResponsesAPIRetryToolCall(t *testing.T) {
+	// Mock server: 500 "input is required" on /chat/completions,
+	// 200 Responses API with function_call on /responses
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"message":"input is required","type":"new_api_error"}}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/responses") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			w.Write([]byte(`{"id":"resp_tc","object":"response","status":"completed","model":"gpt-5","output":[{"id":"fc_1","type":"function_call","call_id":"call_tc1","name":"get_weather","arguments":"{\"location\":\"Tokyo\"}","status":"completed"}],"usage":{"input_tokens":15,"output_tokens":8,"total_tokens":23}}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "tool-call-provider",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-5",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger())
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
+		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"weather in Tokyo"}],"tools":[{"name":"get_weather","input_schema":{}}]}`))
+	req.Header.Set("X-Zen-Request-Format", "anthropic")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+
+	if resp["stop_reason"] != "tool_use" {
+		t.Errorf("stop_reason = %v, want tool_use", resp["stop_reason"])
+	}
+
+	content := resp["content"].([]interface{})
+	if len(content) != 1 {
+		t.Fatalf("content length = %d, want 1", len(content))
+	}
+	block := content[0].(map[string]interface{})
+	if block["type"] != "tool_use" {
+		t.Errorf("content type = %v, want tool_use", block["type"])
+	}
+	if block["name"] != "get_weather" {
+		t.Errorf("tool name = %v, want get_weather", block["name"])
+	}
+}

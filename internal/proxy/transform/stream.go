@@ -33,6 +33,8 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 			st.transformAnthropicToOpenAI(r, pw)
 		} else if st.ProviderFormat == "openai" && st.ClientFormat == "anthropic" {
 			st.transformOpenAIToAnthropic(r, pw)
+		} else if st.ProviderFormat == "openai-responses" && st.ClientFormat == "anthropic" {
+			st.transformResponsesAPIToAnthropic(r, pw)
 		}
 	}()
 
@@ -486,4 +488,221 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			}))
 		}
 	}
+}
+
+// transformResponsesAPIToAnthropic converts OpenAI Responses API SSE events
+// to Anthropic Messages API SSE format.
+// Responses API uses event: + data: lines with typed event names.
+// Anthropic uses event: + data: lines with different event names.
+func (st *StreamTransformer) transformResponsesAPIToAnthropic(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+	var messageStarted bool
+	var contentBlockIndex int
+	var hasToolUse bool
+	var inputTokens, outputTokens int
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		// Empty line = end of event
+		if line == "" && dataBuffer.Len() > 0 {
+			data := dataBuffer.String()
+			dataBuffer.Reset()
+
+			var eventData map[string]interface{}
+			if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+				currentEvent = ""
+				continue
+			}
+
+			switch currentEvent {
+			case "response.created":
+				// Extract response metadata
+				if resp, ok := eventData["response"].(map[string]interface{}); ok {
+					if id, ok := resp["id"].(string); ok {
+						st.MessageID = id
+					}
+					if model, ok := resp["model"].(string); ok {
+						st.Model = model
+					}
+				}
+
+				if !messageStarted {
+					fmt.Fprint(w, formatSSEEvent("message_start", map[string]interface{}{
+						"type": "message_start",
+						"message": map[string]interface{}{
+							"id":            st.MessageID,
+							"type":          "message",
+							"role":          "assistant",
+							"content":       []interface{}{},
+							"model":         st.Model,
+							"stop_reason":   nil,
+							"stop_sequence": nil,
+							"usage": map[string]interface{}{
+								"input_tokens":  0,
+								"output_tokens": 0,
+							},
+						},
+					}))
+					messageStarted = true
+				}
+
+			case "response.output_item.added":
+				item, ok := eventData["item"].(map[string]interface{})
+				if !ok {
+					break
+				}
+				itemType, _ := item["type"].(string)
+
+				if itemType == "message" {
+					// Text message — content_block_start emitted on content_part.added
+				} else if itemType == "function_call" {
+					hasToolUse = true
+					callID, _ := item["call_id"].(string)
+					name, _ := item["name"].(string)
+					fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
+						"type":  "content_block_start",
+						"index": contentBlockIndex,
+						"content_block": map[string]interface{}{
+							"type":  "tool_use",
+							"id":    callID,
+							"name":  name,
+							"input": map[string]interface{}{},
+						},
+					}))
+				}
+
+			case "response.content_part.added":
+				// Text content block start
+				fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
+					"type":  "content_block_start",
+					"index": contentBlockIndex,
+					"content_block": map[string]interface{}{
+						"type": "text",
+						"text": "",
+					},
+				}))
+
+			case "response.output_text.delta":
+				delta, _ := eventData["delta"].(string)
+				fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": contentBlockIndex,
+					"delta": map[string]interface{}{
+						"type": "text_delta",
+						"text": delta,
+					},
+				}))
+
+			case "response.function_call_arguments.delta":
+				delta, _ := eventData["delta"].(string)
+				fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": contentBlockIndex,
+					"delta": map[string]interface{}{
+						"type":         "input_json_delta",
+						"partial_json": delta,
+					},
+				}))
+
+			case "response.output_item.done":
+				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+					"type":  "content_block_stop",
+					"index": contentBlockIndex,
+				}))
+				contentBlockIndex++
+
+			case "response.completed":
+				// Extract usage from completed response
+				if resp, ok := eventData["response"].(map[string]interface{}); ok {
+					if usage, ok := resp["usage"].(map[string]interface{}); ok {
+						if v, ok := usage["input_tokens"].(float64); ok {
+							inputTokens = int(v)
+						}
+						if v, ok := usage["output_tokens"].(float64); ok {
+							outputTokens = int(v)
+						}
+					}
+				}
+
+				stopReason := "end_turn"
+				if hasToolUse {
+					stopReason = "tool_use"
+				}
+
+				fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+					"type": "message_delta",
+					"delta": map[string]interface{}{
+						"stop_reason":   stopReason,
+						"stop_sequence": nil,
+					},
+					"usage": map[string]interface{}{
+						"output_tokens": outputTokens,
+					},
+				}))
+
+				fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+					"type": "message_stop",
+				}))
+			}
+
+			currentEvent = ""
+		}
+	}
+
+	// Process remaining buffered data (stream may end without trailing blank line)
+	if dataBuffer.Len() > 0 && currentEvent != "" {
+		data := dataBuffer.String()
+		var eventData map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &eventData); err == nil {
+			if currentEvent == "response.completed" {
+				if resp, ok := eventData["response"].(map[string]interface{}); ok {
+					if usage, ok := resp["usage"].(map[string]interface{}); ok {
+						if v, ok := usage["input_tokens"].(float64); ok {
+							inputTokens = int(v)
+						}
+						if v, ok := usage["output_tokens"].(float64); ok {
+							outputTokens = int(v)
+						}
+					}
+				}
+
+				stopReason := "end_turn"
+				if hasToolUse {
+					stopReason = "tool_use"
+				}
+
+				fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+					"type": "message_delta",
+					"delta": map[string]interface{}{
+						"stop_reason":   stopReason,
+						"stop_sequence": nil,
+					},
+					"usage": map[string]interface{}{
+						"output_tokens": outputTokens,
+					},
+				}))
+
+				fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+					"type": "message_stop",
+				}))
+			}
+		}
+	}
+	_ = inputTokens
 }

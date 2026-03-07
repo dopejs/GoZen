@@ -346,6 +346,29 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			errBody, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 
+			// Check if provider expects Responses API format (not Chat Completions)
+			if isResponsesAPIRequired(errBody) && p.GetType() == config.ProviderTypeOpenAI {
+				s.Logger.Printf("[%s] got 'input is required', retrying with Responses API format", p.Name)
+				retryResp, retryErr := s.retryWithResponsesAPI(r, p, bodyBytes, modelOverride, requestFormat)
+				if retryErr != nil {
+					s.Logger.Printf("[%s] Responses API retry error: %v", p.Name, retryErr)
+					*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: retryErr.Error(), Elapsed: time.Since(start)})
+					continue
+				}
+				if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+					p.MarkHealthy()
+					s.Logger.Printf("[%s] Responses API retry success %d", p.Name, retryResp.StatusCode)
+					s.copyResponseFromResponsesAPI(w, retryResp, p, requestFormat)
+					return true
+				}
+				// Retry failed — record the Responses API error, not the Chat Completions error
+				retryBody, _ := io.ReadAll(retryResp.Body)
+				retryResp.Body.Close()
+				s.Logger.Printf("[%s] Responses API retry failed %d: %s", p.Name, retryResp.StatusCode, string(retryBody))
+				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: retryResp.StatusCode, Body: string(retryBody), Elapsed: time.Since(start)})
+				continue
+			}
+
 			if isRequestRelatedError(errBody) {
 				// Request-related error (e.g., context too long) - failover without marking unhealthy
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
@@ -511,6 +534,151 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 		client = p.Client
 	}
 	return client.Do(req)
+}
+
+// retryWithResponsesAPI re-sends a request using the Responses API format
+// when the provider returned "input is required" for a Chat Completions request.
+func (s *ProxyServer) retryWithResponsesAPI(r *http.Request, p *Provider, originalBody []byte, modelOverride string, requestFormat string) (*http.Response, error) {
+	// First apply the same model mapping/override as forwardRequest
+	var modifiedBody []byte
+	if modelOverride != "" {
+		modifiedBody = s.applyModelOverride(originalBody, modelOverride, p.Name)
+	} else {
+		modifiedBody = s.applyModelMapping(originalBody, p)
+	}
+
+	// Apply Anthropic→Chat Completions transform if needed
+	providerFormat := p.GetType()
+	if transform.NeedsTransform(requestFormat, providerFormat) {
+		transformer := transform.GetTransformer(providerFormat)
+		transformed, err := transformer.TransformRequest(modifiedBody, requestFormat)
+		if err != nil {
+			s.Logger.Printf("[%s] Responses API retry: transform request error: %v", p.Name, err)
+		} else {
+			modifiedBody = transformed
+		}
+	}
+
+	// Now transform Chat Completions → Responses API
+	responsesBody, err := transform.ChatCompletionsToResponsesAPI(modifiedBody)
+	if err != nil {
+		return nil, fmt.Errorf("transform to Responses API: %w", err)
+	}
+
+	// Build the Responses API path
+	targetPath := "/v1/responses"
+
+	// Deduplicate /v1 prefix when base_url already ends with /v1
+	basePath := strings.TrimSuffix(p.BaseURL.Path, "/")
+	if strings.HasSuffix(basePath, "/v1") {
+		targetPath = "/responses"
+		s.Logger.Printf("[%s] Responses API retry: path dedup /v1/responses → /responses", p.Name)
+	}
+
+	targetURL := singleJoiningSlash(p.BaseURL.String(), targetPath)
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+
+	s.Logger.Printf("[%s] Responses API retry: %s %s", p.Name, r.Method, targetURL)
+
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, bytes.NewReader(responsesBody))
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy headers
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			req.Header.Add(k, v)
+		}
+	}
+
+	// Override auth
+	req.Header.Set("x-api-key", p.Token)
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(responsesBody)))
+
+	s.applyEnvVarsHeaders(req, p.EnvVars)
+
+	client := s.Client
+	if p.Client != nil {
+		client = p.Client
+	}
+	return client.Do(req)
+}
+
+// copyResponseFromResponsesAPI transforms a Responses API response to the client's
+// expected format and writes it to the ResponseWriter.
+func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *http.Response, p *Provider, requestFormat string) {
+	defer resp.Body.Close()
+
+	// Non-streaming response
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "failed to read response", http.StatusBadGateway)
+			return
+		}
+
+		// Transform Responses API → Anthropic
+		if requestFormat == config.ProviderTypeAnthropic {
+			transformed, err := transform.ResponsesAPIToAnthropic(body)
+			if err != nil {
+				s.Logger.Printf("[%s] Responses API response transform error: %v", p.Name, err)
+			} else {
+				s.Logger.Printf("[%s] transformed Responses API → Anthropic", p.Name)
+				body = transformed
+			}
+		}
+
+		// Copy headers (except Content-Length which may have changed)
+		for k, vv := range resp.Header {
+			if strings.ToLower(k) == "content-length" {
+				continue
+			}
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(body)))
+		w.WriteHeader(resp.StatusCode)
+		w.Write(body)
+		return
+	}
+
+	// Streaming response — transform Responses API SSE → Anthropic SSE
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	flusher, ok := w.(http.Flusher)
+
+	var reader io.Reader = resp.Body
+	if requestFormat == config.ProviderTypeAnthropic {
+		st := &transform.StreamTransformer{
+			ClientFormat:   "anthropic",
+			ProviderFormat: "openai-responses",
+		}
+		reader = st.TransformSSEStream(resp.Body)
+		s.Logger.Printf("[%s] transforming Responses API SSE stream → Anthropic", p.Name)
+	}
+
+	buf := make([]byte, 4096)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			if ok {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
 }
 
 func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p *Provider, requestFormat string) {
@@ -955,6 +1123,14 @@ func isRequestRelatedError(body []byte) bool {
 	}
 
 	return false
+}
+
+// isResponsesAPIRequired checks if an error response indicates the provider
+// expects Responses API format instead of Chat Completions.
+// Detects "input is required" in the response body, which occurs when a
+// provider only supports the Responses API (/v1/responses with input field).
+func isResponsesAPIRequired(body []byte) bool {
+	return strings.Contains(string(body), "input is required")
 }
 
 // applyEnvVarsHeaders converts environment variables to HTTP headers.

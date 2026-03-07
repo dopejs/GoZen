@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func setTestHome(t *testing.T) string {
@@ -150,8 +151,8 @@ func TestConfigMigrationV11ToV12(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Version != 13 {
-		t.Errorf("version after migration = %d, want 13", cfg.Version)
+	if cfg.Version != 14 {
+		t.Errorf("version after migration = %d, want 14", cfg.Version)
 	}
 
 	// Verify new fields exist with default values (nil/empty)
@@ -2314,5 +2315,383 @@ func TestFeatureGatesJSONSerialization(t *testing.T) {
 				t.Errorf("Unmarshal = %+v, want %+v", gates, *tt.gates)
 			}
 		})
+	}
+}
+
+// T003: Test UnavailableMarking IsExpired, IsActive, NewUnavailableMarking
+func TestUnavailableMarking_IsExpired(t *testing.T) {
+	tests := []struct {
+		name    string
+		marking *UnavailableMarking
+		want    bool
+	}{
+		{
+			name:    "nil marking is expired",
+			marking: nil,
+			want:    true,
+		},
+		{
+			name: "today marking not yet expired",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeToday,
+				CreatedAt: time.Now(),
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+			},
+			want: false,
+		},
+		{
+			name: "today marking already expired",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeToday,
+				CreatedAt: time.Now().Add(-25 * time.Hour),
+				ExpiresAt: time.Now().Add(-1 * time.Hour),
+			},
+			want: true,
+		},
+		{
+			name: "month marking not yet expired",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeMonth,
+				CreatedAt: time.Now(),
+				ExpiresAt: time.Now().Add(24 * time.Hour),
+			},
+			want: false,
+		},
+		{
+			name: "month marking already expired",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeMonth,
+				CreatedAt: time.Now().Add(-60 * 24 * time.Hour),
+				ExpiresAt: time.Now().Add(-1 * time.Hour),
+			},
+			want: true,
+		},
+		{
+			name: "permanent marking never expires",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypePermanent,
+				CreatedAt: time.Now().Add(-365 * 24 * time.Hour),
+				// ExpiresAt is zero
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.marking.IsExpired(); got != tt.want {
+				t.Errorf("IsExpired() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnavailableMarking_IsActive(t *testing.T) {
+	tests := []struct {
+		name    string
+		marking *UnavailableMarking
+		want    bool
+	}{
+		{
+			name:    "nil marking is not active",
+			marking: nil,
+			want:    false,
+		},
+		{
+			name: "unexpired marking is active",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeToday,
+				CreatedAt: time.Now(),
+				ExpiresAt: time.Now().Add(1 * time.Hour),
+			},
+			want: true,
+		},
+		{
+			name: "expired marking is not active",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypeToday,
+				CreatedAt: time.Now().Add(-25 * time.Hour),
+				ExpiresAt: time.Now().Add(-1 * time.Hour),
+			},
+			want: false,
+		},
+		{
+			name: "permanent marking is always active",
+			marking: &UnavailableMarking{
+				Type:      MarkingTypePermanent,
+				CreatedAt: time.Now().Add(-365 * 24 * time.Hour),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.marking.IsActive(); got != tt.want {
+				t.Errorf("IsActive() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewUnavailableMarking(t *testing.T) {
+	tests := []struct {
+		name        string
+		markingType string
+		wantErr     bool
+		checkExpiry func(t *testing.T, m *UnavailableMarking)
+	}{
+		{
+			name:        "today type",
+			markingType: MarkingTypeToday,
+			checkExpiry: func(t *testing.T, m *UnavailableMarking) {
+				if m.Type != MarkingTypeToday {
+					t.Errorf("Type = %q, want %q", m.Type, MarkingTypeToday)
+				}
+				if m.ExpiresAt.IsZero() {
+					t.Error("ExpiresAt should not be zero for today type")
+				}
+				// Should expire at end of today
+				y, mo, d := time.Now().Date()
+				endOfDay := time.Date(y, mo, d, 23, 59, 59, 0, time.Now().Location())
+				if !m.ExpiresAt.Equal(endOfDay) {
+					t.Errorf("ExpiresAt = %v, want %v", m.ExpiresAt, endOfDay)
+				}
+			},
+		},
+		{
+			name:        "month type",
+			markingType: MarkingTypeMonth,
+			checkExpiry: func(t *testing.T, m *UnavailableMarking) {
+				if m.Type != MarkingTypeMonth {
+					t.Errorf("Type = %q, want %q", m.Type, MarkingTypeMonth)
+				}
+				if m.ExpiresAt.IsZero() {
+					t.Error("ExpiresAt should not be zero for month type")
+				}
+				// Should expire at last second of current month
+				now := time.Now()
+				y, mo, _ := now.Date()
+				endOfMonth := time.Date(y, mo+1, 1, 0, 0, 0, 0, now.Location()).Add(-time.Second)
+				if !m.ExpiresAt.Equal(endOfMonth) {
+					t.Errorf("ExpiresAt = %v, want %v", m.ExpiresAt, endOfMonth)
+				}
+			},
+		},
+		{
+			name:        "permanent type",
+			markingType: MarkingTypePermanent,
+			checkExpiry: func(t *testing.T, m *UnavailableMarking) {
+				if m.Type != MarkingTypePermanent {
+					t.Errorf("Type = %q, want %q", m.Type, MarkingTypePermanent)
+				}
+				if !m.ExpiresAt.IsZero() {
+					t.Errorf("ExpiresAt should be zero for permanent type, got %v", m.ExpiresAt)
+				}
+			},
+		},
+		{
+			name:        "invalid type",
+			markingType: "invalid",
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := NewUnavailableMarking(tt.markingType)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewUnavailableMarking() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+			if m.CreatedAt.IsZero() {
+				t.Error("CreatedAt should not be zero")
+			}
+			tt.checkExpiry(t, m)
+		})
+	}
+}
+
+// T004: Test Store disable/enable methods and config migration
+func TestStoreDisableEnableProvider(t *testing.T) {
+	home := setTestHome(t)
+	configDir := filepath.Join(home, ConfigDir)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	store := DefaultStore()
+	// Create a test provider
+	if err := store.SetProvider("test-provider", &ProviderConfig{
+		BaseURL:   "https://api.test.com",
+		AuthToken: "test-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test DisableProvider persists marking
+	if err := store.DisableProvider("test-provider", MarkingTypeToday); err != nil {
+		t.Fatalf("DisableProvider() error = %v", err)
+	}
+	if !store.IsProviderDisabled("test-provider") {
+		t.Error("IsProviderDisabled() = false after DisableProvider()")
+	}
+
+	// Test GetDisabledProviders returns active markings
+	disabled := store.GetDisabledProviders()
+	if len(disabled) != 1 {
+		t.Errorf("GetDisabledProviders() returned %d entries, want 1", len(disabled))
+	}
+	if _, ok := disabled["test-provider"]; !ok {
+		t.Error("GetDisabledProviders() missing test-provider")
+	}
+
+	// Test EnableProvider removes marking
+	if err := store.EnableProvider("test-provider"); err != nil {
+		t.Fatalf("EnableProvider() error = %v", err)
+	}
+	if store.IsProviderDisabled("test-provider") {
+		t.Error("IsProviderDisabled() = true after EnableProvider()")
+	}
+
+	// Test DisableProvider on nonexistent provider returns error
+	if err := store.DisableProvider("nonexistent", MarkingTypeToday); err == nil {
+		t.Error("DisableProvider() should error for nonexistent provider")
+	}
+
+	// Test EnableProvider on nonexistent provider returns error
+	if err := store.EnableProvider("nonexistent"); err == nil {
+		t.Error("EnableProvider() should error for nonexistent provider")
+	}
+
+	// Test IsProviderDisabled returns false for non-disabled provider
+	if store.IsProviderDisabled("test-provider") {
+		t.Error("IsProviderDisabled() = true for enabled provider")
+	}
+
+	// Test expired marking is not returned by GetDisabledProviders
+	store.DisableProvider("test-provider", MarkingTypeToday)
+	// Manually set it to an expired time
+	store.mu.Lock()
+	if m, ok := store.config.DisabledProviders["test-provider"]; ok {
+		m.ExpiresAt = time.Now().Add(-1 * time.Hour)
+	}
+	store.mu.Unlock()
+
+	if store.IsProviderDisabled("test-provider") {
+		t.Error("IsProviderDisabled() = true for expired marking")
+	}
+	disabled = store.GetDisabledProviders()
+	if len(disabled) != 0 {
+		t.Errorf("GetDisabledProviders() returned %d entries for expired marking, want 0", len(disabled))
+	}
+}
+
+func TestDeleteProviderCleansUpDisabled(t *testing.T) {
+	home := setTestHome(t)
+	configDir := filepath.Join(home, ConfigDir)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	store := DefaultStore()
+	if err := store.SetProvider("provider-to-delete", &ProviderConfig{
+		BaseURL:   "https://api.test.com",
+		AuthToken: "test-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Disable the provider
+	if err := store.DisableProvider("provider-to-delete", MarkingTypePermanent); err != nil {
+		t.Fatal(err)
+	}
+	if !store.IsProviderDisabled("provider-to-delete") {
+		t.Fatal("provider should be disabled")
+	}
+
+	// Delete the provider — should also remove from DisabledProviders
+	if err := store.DeleteProvider("provider-to-delete"); err != nil {
+		t.Fatal(err)
+	}
+	if store.IsProviderDisabled("provider-to-delete") {
+		t.Error("disabled entry should be cleaned up after DeleteProvider()")
+	}
+}
+
+func TestConfigMigrationV13ToV14(t *testing.T) {
+	home := setTestHome(t)
+	configDir := filepath.Join(home, ConfigDir)
+	configPath := filepath.Join(configDir, ConfigFile)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Test: v13 config without disabled_providers parses to empty map
+	v13Config := `{
+		"version": 13,
+		"providers": {
+			"test": {"base_url": "https://api.test.com", "auth_token": "tok"}
+		},
+		"profiles": {
+			"default": {"providers": ["test"]}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(v13Config), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetDefaultStore()
+	store := DefaultStore()
+
+	// After migration, version should be 14
+	store.mu.Lock()
+	ver := store.config.Version
+	store.mu.Unlock()
+	if ver != CurrentConfigVersion {
+		t.Errorf("version = %d, want %d", ver, CurrentConfigVersion)
+	}
+
+	// disabled_providers should be nil/empty (not an error)
+	disabled := store.GetDisabledProviders()
+	if len(disabled) != 0 {
+		t.Errorf("GetDisabledProviders() = %d entries, want 0 for migrated v13 config", len(disabled))
+	}
+
+	// All existing fields should be preserved
+	p := store.GetProvider("test")
+	if p == nil {
+		t.Fatal("provider 'test' lost during migration")
+	}
+	if p.BaseURL != "https://api.test.com" {
+		t.Errorf("BaseURL = %q, want %q", p.BaseURL, "https://api.test.com")
+	}
+	profiles := store.GetProfileOrder("default")
+	if len(profiles) != 1 || profiles[0] != "test" {
+		t.Errorf("profile providers = %v, want [test]", profiles)
+	}
+
+	// Test: v14 config with disabled_providers round-trips correctly
+	if err := store.DisableProvider("test", MarkingTypePermanent); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the file and unmarshal to verify round-trip
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg OpenCCConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("round-trip unmarshal error: %v", err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Errorf("round-trip version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+	if len(cfg.DisabledProviders) != 1 {
+		t.Errorf("round-trip disabled_providers = %d entries, want 1", len(cfg.DisabledProviders))
+	}
+	if m, ok := cfg.DisabledProviders["test"]; !ok || m.Type != MarkingTypePermanent {
+		t.Errorf("round-trip disabled_providers[test] = %+v, want permanent marking", m)
 	}
 }

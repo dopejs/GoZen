@@ -128,6 +128,7 @@ func (s *Store) DeleteProvider(name string) error {
 	s.reloadIfModified()
 	s.ensureConfig()
 	delete(s.config.Providers, name)
+	delete(s.config.DisabledProviders, name)
 	for _, pc := range s.config.Profiles {
 		pc.Providers = removeString(pc.Providers, name)
 		for scenario, route := range pc.Routing {
@@ -619,6 +620,9 @@ func (s *Store) ensureConfig() {
 	if s.config.ProjectBindings == nil {
 		s.config.ProjectBindings = make(map[string]*ProjectBinding)
 	}
+	if s.config.DisabledProviders == nil {
+		s.config.DisabledProviders = make(map[string]*UnavailableMarking)
+	}
 	// Ensure version is set
 	if s.config.Version == 0 {
 		s.config.Version = CurrentConfigVersion
@@ -1106,4 +1110,81 @@ func (s *Store) GetFeatureGates() *FeatureGates {
 		return &FeatureGates{}
 	}
 	return s.config.FeatureGates
+}
+
+// --- Disabled Providers ---
+
+// DisableProvider marks a provider as unavailable with the given marking type.
+// Returns an error if the provider does not exist or the marking type is invalid.
+func (s *Store) DisableProvider(name string, markingType string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	if _, ok := s.config.Providers[name]; !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+
+	marking, err := NewUnavailableMarking(markingType)
+	if err != nil {
+		return err
+	}
+
+	if s.config.DisabledProviders == nil {
+		s.config.DisabledProviders = make(map[string]*UnavailableMarking)
+	}
+	s.config.DisabledProviders[name] = marking
+	return s.saveLocked()
+}
+
+// EnableProvider clears the unavailability marking for a provider.
+// Returns an error if the provider does not exist.
+func (s *Store) EnableProvider(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+	s.ensureConfig()
+
+	if _, ok := s.config.Providers[name]; !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+
+	delete(s.config.DisabledProviders, name)
+	return s.saveLocked()
+}
+
+// GetDisabledProviders returns a map of currently disabled providers (active markings only).
+// Expired markings are excluded.
+func (s *Store) GetDisabledProviders() map[string]*UnavailableMarking {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+
+	result := make(map[string]*UnavailableMarking)
+	if s.config == nil || s.config.DisabledProviders == nil {
+		return result
+	}
+	for name, marking := range s.config.DisabledProviders {
+		if marking.IsActive() {
+			result[name] = marking
+		}
+	}
+	return result
+}
+
+// IsProviderDisabled returns true if the named provider has an active unavailability marking.
+func (s *Store) IsProviderDisabled(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadIfModified()
+
+	if s.config == nil || s.config.DisabledProviders == nil {
+		return false
+	}
+	marking, ok := s.config.DisabledProviders[name]
+	if !ok {
+		return false
+	}
+	return marking.IsActive()
 }

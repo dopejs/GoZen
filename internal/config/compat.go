@@ -325,3 +325,25 @@ func GetFeatureGates() *FeatureGates {
 func SetFeatureGates(fg *FeatureGates) error {
 	return DefaultStore().SetFeatureGates(fg)
 }
+
+// --- Disabled Providers convenience functions ---
+
+// DisableProvider marks a provider as unavailable with the given marking type.
+func DisableProvider(name string, markingType string) error {
+	return DefaultStore().DisableProvider(name, markingType)
+}
+
+// EnableProvider clears the unavailability marking for a provider.
+func EnableProvider(name string) error {
+	return DefaultStore().EnableProvider(name)
+}
+
+// GetDisabledProviders returns all currently disabled providers (active only).
+func GetDisabledProviders() map[string]*UnavailableMarking {
+	return DefaultStore().GetDisabledProviders()
+}
+
+// IsProviderDisabled returns true if the named provider is manually marked unavailable.
+func IsProviderDisabled(name string) bool {
+	return DefaultStore().IsProviderDisabled(name)
+}

@@ -211,3 +211,131 @@ data: [DONE]
 		t.Error("should process valid JSON chunks even with invalid ones")
 	}
 }
+
+func TestTransformResponsesAPIToAnthropic_Text(t *testing.T) {
+	// Simulate Responses API SSE stream with text output
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","content":[]}}`,
+		``,
+		`event: response.content_part.added`,
+		`data: {"type":"response.content_part.added","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"!"}`,
+		``,
+		`event: response.output_item.done`,
+		`data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello world!"}]}}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-responses",
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	// Verify Anthropic SSE events
+	if !strings.Contains(result, "event: message_start") {
+		t.Error("should emit message_start event")
+	}
+	if !strings.Contains(result, "event: content_block_start") {
+		t.Error("should emit content_block_start event")
+	}
+	if !strings.Contains(result, `"text_delta"`) {
+		t.Error("should emit content_block_delta with text_delta")
+	}
+	if !strings.Contains(result, `"Hello"`) {
+		t.Error("should include first delta text")
+	}
+	if !strings.Contains(result, `" world"`) {
+		t.Error("should include second delta text")
+	}
+	if !strings.Contains(result, "event: content_block_stop") {
+		t.Error("should emit content_block_stop event")
+	}
+	if !strings.Contains(result, "event: message_delta") {
+		t.Error("should emit message_delta event")
+	}
+	if !strings.Contains(result, `"end_turn"`) {
+		t.Error("should include stop_reason end_turn")
+	}
+	if !strings.Contains(result, "event: message_stop") {
+		t.Error("should emit message_stop event")
+	}
+}
+
+func TestTransformResponsesAPIToAnthropic_ToolCall(t *testing.T) {
+	// Simulate Responses API SSE stream with function_call output
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_2","object":"response","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":""}}`,
+		``,
+		`event: response.function_call_arguments.delta`,
+		`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"loc"}`,
+		``,
+		`event: response.function_call_arguments.delta`,
+		`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"ation\":\"Paris\"}"}`,
+		``,
+		`event: response.output_item.done`,
+		`data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"location\":\"Paris\"}","status":"completed"}}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_2","object":"response","status":"completed","model":"gpt-5","output":[],"usage":{"input_tokens":20,"output_tokens":10,"total_tokens":30}}}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-responses",
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	// Verify tool call events
+	if !strings.Contains(result, "event: message_start") {
+		t.Error("should emit message_start event")
+	}
+	if !strings.Contains(result, "event: content_block_start") {
+		t.Error("should emit content_block_start event")
+	}
+	if !strings.Contains(result, `"tool_use"`) {
+		t.Error("should emit content_block_start with type tool_use")
+	}
+	if !strings.Contains(result, `"get_weather"`) {
+		t.Error("should include tool name")
+	}
+	if !strings.Contains(result, `"input_json_delta"`) {
+		t.Error("should emit content_block_delta with input_json_delta")
+	}
+	if !strings.Contains(result, "event: content_block_stop") {
+		t.Error("should emit content_block_stop event")
+	}
+	if !strings.Contains(result, `"tool_use"`) {
+		t.Error("should include stop_reason tool_use in message_delta")
+	}
+}

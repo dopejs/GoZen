@@ -4,6 +4,7 @@ set -eu
 # GoZen installer - download and install from GitHub Releases
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --version 3.0.0-alpha.21
 #   curl -fsSL https://raw.githubusercontent.com/dopejs/gozen/main/install.sh | sh -s -- --uninstall
 
 REPO="dopejs/gozen"
@@ -202,16 +203,23 @@ do_install() {
   detect_platform
   SUDO="$(need_sudo)"
 
-  info "Fetching latest release info..."
-  RELEASE_JSON="$(get_latest_version)"
+  if [ -n "$INSTALL_VERSION" ]; then
+    # User specified a version
+    VERSION="v$(printf '%s' "$INSTALL_VERSION" | sed 's/^v//')"
+    info "Requested version: ${VERSION}"
+  else
+    # Fetch latest stable release
+    info "Fetching latest release info..."
+    RELEASE_JSON="$(get_latest_version)"
 
-  # Extract version tag (simple grep, no jq dependency)
-  VERSION="$(printf '%s' "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
-  if [ -z "$VERSION" ]; then
-    err "Failed to determine latest version"
-    exit 1
+    # Extract version tag (simple grep, no jq dependency)
+    VERSION="$(printf '%s' "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+    if [ -z "$VERSION" ]; then
+      err "Failed to determine latest version"
+      exit 1
+    fi
+    info "Latest version: ${VERSION}"
   fi
-  info "Latest version: ${VERSION}"
 
   # Determine download format based on version
   # v1.4.0+ uses tar.gz, earlier versions use raw binary
@@ -252,9 +260,10 @@ do_install() {
     fetch "$DOWNLOAD_URL" "${_tmpdir}/zen"
   fi
 
-  # Install binary
+  # Install binary (rm first to avoid ETXTBSY on Linux if daemon is running)
   chmod +x "${_tmpdir}/zen"
   info "Installing zen to ${BIN_TARGET}"
+  $SUDO rm -f "$BIN_TARGET"
   $SUDO cp "${_tmpdir}/zen" "$BIN_TARGET"
   $SUDO chmod +x "$BIN_TARGET"
 
@@ -462,11 +471,27 @@ do_uninstall() {
 
 # --- Main ---
 
-case "${1:-}" in
-  --uninstall)
-    do_uninstall
-    ;;
-  *)
-    do_install
-    ;;
-esac
+INSTALL_VERSION=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --uninstall)
+      do_uninstall
+      exit 0
+      ;;
+    --version)
+      if [ $# -lt 2 ]; then
+        err "Missing version argument. Usage: --version 3.0.0-alpha.21"
+        exit 1
+      fi
+      INSTALL_VERSION="$2"
+      shift 2
+      ;;
+    *)
+      err "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+do_install

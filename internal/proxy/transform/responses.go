@@ -21,6 +21,29 @@ func ChatCompletionsToResponsesAPI(body []byte) ([]byte, error) {
 		delete(data, "messages")
 	}
 
+	// Transform content types in input messages: "text" → "input_text"
+	if input, ok := data["input"].([]interface{}); ok {
+		for _, msg := range input {
+			msgMap, ok := msg.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			parts, ok := msgMap["content"].([]interface{})
+			if !ok {
+				continue // string content passes through unchanged
+			}
+			for _, part := range parts {
+				partMap, ok := part.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if partMap["type"] == "text" {
+					partMap["type"] = "input_text"
+				}
+			}
+		}
+	}
+
 	// max_completion_tokens → max_output_tokens
 	if v, ok := data["max_completion_tokens"]; ok {
 		data["max_output_tokens"] = v

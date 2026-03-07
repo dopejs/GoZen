@@ -109,6 +109,41 @@ func TestChatCompletionsToResponsesAPI(t *testing.T) {
 			},
 		},
 		{
+			name:  "content_type_text_to_input_text",
+			input: `{"model":"gpt-5","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"hi"}]},{"role":"user","content":[{"type":"text","text":"bye"}]}]}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				input := result["input"].([]interface{})
+				if len(input) != 3 {
+					t.Fatalf("input length = %d, want 3", len(input))
+				}
+				for i, msg := range input {
+					msgMap := msg.(map[string]interface{})
+					parts := msgMap["content"].([]interface{})
+					for j, part := range parts {
+						partMap := part.(map[string]interface{})
+						if partMap["type"] == "text" {
+							t.Errorf("input[%d].content[%d].type = text, want input_text", i, j)
+						}
+						if partMap["type"] != "input_text" {
+							t.Errorf("input[%d].content[%d].type = %v, want input_text", i, j, partMap["type"])
+						}
+					}
+				}
+			},
+		},
+		{
+			name:  "content_string_unchanged",
+			input: `{"model":"gpt-5","messages":[{"role":"user","content":"hello"}]}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				input := result["input"].([]interface{})
+				msg := input[0].(map[string]interface{})
+				// String content should pass through unchanged
+				if msg["content"] != "hello" {
+					t.Errorf("string content = %v, want hello", msg["content"])
+				}
+			},
+		},
+		{
 			name:  "store_set_to_false",
 			input: `{"model":"gpt-5","messages":[]}`,
 			checkFn: func(t *testing.T, result map[string]interface{}) {

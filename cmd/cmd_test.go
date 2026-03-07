@@ -96,6 +96,45 @@ func TestPrintProviders(t *testing.T) {
 	}
 }
 
+func TestPrintProvidersWithDisabled(t *testing.T) {
+	setTestHome(t)
+	writeTestProvider(t, "work", &config.ProviderConfig{
+		BaseURL:   "https://api.work.com",
+		AuthToken: "tok",
+		Model:     "claude-sonnet-4-5",
+	})
+	writeTestProvider(t, "personal", &config.ProviderConfig{
+		BaseURL:   "https://api.personal.com",
+		AuthToken: "tok",
+	})
+	config.DisableProvider("work", config.MarkingTypeToday)
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	printProviders()
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	if !strings.Contains(output, "[disabled: today]") {
+		t.Errorf("expected '[disabled: today]' tag, got: %s", output)
+	}
+	if strings.Contains(output, "personal") && strings.Contains(output, "[disabled") {
+		// personal shouldn't have disabled tag — just check it appears without the tag
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "personal") && strings.Contains(line, "[disabled") {
+				t.Errorf("personal should not have disabled tag, got: %s", line)
+			}
+		}
+	}
+}
+
 func TestPrintProvidersEmpty(t *testing.T) {
 	setTestHome(t)
 
@@ -149,6 +188,27 @@ func TestPrintProfiles(t *testing.T) {
 	}
 	if !strings.Contains(output, "a → b") {
 		t.Errorf("expected provider chain 'a → b', got: %s", output)
+	}
+}
+
+// --- US4: zen use bypasses disabled check ---
+
+func TestUseBypassesDisabledCheck(t *testing.T) {
+	setTestHome(t)
+	writeTestProvider(t, "work", &config.ProviderConfig{
+		BaseURL:   "https://api.work.com",
+		AuthToken: "tok",
+		Model:     "claude-sonnet-4-5",
+	})
+	// Disable the provider
+	config.DisableProvider("work", config.MarkingTypePermanent)
+	if !config.IsProviderDisabled("work") {
+		t.Fatal("provider should be disabled for test setup")
+	}
+
+	// Verify ExportProviderToEnv still works (used by zen use)
+	if err := config.ExportProviderToEnv("work"); err != nil {
+		t.Errorf("ExportProviderToEnv should succeed for disabled provider, got: %v", err)
 	}
 }
 

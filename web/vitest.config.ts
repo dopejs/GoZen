@@ -19,6 +19,7 @@ export default defineConfig({
         'src/main.tsx',
         'src/vite-env.d.ts',
         'src/i18n/locales/*.json',
+        'src/components/ui/dropdown-menu.tsx',
       ],
       thresholds: {
         statements: 70,

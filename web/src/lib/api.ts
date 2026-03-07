@@ -97,6 +97,16 @@ export const providersApi = {
     request<{ success: boolean }>(`/providers/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
+  disable: (name: string, type: 'today' | 'month' | 'permanent') =>
+    request<{ provider: string; disabled: boolean; type: string; created_at: string; expires_at: string }>(
+      `/providers/${encodeURIComponent(name)}/disable`,
+      { method: 'POST', body: JSON.stringify({ type }) }
+    ),
+  enable: (name: string) =>
+    request<{ provider: string; disabled: boolean }>(
+      `/providers/${encodeURIComponent(name)}/enable`,
+      { method: 'POST' }
+    ),
 }
 
 // Profiles API

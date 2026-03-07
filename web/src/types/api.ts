@@ -1,4 +1,10 @@
 // Provider types
+export interface UnavailableMarking {
+  type: 'today' | 'month' | 'permanent'
+  created_at: string
+  expires_at?: string
+}
+
 export interface Provider {
   name: string
   type?: 'anthropic' | 'openai'
@@ -14,6 +20,7 @@ export interface Provider {
   claude_env_vars?: Record<string, string>
   codex_env_vars?: Record<string, string>
   opencode_env_vars?: Record<string, string>
+  disabled?: UnavailableMarking
 }
 
 // Available clients

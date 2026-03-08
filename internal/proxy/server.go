@@ -183,6 +183,8 @@ func (s *ProxyServer) writeAllProvidersUnavailableError(w http.ResponseWriter, d
 }
 
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestStart := time.Now()
+
 	// Acquire concurrency slot if limiter is configured
 	if s.Limiter != nil {
 		if err := s.Limiter.Acquire(); err != nil {
@@ -325,8 +327,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try scenario providers first, then fallback to default if all fail
-	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures)
+	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 	if success {
+		// Log request_received only if duration >1s (selective logging per T067)
+		duration := time.Since(requestStart)
+		if duration > time.Second {
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, nil)
+		}
 		return
 	}
 
@@ -339,11 +346,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.Logger.Printf("[proxy] all default providers also unavailable (manually disabled): %v", defaultDisabledNames)
 			allDisabled := append(disabledNames, defaultDisabledNames...)
 			s.writeAllProvidersUnavailableError(w, allDisabled)
+			// Log request_received for error (selective logging per T067)
+			duration := time.Since(requestStart)
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all providers unavailable"))
 			return
 		}
 		// Clear model overrides for default providers
-		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures)
+		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {
+			// Log request_received only if duration >1s (selective logging per T067)
+			duration := time.Since(requestStart)
+			if duration > time.Second {
+				s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, nil)
+			}
 			return
 		}
 	}
@@ -364,15 +379,17 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.StructuredLogger != nil {
 		s.StructuredLogger.Error("", errStr)
 	}
+	// Log request_received for error (selective logging per T067)
+	duration := time.Since(requestStart)
+	s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all providers failed"))
 	http.Error(w, errStr, http.StatusBadGateway)
 }
 
 // tryProviders attempts to forward the request to each provider in order.
 // Returns true if a provider successfully handled the request.
-func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure) bool {
+func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure, requestStart time.Time) bool {
 	// Generate request ID for monitoring
 	requestID := generateRequestID()
-	requestStart := time.Now()
 
 	for i, p := range providers {
 		isLast := i == len(providers)-1
@@ -422,6 +439,8 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("request error: %v", err)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
 			s.logStructuredError(p.Name, r.Method, r.URL.Path, err, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, err.Error(), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error(), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
@@ -434,6 +453,8 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("auth error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkAuthFailed()
 			continue
@@ -446,6 +467,8 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, "rate limited", elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
@@ -485,6 +508,8 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
 				s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+				// Log provider_failed event (T068)
+				s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("request error: %d", resp.StatusCode), elapsed)
 				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 				continue
 			}
@@ -493,6 +518,8 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("server error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			p.MarkFailed()
 			continue
@@ -1303,4 +1330,54 @@ func StartProxyWithRouting(routing *RoutingConfig, clientFormat string, listenAd
 	go http.Serve(ln, srv)
 
 	return port, nil
+}
+
+// logRequestReceived logs request_received event (T067: only if error or duration >1s)
+func (s *ProxyServer) logRequestReceived(method, path, sessionID, clientType string, duration time.Duration, err error) {
+	// Get daemon structured logger if available
+	daemonLogger := GetDaemonLogger()
+	if daemonLogger == nil {
+		return
+	}
+
+	fields := map[string]interface{}{
+		"method":       method,
+		"path":         path,
+		"session":      sessionID,
+		"client_type":  clientType,
+		"duration_ms":  duration.Milliseconds(),
+	}
+
+	if err != nil {
+		fields["error"] = err.Error()
+		daemonLogger.Error("request_received", fields)
+	} else {
+		daemonLogger.Info("request_received", fields)
+	}
+}
+
+// logProviderFailed logs provider_failed event (T068)
+func (s *ProxyServer) logProviderFailed(sessionID, provider, errorMsg string, duration time.Duration) {
+	// Get daemon structured logger if available
+	daemonLogger := GetDaemonLogger()
+	if daemonLogger == nil {
+		return
+	}
+
+	daemonLogger.Error("provider_failed", map[string]interface{}{
+		"session":     sessionID,
+		"provider":    provider,
+		"error":       errorMsg,
+		"duration_ms": duration.Milliseconds(),
+	})
+}
+
+// GetDaemonLogger returns the daemon's structured logger if available
+func GetDaemonLogger() interface {
+	Error(event string, fields map[string]interface{})
+	Info(event string, fields map[string]interface{})
+} {
+	// This will be set by the daemon when it initializes
+	// For now, return nil (logging will be added when daemon integration is complete)
+	return nil
 }

@@ -85,10 +85,10 @@ description: "Task list for daemon proxy stability improvements"
 
 ### Tests for User Story 2
 
-- [ ] T019 [P] [US2] Write health endpoint test in internal/daemon/server_test.go (verify 200 response with correct schema)
-- [ ] T020 [P] [US2] Write degraded status test in internal/daemon/server_test.go (goroutines >1000 or memory >500MB)
-- [ ] T021 [P] [US2] Write unhealthy status test in internal/daemon/server_test.go (all providers failing)
-- [ ] T022 [P] [US2] Write health endpoint performance test in tests/integration/health_test.go (response <100ms under load)
+- [x] T019 [P] [US2] Write health endpoint test in internal/daemon/server_test.go (verify 200 response with correct schema)
+- [x] T020 [P] [US2] Write degraded status test in internal/daemon/server_test.go (goroutines >1000 or memory >500MB)
+- [x] T021 [P] [US2] Write unhealthy status test in internal/daemon/server_test.go (all providers failing)
+- [x] T022 [P] [US2] Write health endpoint performance test in tests/integration/health_test.go (response <100ms under load)
 
 ### Implementation for User Story 2
 
@@ -184,9 +184,9 @@ description: "Task list for daemon proxy stability improvements"
 - [x] T064 [US5] Add structured logger to Daemon struct in internal/daemon/server.go
 - [x] T065 [US5] Log daemon_started event in internal/daemon/server.go (PID, ports, version)
 - [x] T066 [US5] Log daemon_shutdown event in internal/daemon/server.go (uptime, reason)
-- [ ] T067 [US5] Log request_received event in internal/proxy/server.go (only if error or duration >1s)
-- [ ] T068 [US5] Log provider_failed event in internal/proxy/server.go (session, provider, error, duration)
-- [ ] T069 [US5] Log panic_recovered event in internal/httpx/recovery.go (error, stack, path)
+- [x] T067 [US5] Log request_received event in internal/proxy/server.go (only if error or duration >1s)
+- [x] T068 [US5] Log provider_failed event in internal/proxy/server.go (session, provider, error, duration)
+- [x] T069 [US5] Log panic_recovered event in internal/httpx/recovery.go (error, stack, path)
 - [x] T070 [US5] Log goroutine_leak_detected event in internal/daemon/server.go (baseline, current)
 - [x] T071 [US5] Log daemon_crashed_restarting event in cmd/daemon.go (restart_count, backoff, error)
 

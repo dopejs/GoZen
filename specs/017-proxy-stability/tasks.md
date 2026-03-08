@@ -198,9 +198,9 @@ description: "Task list for daemon proxy stability improvements"
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T072 [P] Update CLAUDE.md Active Technologies section with new packages (httpx, metrics, logger, limiter)
-- [ ] T073 [P] Update CLAUDE.md Recent Changes section with stability improvements summary
-- [ ] T074 Run go test ./... to verify all tests pass
+- [x] T072 [P] Update CLAUDE.md Active Technologies section with new packages (httpx, metrics, logger, limiter)
+- [x] T073 [P] Update CLAUDE.md Recent Changes section with stability improvements summary
+- [x] T074 Run go test ./... to verify all tests pass
 - [ ] T075 Run go test -cover ./internal/{daemon,proxy,web,httpx} to verify coverage thresholds
 - [ ] T076 Run quickstart.md validation checklist (health <100ms, metrics <100ms, 24-hour stability)
 - [ ] T077 [P] Code cleanup: remove any debug logging or temporary test endpoints

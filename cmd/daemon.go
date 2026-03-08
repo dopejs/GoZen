@@ -192,6 +192,7 @@ func runDaemonForeground() error {
 			// Fatal errors (like port conflicts) should not trigger restart
 			if daemon.IsFatalError(err) {
 				logger.Printf("[daemon] fatal error, cannot restart: %v", err)
+				instanceCancel()
 				return err
 			}
 
@@ -199,6 +200,7 @@ func runDaemonForeground() error {
 			restartCount++
 			if restartCount >= maxRestarts {
 				logger.Printf("[daemon] exceeded max restart attempts (%d), giving up: %v", maxRestarts, err)
+				instanceCancel()
 				return fmt.Errorf("daemon crashed after %d restart attempts: %w", maxRestarts, err)
 			}
 
@@ -212,6 +214,9 @@ func runDaemonForeground() error {
 				"backoff_seconds":   backoff.Seconds(),
 				"error":             err.Error(),
 			})
+
+			// Cancel the previous instance's goroutine before restarting
+			instanceCancel()
 
 			time.Sleep(backoff)
 

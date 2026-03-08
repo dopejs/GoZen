@@ -112,6 +112,9 @@ func runDaemonForeground() error {
 		defer logFile.Close()
 	}
 
+	// Create structured logger for daemon events
+	structuredLog := daemon.NewStructuredLogger(os.Stderr)
+
 	// Auto-restart wrapper with exponential backoff
 	const maxRestarts = 5
 	restartCount := 0
@@ -185,6 +188,15 @@ func runDaemonForeground() error {
 
 			logger.Printf("[daemon] daemon crashed (attempt %d/%d), restarting in %v: %v",
 				restartCount, maxRestarts, backoff, err)
+
+			// Log structured event
+			structuredLog.Error("daemon_crashed_restarting", map[string]interface{}{
+				"restart_count":     restartCount,
+				"max_restarts":      maxRestarts,
+				"backoff_seconds":   backoff.Seconds(),
+				"error":             err.Error(),
+			})
+
 			time.Sleep(backoff)
 
 			// Exponential backoff with 30s cap

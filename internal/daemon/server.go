@@ -26,14 +26,15 @@ import (
 
 // Daemon is the zend main server that hosts both the proxy and web UI.
 type Daemon struct {
-	webServer    *web.Server
-	proxyServer  *http.Server
-	proxyMux     *http.ServeMux
-	profileProxy *proxy.ProfileProxy
-	botGateway   *bot.Gateway
-	logger       *log.Logger
-	version      string
-	watcher      *ConfigWatcher
+	webServer      *web.Server
+	proxyServer    *http.Server
+	proxyMux       *http.ServeMux
+	profileProxy   *proxy.ProfileProxy
+	botGateway     *bot.Gateway
+	logger         *log.Logger
+	structuredLog  *StructuredLogger
+	version        string
+	watcher        *ConfigWatcher
 
 	// Session tracking
 	mu       sync.RWMutex
@@ -98,15 +99,20 @@ func DaemonLogPath() string {
 // NewDaemon creates a new zend daemon instance.
 func NewDaemon(version string, logger *log.Logger) *Daemon {
 	runCtx, runCancel := context.WithCancel(context.Background())
+
+	// Create structured logger that writes to stderr
+	structuredLog := NewStructuredLogger(os.Stderr)
+
 	return &Daemon{
-		version:     version,
-		logger:      logger,
-		sessions:    make(map[string]*SessionInfo),
-		tmpProfiles: make(map[string]*TempProfile),
-		shutdownCh:  make(chan struct{}),
-		runCtx:      runCtx,
-		runCancel:   runCancel,
-		metrics:     NewMetrics(),
+		version:       version,
+		logger:        logger,
+		structuredLog: structuredLog,
+		sessions:      make(map[string]*SessionInfo),
+		tmpProfiles:   make(map[string]*TempProfile),
+		shutdownCh:    make(chan struct{}),
+		runCtx:        runCtx,
+		runCancel:     runCancel,
+		metrics:       NewMetrics(),
 	}
 }
 
@@ -291,6 +297,16 @@ func (d *Daemon) startProxy() error {
 	}()
 
 	d.logger.Printf("proxy server listening on %s", addr)
+
+	// Log daemon_started event with structured logging
+	d.structuredLog.Info("daemon_started", map[string]interface{}{
+		"pid":         os.Getpid(),
+		"version":     d.version,
+		"proxy_port":  d.proxyPort,
+		"web_port":    d.webPort,
+		"config_path": config.ConfigDirPath(),
+	})
+
 	return nil
 }
 
@@ -345,6 +361,13 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 
 	// Remove PID file
 	os.Remove(DaemonPidPath())
+
+	// Log daemon_shutdown event with structured logging
+	uptime := time.Since(d.startTime)
+	d.structuredLog.Info("daemon_shutdown", map[string]interface{}{
+		"uptime_seconds": uptime.Seconds(),
+		"reason":         "graceful_shutdown",
+	})
 
 	d.logger.Println("zend stopped")
 	return nil
@@ -816,6 +839,14 @@ func (d *Daemon) goroutineLeakMonitor(ctx context.Context) {
 				stackLen := runtime.Stack(buf, true)
 				d.logger.Printf("[goroutine-leak] detected: baseline=%d current=%d threshold=%d\n%s",
 					d.baselineGoroutines, current, threshold, buf[:stackLen])
+
+				// Log structured event
+				d.structuredLog.Warn("goroutine_leak_detected", map[string]interface{}{
+					"baseline_goroutines": d.baselineGoroutines,
+					"current_goroutines":  current,
+					"threshold":           threshold,
+					"growth_percent":      float64(current-d.baselineGoroutines) / float64(d.baselineGoroutines) * 100,
+				})
 			}
 		}
 	}

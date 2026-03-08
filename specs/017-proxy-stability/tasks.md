@@ -175,20 +175,20 @@ description: "Task list for daemon proxy stability improvements"
 
 ### Implementation for User Story 5
 
-- [ ] T058 [P] [US5] Create StructuredLogger struct in internal/daemon/logger.go (wraps stdlib logger)
-- [ ] T059 [P] [US5] Implement NewStructuredLogger constructor in internal/daemon/logger.go
-- [ ] T060 [P] [US5] Implement Info method in internal/daemon/logger.go (JSON format with timestamp, level, event, fields)
-- [ ] T061 [P] [US5] Implement Warn method in internal/daemon/logger.go (JSON format)
-- [ ] T062 [P] [US5] Implement Error method in internal/daemon/logger.go (JSON format)
-- [ ] T063 [P] [US5] Implement Debug method in internal/daemon/logger.go (JSON format)
-- [ ] T064 [US5] Add structured logger to Daemon struct in internal/daemon/server.go
-- [ ] T065 [US5] Log daemon_started event in internal/daemon/server.go (PID, ports, version)
-- [ ] T066 [US5] Log daemon_shutdown event in internal/daemon/server.go (uptime, reason)
+- [x] T058 [P] [US5] Create StructuredLogger struct in internal/daemon/logger.go (wraps stdlib logger)
+- [x] T059 [P] [US5] Implement NewStructuredLogger constructor in internal/daemon/logger.go
+- [x] T060 [P] [US5] Implement Info method in internal/daemon/logger.go (JSON format with timestamp, level, event, fields)
+- [x] T061 [P] [US5] Implement Warn method in internal/daemon/logger.go (JSON format)
+- [x] T062 [P] [US5] Implement Error method in internal/daemon/logger.go (JSON format)
+- [x] T063 [P] [US5] Implement Debug method in internal/daemon/logger.go (JSON format)
+- [x] T064 [US5] Add structured logger to Daemon struct in internal/daemon/server.go
+- [x] T065 [US5] Log daemon_started event in internal/daemon/server.go (PID, ports, version)
+- [x] T066 [US5] Log daemon_shutdown event in internal/daemon/server.go (uptime, reason)
 - [ ] T067 [US5] Log request_received event in internal/proxy/server.go (only if error or duration >1s)
 - [ ] T068 [US5] Log provider_failed event in internal/proxy/server.go (session, provider, error, duration)
 - [ ] T069 [US5] Log panic_recovered event in internal/httpx/recovery.go (error, stack, path)
-- [ ] T070 [US5] Log goroutine_leak_detected event in internal/daemon/server.go (baseline, current)
-- [ ] T071 [US5] Log daemon_crashed_restarting event in cmd/daemon.go (restart_count, backoff, error)
+- [x] T070 [US5] Log goroutine_leak_detected event in internal/daemon/server.go (baseline, current)
+- [x] T071 [US5] Log daemon_crashed_restarting event in cmd/daemon.go (restart_count, backoff, error)
 
 **Checkpoint**: At this point, User Story 5 should be fully functional - all critical events logged in structured JSON
 

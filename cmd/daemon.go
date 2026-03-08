@@ -104,49 +104,85 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	return startDaemonBackground()
 }
 
-// runDaemonForeground runs the zend daemon in the foreground.
+// runDaemonForeground runs the zend daemon in the foreground with auto-restart.
 func runDaemonForeground() error {
 	logFile, logger := setupDaemonLogger()
 	if logFile != nil {
 		defer logFile.Close()
 	}
 
-	d := daemon.NewDaemon(Version, logger)
+	// Auto-restart wrapper with exponential backoff
+	const maxRestarts = 5
+	restartCount := 0
+	backoff := 1 * time.Second
 
-	// Clean up legacy web daemon PID files from v2.0 and earlier
-	daemon.CleanupLegacyPidFiles()
+	for {
+		d := daemon.NewDaemon(Version, logger)
 
-	// Write PID file
-	daemon.WriteDaemonPid(os.Getpid())
+		// Clean up legacy web daemon PID files from v2.0 and earlier
+		daemon.CleanupLegacyPidFiles()
 
-	// Graceful shutdown on signals or API request
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	shutdownDone := make(chan struct{})
-	go func() {
+		// Write PID file
+		daemon.WriteDaemonPid(os.Getpid())
+
+		// Graceful shutdown on signals or API request
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		shutdownDone := make(chan struct{})
+		intentionalShutdown := false
+		go func() {
+			select {
+			case <-sigCh:
+				intentionalShutdown = true
+			case <-d.ShutdownCh():
+				intentionalShutdown = true
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			d.Shutdown(ctx)
+			close(shutdownDone)
+		}()
+
+		err := d.Start()
+
+		// If Start() returned due to shutdown signal, wait for cleanup to complete
+		// Use a short timeout to avoid hanging if shutdown wasn't triggered
 		select {
-		case <-sigCh:
-		case <-d.ShutdownCh():
+		case <-shutdownDone:
+			// Shutdown completed, PID file should be removed
+		case <-time.After(100 * time.Millisecond):
+			// Start returned for other reason (error), clean up PID file
+			daemon.RemoveDaemonPid()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		d.Shutdown(ctx)
-		close(shutdownDone)
-	}()
 
-	err := d.Start()
+		// If shutdown was intentional (signal or API), exit without restart
+		if intentionalShutdown {
+			return err
+		}
 
-	// If Start() returned due to shutdown signal, wait for cleanup to complete
-	// Use a short timeout to avoid hanging if shutdown wasn't triggered
-	select {
-	case <-shutdownDone:
-		// Shutdown completed, PID file should be removed
-	case <-time.After(100 * time.Millisecond):
-		// Start returned for other reason (error), clean up PID file
-		daemon.RemoveDaemonPid()
+		// If daemon crashed, attempt restart with exponential backoff
+		if err != nil {
+			restartCount++
+			if restartCount >= maxRestarts {
+				logger.Printf("[daemon] exceeded max restart attempts (%d), giving up: %v", maxRestarts, err)
+				return fmt.Errorf("daemon crashed after %d restart attempts: %w", maxRestarts, err)
+			}
+
+			logger.Printf("[daemon] daemon crashed (attempt %d/%d), restarting in %v: %v",
+				restartCount, maxRestarts, backoff, err)
+			time.Sleep(backoff)
+
+			// Exponential backoff with 30s cap
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			continue
+		}
+
+		// Clean exit, no restart needed
+		return nil
 	}
-
-	return err
 }
 
 // startDaemonBackground forks a child process to run the daemon.

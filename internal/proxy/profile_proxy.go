@@ -278,7 +278,16 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 func (pp *ProfileProxy) InvalidateCache() {
 	pp.mu.Lock()
 	defer pp.mu.Unlock()
+	for _, srv := range pp.cache {
+		if srv != nil {
+			srv.Close()
+		}
+	}
 	pp.cache = make(map[string]*ProxyServer)
+}
+
+func (pp *ProfileProxy) Close() {
+	pp.InvalidateCache()
 }
 
 func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, message string) {

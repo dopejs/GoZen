@@ -41,6 +41,36 @@ func TestDaemonStatusAPI(t *testing.T) {
 	}
 }
 
+func TestDaemonHealthAPI(t *testing.T) {
+	d := newTestDaemon()
+	d.RegisterSession("s1", "default", "claude")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/daemon/health", nil)
+	d.handleDaemonHealth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp daemonHealthResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status == "" {
+		t.Fatal("expected health status to be set")
+	}
+	if resp.Version != "test" {
+		t.Errorf("version = %q, want test", resp.Version)
+	}
+	if resp.ActiveSessions != 1 {
+		t.Errorf("active_sessions = %d, want 1", resp.ActiveSessions)
+	}
+	if resp.Goroutines < 1 {
+		t.Errorf("goroutines = %d, want >= 1", resp.Goroutines)
+	}
+}
+
 func TestDaemonStatusAPIMethodNotAllowed(t *testing.T) {
 	d := newTestDaemon()
 	w := httptest.NewRecorder()
@@ -124,6 +154,27 @@ func TestDaemonSessionsAPIRegister(t *testing.T) {
 	d.handleDaemonSessions(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if d.ActiveSessionCount() != 1 {
+		t.Fatalf("active_sessions = %d, want 1", d.ActiveSessionCount())
+	}
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "/api/v1/daemon/sessions", nil)
+	d.handleDaemonSessions(w, r)
+
+	var resp struct {
+		Sessions []*SessionInfo `json:"sessions"`
+		Count    int            `json:"count"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Count != 1 {
+		t.Fatalf("count = %d, want 1", resp.Count)
+	}
+	if resp.Sessions[0].Profile != "default" {
+		t.Fatalf("profile = %q, want default", resp.Sessions[0].Profile)
 	}
 }
 
@@ -705,6 +756,21 @@ func TestDaemonStartProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("startProxy failed: %v", err)
 	}
+	if d.proxyServer.ReadHeaderTimeout != 15*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %v, want %v", d.proxyServer.ReadHeaderTimeout, 15*time.Second)
+	}
+	if d.proxyServer.ReadTimeout != 2*time.Minute {
+		t.Fatalf("ReadTimeout = %v, want %v", d.proxyServer.ReadTimeout, 2*time.Minute)
+	}
+	if d.proxyServer.WriteTimeout != 10*time.Minute {
+		t.Fatalf("WriteTimeout = %v, want %v", d.proxyServer.WriteTimeout, 10*time.Minute)
+	}
+	if d.proxyServer.IdleTimeout != 90*time.Second {
+		t.Fatalf("IdleTimeout = %v, want %v", d.proxyServer.IdleTimeout, 90*time.Second)
+	}
+	if d.proxyServer.MaxHeaderBytes != 1<<20 {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", d.proxyServer.MaxHeaderBytes, 1<<20)
+	}
 
 	// Clean up
 	if d.proxyServer != nil {
@@ -1052,7 +1118,7 @@ func TestGatesChanged(t *testing.T) {
 // TestOnConfigReloadDetectsFeatureGateChanges tests that onConfigReload detects and logs feature gate changes (table-driven per constitution)
 func TestOnConfigReloadDetectsFeatureGateChanges(t *testing.T) {
 	tests := []struct {
-		name        string
+		name         string
 		initialGates *config.FeatureGates
 		newGates     *config.FeatureGates
 		expectLog    string

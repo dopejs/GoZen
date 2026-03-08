@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -120,6 +122,28 @@ func (p *Provider) MarkHealthy() {
 	p.Backoff = 0
 }
 
+func newHTTPTransport() *http.Transport {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   20,
+		MaxConnsPerHost:       50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
+func newHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: newHTTPTransport(),
+		Timeout:   timeout,
+	}
+}
+
 // NewHTTPClientWithProxy creates an *http.Client that routes requests through
 // the given proxy URL. Supports http, https (via http.ProxyURL) and socks5
 // (via golang.org/x/net/proxy.SOCKS5 dialer). Returns an error for empty or
@@ -133,12 +157,13 @@ func NewHTTPClientWithProxy(proxyURL string, timeout time.Duration) (*http.Clien
 		return nil, fmt.Errorf("invalid proxy URL: %w", err)
 	}
 
-	transport := &http.Transport{}
+	transport := newHTTPTransport()
 
 	switch u.Scheme {
 	case "http", "https":
 		transport.Proxy = http.ProxyURL(u)
 	case "socks5":
+		transport.Proxy = nil
 		var auth *proxy.Auth
 		if u.User != nil {
 			auth = &proxy.Auth{
@@ -152,7 +177,13 @@ func NewHTTPClientWithProxy(proxyURL string, timeout time.Duration) (*http.Clien
 		if err != nil {
 			return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 		}
-		transport.DialContext = dialer.(proxy.ContextDialer).DialContext
+		if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
+			transport.DialContext = contextDialer.DialContext
+		} else {
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s", u.Scheme)
 	}
@@ -161,4 +192,11 @@ func NewHTTPClientWithProxy(proxyURL string, timeout time.Duration) (*http.Clien
 		Transport: transport,
 		Timeout:   timeout,
 	}, nil
+}
+
+func closeHTTPClientIdleConnections(client *http.Client) {
+	if client == nil {
+		return
+	}
+	client.CloseIdleConnections()
 }

@@ -174,6 +174,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - N/A (no config schema changes, no version bump) (014-fix-responses-api-transform)
 - Go 1.21+ + Cobra (CLI), net/http (proxy/web), React + TypeScript + Vite (Web UI) (015-mark-provider-unavailable)
 - JSON config at `~/.zen/zen.json` (version 13 → 14) (015-mark-provider-unavailable)
+- Go 1.21+ + net/http (stdlib), runtime (metrics), debug (stack traces), existing internal packages (config, proxy, daemon, web) (017-proxy-stability)
+- JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence) (017-proxy-stability)
 
 ## Recent Changes
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering

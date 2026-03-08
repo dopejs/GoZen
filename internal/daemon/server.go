@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/dopejs/gozen/internal/bot"
 	"github.com/dopejs/gozen/internal/bot/adapters"
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/httpx"
 	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
@@ -55,6 +57,13 @@ type Daemon struct {
 
 	// Shutdown channel - closed when shutdown is requested via API
 	shutdownCh chan struct{}
+	runCtx     context.Context
+	runCancel  context.CancelFunc
+	bgWG       sync.WaitGroup
+
+	// Goroutine leak detection
+	baselineGoroutines int
+	leakCheckTicker    *time.Ticker
 }
 
 // SessionInfo tracks an active client session.
@@ -85,12 +94,15 @@ func DaemonLogPath() string {
 
 // NewDaemon creates a new zend daemon instance.
 func NewDaemon(version string, logger *log.Logger) *Daemon {
+	runCtx, runCancel := context.WithCancel(context.Background())
 	return &Daemon{
 		version:     version,
 		logger:      logger,
 		sessions:    make(map[string]*SessionInfo),
 		tmpProfiles: make(map[string]*TempProfile),
 		shutdownCh:  make(chan struct{}),
+		runCtx:      runCtx,
+		runCancel:   runCancel,
 	}
 }
 
@@ -161,6 +173,7 @@ func (d *Daemon) Start() error {
 
 	// Register daemon API routes on the web server
 	d.webServer.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.webServer.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
 	d.webServer.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.webServer.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.webServer.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
@@ -172,7 +185,14 @@ func (d *Daemon) Start() error {
 	go d.watcher.Start()
 
 	// Start session cleanup goroutine
-	go d.sessionCleanupLoop()
+	d.bgWG.Add(1)
+	go d.sessionCleanupLoop(d.runCtx)
+
+	// Start goroutine leak detection monitor
+	d.baselineGoroutines = runtime.NumGoroutine()
+	d.leakCheckTicker = time.NewTicker(1 * time.Minute)
+	d.bgWG.Add(1)
+	go d.goroutineLeakMonitor(d.runCtx)
 
 	// Initialize sync if configured
 	d.initSync()
@@ -199,6 +219,7 @@ func (d *Daemon) startProxy() error {
 
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.proxyMux.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
 	d.proxyMux.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.proxyMux.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
@@ -248,7 +269,12 @@ func (d *Daemon) startProxy() error {
 	}
 
 	d.proxyServer = &http.Server{
-		Handler: d.proxyMux,
+		Handler:           httpx.Recover(d.logger, "proxy", d.proxyMux),
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
@@ -280,17 +306,27 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if d.pushTimer != nil {
 		d.pushTimer.Stop()
 	}
+	if d.leakCheckTicker != nil {
+		d.leakCheckTicker.Stop()
+	}
+	if d.runCancel != nil {
+		d.runCancel()
+	}
 
 	// Stop config watcher
 	if d.watcher != nil {
 		d.watcher.Stop()
 	}
+	d.bgWG.Wait()
 
 	// Shutdown proxy server
 	if d.proxyServer != nil {
 		if err := d.proxyServer.Shutdown(ctx); err != nil {
 			d.logger.Printf("proxy shutdown error: %v", err)
 		}
+	}
+	if d.profileProxy != nil {
+		d.profileProxy.Close()
 	}
 
 	// Shutdown web server
@@ -344,10 +380,16 @@ func (d *Daemon) RemoveSession(id string) {
 }
 
 // sessionCleanupLoop periodically removes stale sessions.
-func (d *Daemon) sessionCleanupLoop() {
+func (d *Daemon) sessionCleanupLoop(ctx context.Context) {
+	defer d.bgWG.Done()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		d.mu.Lock()
 		now := time.Now()
 		for id, s := range d.sessions {
@@ -436,6 +478,10 @@ func (d *Daemon) onConfigReload() {
 	// Invalidate proxy cache so new config takes effect
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()
+	}
+	if checker := proxy.GetGlobalHealthChecker(); checker != nil {
+		checker.ReloadConfig()
+		proxy.StartGlobalHealthChecker()
 	}
 	// Reinitialize sync if config changed
 	d.initSync()
@@ -734,5 +780,27 @@ func (d *Daemon) initBot() {
 	// Expose gateway to web server for skill management API
 	if d.webServer != nil {
 		d.webServer.SetBotGateway(d.botGateway)
+	}
+}
+
+// goroutineLeakMonitor checks for goroutine leaks every minute
+func (d *Daemon) goroutineLeakMonitor(ctx context.Context) {
+	defer d.bgWG.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.leakCheckTicker.C:
+			current := runtime.NumGoroutine()
+			// Allow 20% growth tolerance for normal fluctuations
+			threshold := d.baselineGoroutines + (d.baselineGoroutines / 5)
+			if current > threshold {
+				// Potential leak detected, dump stack traces
+				buf := make([]byte, 1<<20) // 1MB buffer
+				stackLen := runtime.Stack(buf, true)
+				d.logger.Printf("[goroutine-leak] detected: baseline=%d current=%d threshold=%d\n%s",
+					d.baselineGoroutines, current, threshold, buf[:stackLen])
+			}
+		}
 	}
 }

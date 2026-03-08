@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -18,14 +19,44 @@ func getBotBridge() *proxy.BotBridge {
 // --- Daemon Status API ---
 
 type daemonStatusResponse struct {
-	Status         string                `json:"status"`
-	Version        string                `json:"version"`
-	Uptime         string                `json:"uptime"`
-	UptimeSeconds  int64                 `json:"uptime_seconds"`
-	ProxyPort      int                   `json:"proxy_port"`
-	WebPort        int                   `json:"web_port"`
-	ActiveSessions int                   `json:"active_sessions"`
-	FeatureGates   *config.FeatureGates  `json:"feature_gates,omitempty"`
+	Status         string               `json:"status"`
+	Version        string               `json:"version"`
+	Uptime         string               `json:"uptime"`
+	UptimeSeconds  int64                `json:"uptime_seconds"`
+	ProxyPort      int                  `json:"proxy_port"`
+	WebPort        int                  `json:"web_port"`
+	ActiveSessions int                  `json:"active_sessions"`
+	FeatureGates   *config.FeatureGates `json:"feature_gates,omitempty"`
+}
+
+type daemonMemoryStats struct {
+	AllocBytes     uint64 `json:"alloc_bytes"`
+	SysBytes       uint64 `json:"sys_bytes"`
+	HeapAllocBytes uint64 `json:"heap_alloc_bytes"`
+	HeapObjects    uint64 `json:"heap_objects"`
+	NumGC          uint32 `json:"num_gc"`
+}
+
+type daemonProviderHealth struct {
+	Name        string             `json:"name"`
+	Status      proxy.HealthStatus `json:"status"`
+	LastCheck   *time.Time         `json:"last_check,omitempty"`
+	LatencyMs   int                `json:"latency_ms,omitempty"`
+	SuccessRate float64            `json:"success_rate"`
+	CheckCount  int                `json:"check_count"`
+	FailCount   int                `json:"fail_count"`
+}
+
+type daemonHealthResponse struct {
+	Status             string                 `json:"status"`
+	Version            string                 `json:"version"`
+	UptimeSeconds      int64                  `json:"uptime_seconds"`
+	Goroutines         int                    `json:"goroutines"`
+	Memory             daemonMemoryStats      `json:"memory"`
+	ActiveSessions     int                    `json:"active_sessions"`
+	HealthCheckEnabled bool                   `json:"health_check_enabled"`
+	HealthCheckRunning bool                   `json:"health_check_running"`
+	Providers          []daemonProviderHealth `json:"providers"`
 }
 
 func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +75,72 @@ func (d *Daemon) handleDaemonStatus(w http.ResponseWriter, r *http.Request) {
 		WebPort:        d.webPort,
 		ActiveSessions: d.ActiveSessionCount(),
 		FeatureGates:   config.GetFeatureGates(),
+	})
+}
+
+func (d *Daemon) handleDaemonHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	cfg := config.GetHealthCheck()
+	checker := proxy.GetGlobalHealthChecker()
+	running := checker != nil && checker.IsRunning()
+
+	providers := make([]daemonProviderHealth, 0)
+	unhealthyCount := 0
+	degradedCount := 0
+	if checker != nil {
+		for _, status := range checker.GetAllStatus() {
+			providers = append(providers, daemonProviderHealth{
+				Name:        status.Provider,
+				Status:      status.Status,
+				LastCheck:   status.LastCheck,
+				LatencyMs:   status.LatencyMs,
+				SuccessRate: status.SuccessRate,
+				CheckCount:  status.CheckCount,
+				FailCount:   status.FailCount,
+			})
+			switch status.Status {
+			case proxy.HealthStatusUnhealthy:
+				unhealthyCount++
+			case proxy.HealthStatusDegraded:
+				degradedCount++
+			}
+		}
+	}
+
+	overallStatus := "healthy"
+	if runtime.NumGoroutine() > 1000 || mem.Alloc > 500*1024*1024 {
+		overallStatus = "degraded"
+	}
+	if degradedCount > 0 || unhealthyCount > 0 {
+		overallStatus = "degraded"
+	}
+	if len(providers) > 0 && unhealthyCount == len(providers) {
+		overallStatus = "unhealthy"
+	}
+
+	writeJSON(w, http.StatusOK, daemonHealthResponse{
+		Status:        overallStatus,
+		Version:       d.version,
+		UptimeSeconds: int64(time.Since(d.startTime).Seconds()),
+		Goroutines:    runtime.NumGoroutine(),
+		Memory: daemonMemoryStats{
+			AllocBytes:     mem.Alloc,
+			SysBytes:       mem.Sys,
+			HeapAllocBytes: mem.HeapAlloc,
+			HeapObjects:    mem.HeapObjects,
+			NumGC:          mem.NumGC,
+		},
+		ActiveSessions:     d.ActiveSessionCount(),
+		HealthCheckEnabled: cfg != nil && cfg.Enabled,
+		HealthCheckRunning: running,
+		Providers:          providers,
 	})
 }
 
@@ -120,6 +217,8 @@ func (d *Daemon) handleGetSessions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleRegisterSession(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
 	var req registerSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -130,6 +229,8 @@ func (d *Daemon) handleRegisterSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id and profile are required"})
 		return
 	}
+
+	d.RegisterSession(req.SessionID, req.Profile, req.ClientType)
 
 	// Register with bot bridge
 	if bridge := getBotBridge(); bridge != nil {

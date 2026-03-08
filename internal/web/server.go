@@ -15,6 +15,7 @@ import (
 
 	"github.com/dopejs/gozen/internal/bot"
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/httpx"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
 )
@@ -157,7 +158,7 @@ func NewServer(version string, logger *log.Logger, portOverride int) *Server {
 
 	s.httpServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
-		Handler: s.securityHeaders(s.authMiddleware(s.mux)),
+		Handler: httpx.Recover(logger, "web", s.securityHeaders(s.authMiddleware(s.mux))),
 	}
 
 	return s

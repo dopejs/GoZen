@@ -92,14 +92,46 @@ type ProxyServer struct {
 	Client           *http.Client
 }
 
+func (s *ProxyServer) Close() {
+	seenClients := make(map[*http.Client]struct{})
+	closeClient := func(client *http.Client) {
+		if client == nil {
+			return
+		}
+		if _, ok := seenClients[client]; ok {
+			return
+		}
+		seenClients[client] = struct{}{}
+		closeHTTPClientIdleConnections(client)
+	}
+
+	closeClient(s.Client)
+	for _, provider := range s.allProviders() {
+		closeClient(provider.Client)
+	}
+}
+
+func (s *ProxyServer) allProviders() []*Provider {
+	providers := make([]*Provider, 0, len(s.Providers))
+	providers = append(providers, s.Providers...)
+	if s.Routing == nil {
+		return providers
+	}
+	for _, scenarioProviders := range s.Routing.ScenarioRoutes {
+		if scenarioProviders == nil {
+			continue
+		}
+		providers = append(providers, scenarioProviders.Providers...)
+	}
+	return providers
+}
+
 func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 	return &ProxyServer{
 		Providers:        providers,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
-		Client: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
+		Client:           newHTTPClient(10 * time.Minute),
 	}
 }
 
@@ -110,9 +142,7 @@ func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *Prox
 		Routing:          routing,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
-		Client: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
+		Client:           newHTTPClient(10 * time.Minute),
 	}
 }
 
@@ -741,7 +771,10 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
-			w.Write(buf[:n])
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				s.Logger.Printf("[%s] streaming response write error: %v", p.Name, writeErr)
+				return
+			}
 			if ok {
 				flusher.Flush()
 			}
@@ -785,7 +818,10 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		for {
 			n, err := reader.Read(buf)
 			if n > 0 {
-				w.Write(buf[:n])
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					s.Logger.Printf("[%s] streaming response write error: %v", p.Name, writeErr)
+					return
+				}
 				if ok {
 					flusher.Flush()
 				}

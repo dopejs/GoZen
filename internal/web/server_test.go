@@ -116,6 +116,25 @@ func TestHealthMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRecoveryMiddleware(t *testing.T) {
+	s := setupTestServer(t)
+	s.HandleFunc("/api/v1/panic", func(w http.ResponseWriter, r *http.Request) {
+		panic("boom")
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/panic", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "internal server error") {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
 // --- Security Headers ---
 
 func TestSecurityHeaders(t *testing.T) {
@@ -706,8 +725,8 @@ func TestCreateProviderWithEnvVars(t *testing.T) {
 			Model:     "claude-sonnet-4-5",
 			EnvVars: map[string]string{
 				"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
-				"MAX_THINKING_TOKENS":            "50000",
-				"MY_CUSTOM_VAR":                  "custom_value",
+				"MAX_THINKING_TOKENS":           "50000",
+				"MY_CUSTOM_VAR":                 "custom_value",
 			},
 		},
 	}
@@ -1221,12 +1240,12 @@ func TestSyncConfigPutAndGet(t *testing.T) {
 	s := setupTestServer(t)
 
 	body := config.SyncConfig{
-		Backend:    "webdav",
-		Endpoint:   "https://dav.example.com/zen-sync.json",
-		Username:   "user",
-		Token:      "pass123456789",
-		Passphrase: "my-secret",
-		AutoPull:   true,
+		Backend:      "webdav",
+		Endpoint:     "https://dav.example.com/zen-sync.json",
+		Username:     "user",
+		Token:        "pass123456789",
+		Passphrase:   "my-secret",
+		AutoPull:     true,
 		PullInterval: 300,
 	}
 	w := doRequest(s, "PUT", "/api/v1/sync/config", body)
@@ -1534,4 +1553,3 @@ func TestSPAFallback(t *testing.T) {
 		t.Errorf("expected Content-Type text/html, got %s", contentType)
 	}
 }
-

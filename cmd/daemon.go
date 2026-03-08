@@ -231,6 +231,10 @@ func runDaemonForeground() error {
 		// Clean exit without error - this shouldn't happen in normal operation
 		// Log it and restart anyway
 		logger.Printf("[daemon] daemon exited cleanly (unexpected), restarting...")
+
+		// Cancel the previous instance's goroutine before restarting
+		instanceCancel()
+
 		time.Sleep(1 * time.Second)
 	}
 }

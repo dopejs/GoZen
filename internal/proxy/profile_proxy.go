@@ -283,6 +283,8 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 	}
 	// Set concurrency limiter (100 concurrent requests as per spec)
 	srv.Limiter = NewLimiter(100)
+	// Pass through metrics recorder from ProfileProxy to ProxyServer
+	srv.MetricsRecorder = pp.MetricsRecorder
 	pp.cache[profile] = srv
 	return srv
 }

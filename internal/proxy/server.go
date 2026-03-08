@@ -90,7 +90,8 @@ type ProxyServer struct {
 	Logger           *log.Logger
 	StructuredLogger *StructuredLogger
 	Client           *http.Client
-	Limiter          *Limiter // optional; nil means unlimited
+	Limiter          *Limiter        // optional; nil means unlimited
+	MetricsRecorder  MetricsRecorder // optional; for recording request metrics
 }
 
 func (s *ProxyServer) Close() {
@@ -442,6 +443,10 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			// Log provider_failed event (T068)
 			s.logProviderFailed(sessionID, p.Name, err.Error(), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error(), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, err)
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -456,6 +461,10 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			// Log provider_failed event (T068)
 			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("auth error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("auth error: %d", resp.StatusCode))
+			}
 			p.MarkAuthFailed()
 			continue
 		}
@@ -470,6 +479,10 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			// Log provider_failed event (T068)
 			s.logProviderFailed(sessionID, p.Name, "rate limited", elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("rate limited"))
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -500,6 +513,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 					// Record usage and metrics
 					s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, retryResp, requestID, requestStart, requestFormat, failures)
 
+					// Record daemon-level metrics if recorder is available
+					if s.MetricsRecorder != nil {
+						s.MetricsRecorder.RecordRequest(p.Name, time.Since(requestStart), nil)
+					}
+
 					s.copyResponseFromResponsesAPI(w, retryResp, p, requestFormat)
 					return true
 				}
@@ -519,6 +537,10 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				// Log provider_failed event (T068)
 				s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("request error: %d", resp.StatusCode), elapsed)
 				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+				// Record daemon-level metrics for error (request-related, not provider issue)
+				if s.MetricsRecorder != nil {
+					s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("request error: %d", resp.StatusCode))
+				}
 				continue
 			}
 
@@ -529,6 +551,10 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			// Log provider_failed event (T068)
 			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("server error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("server error: %d", resp.StatusCode))
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -543,6 +569,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 
 		// Record usage and metrics
 		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp, requestID, requestStart, requestFormat, failures)
+
+		// Record daemon-level metrics if recorder is available
+		if s.MetricsRecorder != nil {
+			s.MetricsRecorder.RecordRequest(p.Name, time.Since(requestStart), nil)
+		}
 
 		s.copyResponse(w, resp, p, requestFormat)
 		return true

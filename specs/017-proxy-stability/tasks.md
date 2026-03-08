@@ -169,9 +169,9 @@ description: "Task list for daemon proxy stability improvements"
 
 ### Tests for User Story 5
 
-- [ ] T055 [P] [US5] Write structured logger test in internal/daemon/logger_test.go (verify JSON format)
-- [ ] T056 [P] [US5] Write log event test in internal/daemon/logger_test.go (verify timestamp, level, event, fields)
-- [ ] T057 [P] [US5] Write selective logging test in internal/daemon/logger_test.go (only errors and slow requests)
+- [x] T055 [P] [US5] Write structured logger test in internal/daemon/logger_test.go (verify JSON format)
+- [x] T056 [P] [US5] Write log event test in internal/daemon/logger_test.go (verify timestamp, level, event, fields)
+- [x] T057 [P] [US5] Write selective logging test in internal/daemon/logger_test.go (only errors and slow requests)
 
 ### Implementation for User Story 5
 
@@ -202,7 +202,7 @@ description: "Task list for daemon proxy stability improvements"
 - [x] T073 [P] Update CLAUDE.md Recent Changes section with stability improvements summary
 - [x] T074 Run go test ./... to verify all tests pass
 - [x] T075 Run go test -cover ./internal/{daemon,proxy,web,httpx} to verify coverage thresholds
-- [ ] T076 Run quickstart.md validation checklist (health <100ms, metrics <100ms, 24-hour stability)
+- [x] T076 Run quickstart.md validation checklist (health <100ms, metrics <100ms, 24-hour stability)
 - [x] T077 [P] Code cleanup: remove any debug logging or temporary test endpoints
 - [x] T078 [P] Verify all error messages are user-friendly and actionable
 - [x] T079 Run ./scripts/dev.sh restart to verify dev daemon starts cleanly

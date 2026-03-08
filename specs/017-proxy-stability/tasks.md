@@ -110,21 +110,21 @@ description: "Task list for daemon proxy stability improvements"
 
 ### Tests for User Story 3
 
-- [ ] T028 [P] [US3] Write metrics collection test in internal/daemon/metrics_test.go (record requests, calculate percentiles)
-- [ ] T029 [P] [US3] Write metrics endpoint test in internal/daemon/server_test.go (verify 200 response with correct schema)
-- [ ] T030 [P] [US3] Write percentile calculation test in internal/daemon/metrics_test.go (P50/P95/P99 accuracy)
-- [ ] T031 [P] [US3] Write error grouping test in internal/daemon/metrics_test.go (by provider and type)
+- [x] T028 [P] [US3] Write metrics collection test in internal/daemon/metrics_test.go (record requests, calculate percentiles)
+- [x] T029 [P] [US3] Write metrics endpoint test in internal/daemon/server_test.go (verify 200 response with correct schema)
+- [x] T030 [P] [US3] Write percentile calculation test in internal/daemon/metrics_test.go (P50/P95/P99 accuracy)
+- [x] T031 [P] [US3] Write error grouping test in internal/daemon/metrics_test.go (by provider and type)
 
 ### Implementation for User Story 3
 
-- [ ] T032 [P] [US3] Create Metrics struct in internal/daemon/metrics.go (counters, ring buffer, error maps)
-- [ ] T033 [P] [US3] Create MetricsStats struct in internal/daemon/metrics.go (response schema)
-- [ ] T034 [US3] Implement NewMetrics constructor in internal/daemon/metrics.go (initialize maps and ring buffer)
-- [ ] T035 [US3] Implement RecordRequest method in internal/daemon/metrics.go (update counters, latency buffer, errors)
-- [ ] T036 [US3] Implement GetPercentile method in internal/daemon/metrics.go (sort ring buffer, calculate P50/P95/P99)
-- [ ] T037 [US3] Implement GetStats method in internal/daemon/metrics.go (aggregate all metrics)
-- [ ] T038 [US3] Add metrics instance to Daemon struct in internal/daemon/server.go
-- [ ] T039 [US3] Implement GET /api/v1/daemon/metrics endpoint in internal/daemon/api.go
+- [x] T032 [P] [US3] Create Metrics struct in internal/daemon/metrics.go (counters, ring buffer, error maps)
+- [x] T033 [P] [US3] Create MetricsStats struct in internal/daemon/metrics.go (response schema)
+- [x] T034 [US3] Implement NewMetrics constructor in internal/daemon/metrics.go (initialize maps and ring buffer)
+- [x] T035 [US3] Implement RecordRequest method in internal/daemon/metrics.go (update counters, latency buffer, errors)
+- [x] T036 [US3] Implement GetPercentile method in internal/daemon/metrics.go (sort ring buffer, calculate P50/P95/P99)
+- [x] T037 [US3] Implement GetStats method in internal/daemon/metrics.go (aggregate all metrics)
+- [x] T038 [US3] Add metrics instance to Daemon struct in internal/daemon/server.go
+- [x] T039 [US3] Implement GET /api/v1/daemon/metrics endpoint in internal/daemon/api.go
 - [ ] T040 [US3] Integrate metrics recording in internal/proxy/server.go (record latency, success/failure, provider, error type)
 - [ ] T041 [US3] Add resource peak tracking in internal/daemon/server.go (goroutines, memory)
 

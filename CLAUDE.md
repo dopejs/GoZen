@@ -174,10 +174,25 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - N/A (no config schema changes, no version bump) (014-fix-responses-api-transform)
 - Go 1.21+ + Cobra (CLI), net/http (proxy/web), React + TypeScript + Vite (Web UI) (015-mark-provider-unavailable)
 - JSON config at `~/.zen/zen.json` (version 13 → 14) (015-mark-provider-unavailable)
-- Go 1.21+ + net/http (stdlib), runtime (metrics), debug (stack traces), existing internal packages (config, proxy, daemon, web) (017-proxy-stability)
+- Go 1.21+ + net/http (stdlib), runtime (metrics), debug (stack traces), sync (concurrency), encoding/json (structured logging), existing internal packages (config, proxy, daemon, web, httpx) (017-proxy-stability)
+- JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence), structured JSON logs to stderr (017-proxy-stability)
+- New packages: internal/daemon/logger.go (structured JSON logging), internal/proxy/limiter.go (semaphore-based concurrency control), internal/daemon/metrics.go (request metrics with percentiles) (017-proxy-stability)
 - JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence) (017-proxy-stability)
 
 ## Recent Changes
+- 017-proxy-stability: Daemon proxy stability improvements for 24-hour uptime and 100 concurrent request handling
+  - Auto-restart with exponential backoff (max 5 restarts, 1s→30s backoff)
+  - Goroutine leak detection with baseline comparison and stack dumps (1-minute ticker, 20% growth tolerance)
+  - Panic recovery middleware in httpx package (captures stack traces, prevents daemon crashes)
+  - Concurrency limiter with semaphore pattern (100 concurrent requests, buffered channel)
+  - Request timeout enforcement (10-minute HTTP client timeout)
+  - Connection pool cleanup on cache invalidation (ProfileProxy.InvalidateCache/Close)
+  - Streaming write error handling (early return on client disconnect)
+  - Structured JSON logging for daemon lifecycle events (daemon_started, daemon_shutdown, goroutine_leak_detected, daemon_crashed_restarting)
+  - Request metrics collection with percentile calculation (P50/P95/P99, ring buffer, error grouping by provider/type)
+  - Health monitoring API (/api/v1/daemon/health) with three-tier status (healthy/degraded/unhealthy)
+  - Metrics API (/api/v1/daemon/metrics) with latency percentiles, error breakdowns, resource peaks
+  - Test coverage: comprehensive unit tests for limiter, logger, metrics; integration tests for load (100 concurrent), timeout, connection pool cleanup
 - 006-revert-tag-add-monitoring: Removed provider tag injection from responses, added comprehensive request monitoring with detail view and filtering
   - Removed `show_provider_tag` setting and all tag injection logic from proxy responses
   - Added RequestMonitor with thread-safe ring buffer (1000 request capacity, LRU eviction)

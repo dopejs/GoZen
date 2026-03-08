@@ -180,6 +180,13 @@ func runDaemonForeground() error {
 
 		// If daemon crashed, attempt restart with exponential backoff
 		if err != nil {
+			// Fatal errors (like port conflicts) should not trigger restart
+			if daemon.IsFatalError(err) {
+				logger.Printf("[daemon] fatal error, cannot restart: %v", err)
+				return err
+			}
+
+			// Recoverable errors trigger restart with exponential backoff
 			restartCount++
 			if restartCount >= maxRestarts {
 				logger.Printf("[daemon] exceeded max restart attempts (%d), giving up: %v", maxRestarts, err)

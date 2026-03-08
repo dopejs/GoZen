@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -23,6 +24,25 @@ import (
 	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
 )
+
+// FatalError represents an unrecoverable error that should not trigger auto-restart
+type FatalError struct {
+	Err error
+}
+
+func (e *FatalError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *FatalError) Unwrap() error {
+	return e.Err
+}
+
+// IsFatalError checks if an error is a fatal error
+func IsFatalError(err error) bool {
+	var fatalErr *FatalError
+	return errors.As(err, &fatalErr)
+}
 
 // Daemon is the zend main server that hosts both the proxy and web UI.
 type Daemon struct {
@@ -249,7 +269,7 @@ func (d *Daemon) startProxy() error {
 		// Port is busy — identify who's using it
 		pid, procName, identErr := GetProcessOnPort(d.proxyPort)
 		if identErr != nil {
-			return fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)
+			return &FatalError{Err: fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)}
 		}
 
 		if IsZenProcess(procName) {
@@ -257,10 +277,10 @@ func (d *Daemon) startProxy() error {
 			d.logger.Printf("Port %d occupied by stale zen process (PID %d: %s), killing...", d.proxyPort, pid, procName)
 			proc, findErr := os.FindProcess(pid)
 			if findErr != nil {
-				return fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)
+				return &FatalError{Err: fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)}
 			}
 			if killErr := proc.Signal(syscall.SIGTERM); killErr != nil {
-				return fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)
+				return &FatalError{Err: fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)}
 			}
 			// Wait briefly for process to die
 			for i := 0; i < 10; i++ {
@@ -274,10 +294,10 @@ func (d *Daemon) startProxy() error {
 			// Retry bind
 			ln, err = net.Listen("tcp", addr)
 			if err != nil {
-				return fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)
+				return &FatalError{Err: fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)}
 			}
 		} else {
-			return fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)
+			return &FatalError{Err: fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)}
 		}
 	}
 

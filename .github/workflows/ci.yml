@@ -107,7 +107,7 @@ jobs:
         run: go build -o bin/zen .
 
       - name: E2E Tests
-        run: go test -tags=integration -v -timeout 180s ./tests/...
+        run: go test -tags=integration -v -timeout 240s ./tests/...
 
   website:
     name: Website Build

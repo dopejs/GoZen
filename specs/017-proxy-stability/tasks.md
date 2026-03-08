@@ -125,8 +125,8 @@ description: "Task list for daemon proxy stability improvements"
 - [x] T037 [US3] Implement GetStats method in internal/daemon/metrics.go (aggregate all metrics)
 - [x] T038 [US3] Add metrics instance to Daemon struct in internal/daemon/server.go
 - [x] T039 [US3] Implement GET /api/v1/daemon/metrics endpoint in internal/daemon/api.go
-- [ ] T040 [US3] Integrate metrics recording in internal/proxy/server.go (record latency, success/failure, provider, error type)
-- [ ] T041 [US3] Add resource peak tracking in internal/daemon/server.go (goroutines, memory)
+- [x] T040 [US3] Integrate metrics recording in internal/proxy/server.go (record latency, success/failure, provider, error type)
+- [x] T041 [US3] Add resource peak tracking in internal/daemon/server.go (goroutines, memory)
 
 **Checkpoint**: At this point, User Story 3 should be fully functional - metrics endpoint provides accurate statistics
 

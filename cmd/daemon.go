@@ -139,6 +139,9 @@ func runDaemonForeground() error {
 		intentionalShutdown := false
 		shutdownMu := sync.Mutex{}
 
+		// Create a context for this daemon instance to cancel the shutdown goroutine
+		instanceCtx, instanceCancel := context.WithCancel(context.Background())
+
 		go func() {
 			select {
 			case <-sigCh:
@@ -149,6 +152,9 @@ func runDaemonForeground() error {
 				shutdownMu.Lock()
 				intentionalShutdown = true
 				shutdownMu.Unlock()
+			case <-instanceCtx.Done():
+				// Instance cancelled, exit goroutine without shutdown
+				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -166,6 +172,8 @@ func runDaemonForeground() error {
 		case <-time.After(100 * time.Millisecond):
 			// Start returned for other reason (error), clean up PID file
 			daemon.RemoveDaemonPid()
+			// Cancel the shutdown goroutine to prevent it from leaking
+			instanceCancel()
 		}
 
 		// Check if shutdown was intentional
@@ -175,6 +183,7 @@ func runDaemonForeground() error {
 
 		// If shutdown was intentional (signal or API), exit without restart
 		if wasIntentional {
+			instanceCancel()
 			return err
 		}
 

@@ -156,6 +156,10 @@ func (d *Daemon) Start() error {
 		d.logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
 
+	// Set daemon structured logger for proxy and httpx selective logging
+	proxy.SetDaemonLogger(d.structuredLog)
+	httpx.SetDaemonLogger(d.structuredLog)
+
 	// Initialize usage tracker, budget checker, health checker, and load balancer
 	logDB := proxy.GetGlobalLogDB()
 	proxy.InitGlobalUsageTracker(logDB)
@@ -237,7 +241,40 @@ func (d *Daemon) Start() error {
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
 	// Start web server (blocks)
-	return d.webServer.Start()
+	err := d.webServer.Start()
+
+	// If web server fails to start, clean up resources
+	if err != nil {
+		d.logger.Printf("web server failed to start, cleaning up: %v", err)
+
+		// Cancel background goroutines
+		d.runCancel()
+
+		// Stop proxy server
+		if d.proxyServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			d.proxyServer.Shutdown(shutdownCtx)
+			cancel()
+		}
+
+		// Stop watcher
+		if d.watcher != nil {
+			d.watcher.Stop()
+		}
+
+		// Stop leak check ticker
+		if d.leakCheckTicker != nil {
+			d.leakCheckTicker.Stop()
+		}
+
+		// Wait for background goroutines to finish
+		d.bgWG.Wait()
+
+		// Wrap as FatalError since web port conflict is unrecoverable
+		return &FatalError{Err: fmt.Errorf("web server: %w", err)}
+	}
+
+	return nil
 }
 
 // startProxy creates and starts the proxy HTTP server on the configured port.

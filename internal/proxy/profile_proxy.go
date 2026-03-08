@@ -130,27 +130,13 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Zen-Client", clientType)
 	}
 
-	// Wrap response writer to capture status code and record metrics
-	start := time.Now()
+	// Wrap response writer to capture status code
 	mrw := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
 	srv.ServeHTTP(mrw, r)
 
-	// Record metrics if available
-	duration := time.Since(start)
-	if pp.MetricsRecorder != nil {
-		// Determine if request was successful or error
-		var err error
-		if mrw.statusCode >= 400 {
-			err = &metricsError{statusCode: mrw.statusCode}
-		}
-		// Use first provider from profile as the provider name for metrics
-		providerName := "unknown"
-		if len(profileCfg.providers) > 0 {
-			providerName = profileCfg.providers[0]
-		}
-		pp.MetricsRecorder.RecordRequest(providerName, duration, err)
-	}
+	// Note: Metrics are recorded by the underlying ProxyServer with the correct provider name.
+	// We don't record here to avoid double-counting and incorrect provider attribution.
 }
 
 // profileInfo holds resolved profile data for proxy construction.

@@ -492,6 +492,14 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
 					p.MarkHealthy()
 					s.Logger.Printf("[%s] Responses API retry success %d", p.Name, retryResp.StatusCode)
+					s.logStructured(p.Name, r.Method, r.URL.Path, retryResp.StatusCode, LogLevelInfo, fmt.Sprintf("success %d (Responses API)", retryResp.StatusCode), sessionID, clientType)
+
+					// Update session cache with token usage from response
+					s.updateSessionCache(sessionID, retryResp)
+
+					// Record usage and metrics
+					s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, retryResp, requestID, requestStart, requestFormat, failures)
+
 					s.copyResponseFromResponsesAPI(w, retryResp, p, requestFormat)
 					return true
 				}
@@ -1372,12 +1380,32 @@ func (s *ProxyServer) logProviderFailed(sessionID, provider, errorMsg string, du
 	})
 }
 
-// GetDaemonLogger returns the daemon's structured logger if available
-func GetDaemonLogger() interface {
+// daemonStructuredLogger holds the daemon's structured logger
+var (
+	daemonStructuredLogger     *daemonLogger
+	daemonStructuredLoggerOnce sync.Once
+	daemonStructuredLoggerMu   sync.RWMutex
+)
+
+// daemonLogger interface matches daemon.StructuredLogger methods
+type daemonLogger interface {
 	Error(event string, fields map[string]interface{})
 	Info(event string, fields map[string]interface{})
-} {
-	// This will be set by the daemon when it initializes
-	// For now, return nil (logging will be added when daemon integration is complete)
+}
+
+// SetDaemonLogger sets the daemon's structured logger for proxy logging
+func SetDaemonLogger(logger daemonLogger) {
+	daemonStructuredLoggerMu.Lock()
+	defer daemonStructuredLoggerMu.Unlock()
+	daemonStructuredLogger = &logger
+}
+
+// GetDaemonLogger returns the daemon's structured logger if available
+func GetDaemonLogger() daemonLogger {
+	daemonStructuredLoggerMu.RLock()
+	defer daemonStructuredLoggerMu.RUnlock()
+	if daemonStructuredLogger != nil {
+		return *daemonStructuredLogger
+	}
 	return nil
 }

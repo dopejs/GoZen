@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"sync"
 )
 
 type statusWriter struct {
@@ -75,11 +76,31 @@ func logPanicRecovered(panicValue interface{}, stack, path string) {
 	})
 }
 
-// getDaemonLogger returns the daemon's structured logger if available
-func getDaemonLogger() interface {
+// daemonStructuredLogger holds the daemon's structured logger
+var (
+	daemonStructuredLogger     *daemonLogger
+	daemonStructuredLoggerOnce sync.Once
+	daemonStructuredLoggerMu   sync.RWMutex
+)
+
+// daemonLogger interface matches daemon.StructuredLogger methods
+type daemonLogger interface {
 	Error(event string, fields map[string]interface{})
-} {
-	// This will be set by the daemon when it initializes
-	// For now, return nil (logging will be added when daemon integration is complete)
+}
+
+// SetDaemonLogger sets the daemon's structured logger for panic logging
+func SetDaemonLogger(logger daemonLogger) {
+	daemonStructuredLoggerMu.Lock()
+	defer daemonStructuredLoggerMu.Unlock()
+	daemonStructuredLogger = &logger
+}
+
+// getDaemonLogger returns the daemon's structured logger if available
+func getDaemonLogger() daemonLogger {
+	daemonStructuredLoggerMu.RLock()
+	defer daemonStructuredLoggerMu.RUnlock()
+	if daemonStructuredLogger != nil {
+		return *daemonStructuredLogger
+	}
 	return nil
 }

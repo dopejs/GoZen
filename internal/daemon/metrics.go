@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -52,6 +53,10 @@ type RequestError struct {
 	Type     string
 }
 
+func (e *RequestError) Error() string {
+	return fmt.Sprintf("%s: %s", e.Provider, e.Type)
+}
+
 // NewMetrics creates a new Metrics instance
 func NewMetrics() *Metrics {
 	return &Metrics{
@@ -63,7 +68,7 @@ func NewMetrics() *Metrics {
 }
 
 // RecordRequest records a request with latency and optional error
-func (m *Metrics) RecordRequest(provider string, latency time.Duration, err *RequestError) {
+func (m *Metrics) RecordRequest(provider string, latency time.Duration, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -80,8 +85,15 @@ func (m *Metrics) RecordRequest(provider string, latency time.Duration, err *Req
 
 	if err != nil {
 		m.errorCount++
-		m.errorsByProvider[err.Provider]++
-		m.errorsByType[err.Type]++
+		// Try to extract error details if it's a RequestError
+		if reqErr, ok := err.(*RequestError); ok {
+			m.errorsByProvider[reqErr.Provider]++
+			m.errorsByType[reqErr.Type]++
+		} else {
+			// Generic error
+			m.errorsByProvider[provider]++
+			m.errorsByType["unknown"]++
+		}
 	} else {
 		m.successCount++
 	}

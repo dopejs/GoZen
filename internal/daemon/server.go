@@ -221,6 +221,7 @@ func (d *Daemon) startProxy() error {
 	// Create profile-based proxy router
 	d.profileProxy = proxy.NewProfileProxy(d.logger)
 	d.profileProxy.TempProfiles = d
+	d.profileProxy.MetricsRecorder = d.metrics
 
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
@@ -798,6 +799,15 @@ func (d *Daemon) goroutineLeakMonitor(ctx context.Context) {
 			return
 		case <-d.leakCheckTicker.C:
 			current := runtime.NumGoroutine()
+
+			// Update resource peaks for metrics
+			if d.metrics != nil {
+				var mem runtime.MemStats
+				runtime.ReadMemStats(&mem)
+				memoryMB := int64(mem.Alloc / 1024 / 1024)
+				d.metrics.UpdateResourcePeaks(current, memoryMB)
+			}
+
 			// Allow 20% growth tolerance for normal fluctuations
 			threshold := d.baselineGoroutines + (d.baselineGoroutines / 5)
 			if current > threshold {

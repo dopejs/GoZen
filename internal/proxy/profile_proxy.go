@@ -23,9 +23,15 @@ type TempProfileProvider interface {
 type ProfileProxy struct {
 	Logger       *log.Logger
 	TempProfiles TempProfileProvider // optional, for _tmp_ profiles
+	MetricsRecorder MetricsRecorder   // optional, for recording request metrics
 
 	mu    sync.RWMutex
 	cache map[string]*ProxyServer // profile name -> cached proxy server
+}
+
+// MetricsRecorder is an interface for recording request metrics
+type MetricsRecorder interface {
+	RecordRequest(provider string, latency time.Duration, err error)
 }
 
 // NewProfileProxy creates a new profile-based proxy router.
@@ -124,7 +130,27 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Zen-Client", clientType)
 	}
 
-	srv.ServeHTTP(w, r)
+	// Wrap response writer to capture status code and record metrics
+	start := time.Now()
+	mrw := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+	srv.ServeHTTP(mrw, r)
+
+	// Record metrics if available
+	duration := time.Since(start)
+	if pp.MetricsRecorder != nil {
+		// Determine if request was successful or error
+		var err error
+		if mrw.statusCode >= 400 {
+			err = &metricsError{statusCode: mrw.statusCode}
+		}
+		// Use first provider from profile as the provider name for metrics
+		providerName := "unknown"
+		if len(profileCfg.providers) > 0 {
+			providerName = profileCfg.providers[0]
+		}
+		pp.MetricsRecorder.RecordRequest(providerName, duration, err)
+	}
 }
 
 // profileInfo holds resolved profile data for proxy construction.
@@ -322,4 +348,24 @@ func detectClientFormat(path, clientType string) string {
 
 	// Default to Anthropic
 	return config.ProviderTypeAnthropic
+}
+
+// metricsResponseWriter wraps http.ResponseWriter to capture status code
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (m *metricsResponseWriter) WriteHeader(code int) {
+	m.statusCode = code
+	m.ResponseWriter.WriteHeader(code)
+}
+
+// metricsError represents an error for metrics recording
+type metricsError struct {
+	statusCode int
+}
+
+func (e *metricsError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.statusCode)
 }

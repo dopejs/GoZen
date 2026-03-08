@@ -90,6 +90,7 @@ type ProxyServer struct {
 	Logger           *log.Logger
 	StructuredLogger *StructuredLogger
 	Client           *http.Client
+	Limiter          *Limiter // optional; nil means unlimited
 }
 
 func (s *ProxyServer) Close() {
@@ -182,6 +183,15 @@ func (s *ProxyServer) writeAllProvidersUnavailableError(w http.ResponseWriter, d
 }
 
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Acquire concurrency slot if limiter is configured
+	if s.Limiter != nil {
+		if err := s.Limiter.Acquire(); err != nil {
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		defer s.Limiter.Release()
+	}
+
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadGateway)

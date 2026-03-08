@@ -295,6 +295,8 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 	} else {
 		srv = NewProxyServer(providers, pp.Logger)
 	}
+	// Set concurrency limiter (100 concurrent requests as per spec)
+	srv.Limiter = NewLimiter(100)
 	pp.cache[profile] = srv
 	return srv
 }

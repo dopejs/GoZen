@@ -140,22 +140,22 @@ description: "Task list for daemon proxy stability improvements"
 
 ### Tests for User Story 4
 
-- [ ] T042 [P] [US4] Write concurrency limiter test in internal/proxy/limiter_test.go (verify 100 limit, blocking behavior)
-- [ ] T043 [P] [US4] Write load test in tests/integration/load_test.go (100 concurrent for 5 minutes)
-- [ ] T044 [P] [US4] Write timeout test in internal/proxy/server_test.go (verify request cancellation after timeout)
-- [ ] T045 [P] [US4] Write connection pool test in internal/proxy/provider_test.go (verify cleanup on invalidation)
+- [x] T042 [P] [US4] Write concurrency limiter test in internal/proxy/limiter_test.go (verify 100 limit, blocking behavior)
+- [x] T043 [P] [US4] Write load test in tests/integration/load_test.go (100 concurrent for 5 minutes)
+- [x] T044 [P] [US4] Write timeout test in internal/proxy/server_test.go (verify request cancellation after timeout)
+- [x] T045 [P] [US4] Write connection pool test in internal/proxy/provider_test.go (verify cleanup on invalidation)
 
 ### Implementation for User Story 4
 
-- [ ] T046 [P] [US4] Create Limiter struct in internal/proxy/limiter.go (semaphore channel)
-- [ ] T047 [P] [US4] Implement NewLimiter constructor in internal/proxy/limiter.go (create buffered channel with size 100)
-- [ ] T048 [P] [US4] Implement Acquire method in internal/proxy/limiter.go (block until slot available)
-- [ ] T049 [P] [US4] Implement Release method in internal/proxy/limiter.go (release slot)
-- [ ] T050 [US4] Add limiter to ProxyServer struct in internal/proxy/server.go
-- [ ] T051 [US4] Integrate limiter in ProxyServer.ServeHTTP in internal/proxy/server.go (Acquire/defer Release)
-- [ ] T052 [US4] Verify request timeout enforcement in internal/proxy/server.go (context.WithTimeout 120s)
-- [ ] T053 [US4] Verify connection pool cleanup in internal/proxy/profile_proxy.go (already implemented in buffer)
-- [ ] T054 [US4] Verify streaming write error handling in internal/proxy/server.go (already implemented in buffer)
+- [x] T046 [P] [US4] Create Limiter struct in internal/proxy/limiter.go (semaphore channel)
+- [x] T047 [P] [US4] Implement NewLimiter constructor in internal/proxy/limiter.go (create buffered channel with size 100)
+- [x] T048 [P] [US4] Implement Acquire method in internal/proxy/limiter.go (block until slot available)
+- [x] T049 [P] [US4] Implement Release method in internal/proxy/limiter.go (release slot)
+- [x] T050 [US4] Add limiter to ProxyServer struct in internal/proxy/server.go
+- [x] T051 [US4] Integrate limiter in ProxyServer.ServeHTTP in internal/proxy/server.go (Acquire/defer Release)
+- [x] T052 [US4] Verify request timeout enforcement in internal/proxy/server.go (context.WithTimeout 120s)
+- [x] T053 [US4] Verify connection pool cleanup in internal/proxy/profile_proxy.go (already implemented in buffer)
+- [x] T054 [US4] Verify streaming write error handling in internal/proxy/server.go (already implemented in buffer)
 
 **Checkpoint**: At this point, User Story 4 should be fully functional - daemon handles 100 concurrent requests gracefully
 

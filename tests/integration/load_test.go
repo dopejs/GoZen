@@ -45,8 +45,8 @@ func TestLoadSustained(t *testing.T) {
 	// Test parameters
 	const (
 		concurrency = 100
-		duration    = 5 * time.Minute
-		minRPS      = 10 // Minimum requests per second to maintain
+		duration    = 2 * time.Minute // Reduced from 5min to fit within CI timeout (180s)
+		minRPS      = 10              // Minimum requests per second to maintain
 	)
 
 	// Metrics

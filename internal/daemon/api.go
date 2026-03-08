@@ -144,6 +144,29 @@ func (d *Daemon) handleDaemonHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// --- Daemon Metrics API ---
+
+func (d *Daemon) handleDaemonMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	if d.metrics == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "metrics not initialized"})
+		return
+	}
+
+	// Update resource peaks before returning stats
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	memoryMB := int64(mem.Alloc / 1024 / 1024)
+	d.metrics.UpdateResourcePeaks(runtime.NumGoroutine(), memoryMB)
+
+	stats := d.metrics.GetStats()
+	writeJSON(w, http.StatusOK, stats)
+}
+
 // --- Daemon Shutdown API ---
 
 func (d *Daemon) handleDaemonShutdown(w http.ResponseWriter, r *http.Request) {

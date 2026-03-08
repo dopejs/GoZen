@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -116,6 +117,11 @@ func runDaemonForeground() error {
 	restartCount := 0
 	backoff := 1 * time.Second
 
+	// Signal handling outside the loop (shared across restarts)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
 	for {
 		d := daemon.NewDaemon(Version, logger)
 
@@ -126,16 +132,20 @@ func runDaemonForeground() error {
 		daemon.WriteDaemonPid(os.Getpid())
 
 		// Graceful shutdown on signals or API request
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		shutdownDone := make(chan struct{})
 		intentionalShutdown := false
+		shutdownMu := sync.Mutex{}
+
 		go func() {
 			select {
 			case <-sigCh:
+				shutdownMu.Lock()
 				intentionalShutdown = true
+				shutdownMu.Unlock()
 			case <-d.ShutdownCh():
+				shutdownMu.Lock()
 				intentionalShutdown = true
+				shutdownMu.Unlock()
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -155,8 +165,13 @@ func runDaemonForeground() error {
 			daemon.RemoveDaemonPid()
 		}
 
+		// Check if shutdown was intentional
+		shutdownMu.Lock()
+		wasIntentional := intentionalShutdown
+		shutdownMu.Unlock()
+
 		// If shutdown was intentional (signal or API), exit without restart
-		if intentionalShutdown {
+		if wasIntentional {
 			return err
 		}
 
@@ -180,8 +195,10 @@ func runDaemonForeground() error {
 			continue
 		}
 
-		// Clean exit, no restart needed
-		return nil
+		// Clean exit without error - this shouldn't happen in normal operation
+		// Log it and restart anyway
+		logger.Printf("[daemon] daemon exited cleanly (unexpected), restarting...")
+		time.Sleep(1 * time.Second)
 	}
 }
 

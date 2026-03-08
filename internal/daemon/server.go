@@ -64,6 +64,9 @@ type Daemon struct {
 	// Goroutine leak detection
 	baselineGoroutines int
 	leakCheckTicker    *time.Ticker
+
+	// Metrics collection
+	metrics *Metrics
 }
 
 // SessionInfo tracks an active client session.
@@ -103,6 +106,7 @@ func NewDaemon(version string, logger *log.Logger) *Daemon {
 		shutdownCh:  make(chan struct{}),
 		runCtx:      runCtx,
 		runCancel:   runCancel,
+		metrics:     NewMetrics(),
 	}
 }
 
@@ -174,6 +178,7 @@ func (d *Daemon) Start() error {
 	// Register daemon API routes on the web server
 	d.webServer.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
 	d.webServer.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
+	d.webServer.HandleFunc("/api/v1/daemon/metrics", d.handleDaemonMetrics)
 	d.webServer.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.webServer.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.webServer.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
@@ -220,6 +225,7 @@ func (d *Daemon) startProxy() error {
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
 	d.proxyMux.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
+	d.proxyMux.HandleFunc("/api/v1/daemon/metrics", d.handleDaemonMetrics)
 	d.proxyMux.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.proxyMux.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)

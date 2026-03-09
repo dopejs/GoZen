@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -744,4 +745,115 @@ data: [DONE]
 	if stopCount < 2 {
 		t.Errorf("expected at least 2 content_block_stop events, got %d", stopCount)
 	}
+}
+
+// Test that content block indices are correctly assigned (text=0, tool=1)
+func TestStreamTransformer_OpenAIChatToAnthropic_ContentBlockIndices(t *testing.T) {
+	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":"Text first"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"loc\":\"NYC\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Parse events to verify indices
+	events := parseSSEEvents(outputStr)
+
+	// Find content_block_start events
+	var textBlockIndex, toolBlockIndex int = -1, -1
+	for _, event := range events {
+		if event.Type == "content_block_start" {
+			if blockType, ok := event.Data["content_block"].(map[string]interface{})["type"].(string); ok {
+				index := int(event.Data["index"].(float64))
+				if blockType == "text" {
+					textBlockIndex = index
+				} else if blockType == "tool_use" {
+					toolBlockIndex = index
+				}
+			}
+		}
+	}
+
+	// Verify text block is index 0
+	if textBlockIndex != 0 {
+		t.Errorf("expected text block at index 0, got %d", textBlockIndex)
+	}
+
+	// Verify tool block is index 1 (after text)
+	if toolBlockIndex != 1 {
+		t.Errorf("expected tool block at index 1, got %d", toolBlockIndex)
+	}
+
+	// Verify content_block_stop events use correct indices
+	var textStopIndex, toolStopIndex int = -1, -1
+	stopsSeen := 0
+	for _, event := range events {
+		if event.Type == "content_block_stop" {
+			index := int(event.Data["index"].(float64))
+			if stopsSeen == 0 {
+				textStopIndex = index
+			} else if stopsSeen == 1 {
+				toolStopIndex = index
+			}
+			stopsSeen++
+		}
+	}
+
+	if textStopIndex != 0 {
+		t.Errorf("expected text block stop at index 0, got %d", textStopIndex)
+	}
+
+	if toolStopIndex != 1 {
+		t.Errorf("expected tool block stop at index 1, got %d", toolStopIndex)
+	}
+}
+
+// Helper to parse SSE events for testing
+type sseEvent struct {
+	Type string
+	Data map[string]interface{}
+}
+
+func parseSSEEvents(output string) []sseEvent {
+	var events []sseEvent
+	lines := strings.Split(output, "\n")
+	var currentEvent string
+	var dataBuffer string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") {
+			dataBuffer = strings.TrimPrefix(line, "data: ")
+		} else if line == "" && dataBuffer != "" {
+			var data map[string]interface{}
+			json.Unmarshal([]byte(dataBuffer), &data)
+			events = append(events, sseEvent{
+				Type: currentEvent,
+				Data: data,
+			})
+			currentEvent = ""
+			dataBuffer = ""
+		}
+	}
+
+	return events
 }

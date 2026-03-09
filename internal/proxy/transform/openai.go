@@ -12,7 +12,9 @@ func (t *OpenAITransformer) Name() string {
 // If the client is already using OpenAI format, no transformation is needed.
 // If the client is using Anthropic format, convert to OpenAI format.
 func (t *OpenAITransformer) TransformRequest(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "openai" {
+	// Normalize format
+	normalized := normalizeFormat(clientFormat)
+	if normalized == "openai" {
 		// No transformation needed
 		return body, nil
 	}
@@ -83,7 +85,9 @@ func (t *OpenAITransformer) TransformRequest(body []byte, clientFormat string) (
 // If the client expects OpenAI format, no transformation is needed.
 // If the client expects Anthropic format, convert from OpenAI format.
 func (t *OpenAITransformer) TransformResponse(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "openai" {
+	// Normalize format
+	normalized := normalizeFormat(clientFormat)
+	if normalized == "openai" {
 		// No transformation needed
 		return body, nil
 	}

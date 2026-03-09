@@ -49,8 +49,8 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 	return pr
 }
 
-// transformAnthropicToOpenAI converts Anthropic SSE events to OpenAI Responses API format.
-func (st *StreamTransformer) transformAnthropicToOpenAI(r io.Reader, w io.Writer) {
+// transformAnthropicToOpenAIResponses converts Anthropic SSE events to OpenAI Responses API format.
+func (st *StreamTransformer) transformAnthropicToOpenAIResponses(r io.Reader, w io.Writer) {
 	scanner := bufio.NewScanner(r)
 	// Increase buffer size for large events
 	buf := make([]byte, 64*1024)
@@ -101,6 +101,102 @@ func (st *StreamTransformer) transformAnthropicToOpenAI(r io.Reader, w io.Writer
 
 	// Send response.completed
 	st.writeResponseCompleted(w, created, fullText.String(), inputTokens, outputTokens)
+}
+
+// transformAnthropicToOpenAIChat converts Anthropic SSE events to OpenAI Chat Completions format.
+func (st *StreamTransformer) transformAnthropicToOpenAIChat(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		// Empty line = end of event
+		if line == "" && dataBuffer.Len() > 0 {
+			data := dataBuffer.String()
+			dataBuffer.Reset()
+
+			// Transform Anthropic event to OpenAI Chat Completions chunk
+			chunk := st.transformAnthropicEventToChat(currentEvent, data)
+			if chunk != "" {
+				fmt.Fprintf(w, "data: %s\n\n", chunk)
+			}
+			currentEvent = ""
+		}
+	}
+
+	// Send [DONE]
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+}
+
+// transformAnthropicEventToChat transforms a single Anthropic event to OpenAI Chat Completions format.
+func (st *StreamTransformer) transformAnthropicEventToChat(eventType, data string) string {
+	var eventData map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+		return ""
+	}
+
+	chunk := map[string]interface{}{
+		"id":      st.MessageID,
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   st.Model,
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"delta": map[string]interface{}{},
+			},
+		},
+	}
+
+	delta := chunk["choices"].([]map[string]interface{})[0]["delta"].(map[string]interface{})
+
+	switch eventType {
+	case "message_start":
+		delta["role"] = "assistant"
+		delta["content"] = ""
+
+	case "content_block_delta":
+		if deltaData, ok := eventData["delta"].(map[string]interface{}); ok {
+			if text, ok := deltaData["text"].(string); ok {
+				delta["content"] = text
+			}
+		}
+
+	case "message_delta":
+		if stopReason, ok := eventData["delta"].(map[string]interface{})["stop_reason"].(string); ok {
+			finishReason := "stop"
+			if stopReason == "max_tokens" {
+				finishReason = "length"
+			} else if stopReason == "tool_use" {
+				finishReason = "tool_calls"
+			}
+			chunk["choices"].([]map[string]interface{})[0]["finish_reason"] = finishReason
+		}
+
+	case "message_stop":
+		return "" // Skip, handled by message_delta
+
+	default:
+		return ""
+	}
+
+	result, _ := json.Marshal(chunk)
+	return string(result)
 }
 
 // transformEventToResponses transforms a single Anthropic event to OpenAI Responses API format.

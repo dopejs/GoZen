@@ -56,11 +56,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Update `StreamTransformer.TransformSSEStream` routing in `internal/proxy/transform/stream.go` to branch on `openai-chat` vs `openai-responses` (currently both map to same path)
-- [ ] T010 [US1] Update `AnthropicTransformer.TransformRequest` in `internal/proxy/transform/anthropic.go` to handle `openai-chat` and `openai-responses` client formats distinctly
-- [ ] T011 [US1] Update `AnthropicTransformer.TransformResponse` in `internal/proxy/transform/anthropic.go` to produce correct response shape per client format
-- [ ] T012 [US1] Update `OpenAITransformer.TransformRequest` in `internal/proxy/transform/openai.go` to handle `anthropic-messages` client format
-- [ ] T013 [US1] Update `OpenAITransformer.TransformResponse` in `internal/proxy/transform/openai.go` to handle `anthropic-messages` client format
+- [X] T009 [US1] Update `StreamTransformer.TransformSSEStream` routing in `internal/proxy/transform/stream.go` to branch on `openai-chat` vs `openai-responses` (currently both map to same path)
+- [X] T010 [US1] Update `AnthropicTransformer.TransformRequest` in `internal/proxy/transform/anthropic.go` to handle `openai-chat` and `openai-responses` client formats distinctly
+- [X] T011 [US1] Update `AnthropicTransformer.TransformResponse` in `internal/proxy/transform/anthropic.go` to produce correct response shape per client format
+- [X] T012 [US1] Update `OpenAITransformer.TransformRequest` in `internal/proxy/transform/openai.go` to handle `anthropic-messages` client format
+- [X] T013 [US1] Update `OpenAITransformer.TransformResponse` in `internal/proxy/transform/openai.go` to handle `anthropic-messages` client format
 
 **Checkpoint**: Chat Completions and Responses API requests produce correct response shapes independently.
 

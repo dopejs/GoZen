@@ -2,6 +2,7 @@ package transform
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -716,5 +717,129 @@ func TestOpenAITransformer_TransformRequest_ToolResult(t *testing.T) {
 
 	if toolMsg["content"] != "72°F, sunny" {
 		t.Errorf("expected content='72°F, sunny', got %v", toolMsg["content"])
+	}
+}
+
+// Test Anthropic -> OpenAI with multiple text blocks (should concatenate)
+func TestOpenAITransformer_TransformRequest_MultipleTextBlocks(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	anthropicReq := `{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": [
+			{
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "First part."},
+					{"type": "text", "text": "Second part."},
+					{"type": "text", "text": "Third part."}
+				]
+			}
+		]
+	}`
+
+	result, err := transformer.TransformRequest([]byte(anthropicReq), "anthropic-messages")
+	if err != nil {
+		t.Fatalf("TransformRequest failed: %v", err)
+	}
+
+	var openaiReq map[string]interface{}
+	json.Unmarshal(result, &openaiReq)
+
+	messages := openaiReq["messages"].([]interface{})
+	assistantMsg := messages[0].(map[string]interface{})
+	content := assistantMsg["content"].(string)
+
+	// Should concatenate all text blocks
+	if !strings.Contains(content, "First part.") || !strings.Contains(content, "Second part.") || !strings.Contains(content, "Third part.") {
+		t.Errorf("expected all text blocks concatenated, got: %s", content)
+	}
+}
+
+// Test Anthropic -> OpenAI with mixed text and tool_result (should preserve both)
+func TestOpenAITransformer_TransformRequest_MixedTextAndToolResult(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	anthropicReq := `{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": [
+			{
+				"role": "user",
+				"content": "Initial question"
+			},
+			{
+				"role": "assistant",
+				"content": [
+					{
+						"type": "tool_use",
+						"id": "toolu_123",
+						"name": "get_weather",
+						"input": {"location": "SF"}
+					}
+				]
+			},
+			{
+				"role": "user",
+				"content": [
+					{"type": "text", "text": "Here's some context:"},
+					{
+						"type": "tool_result",
+						"tool_use_id": "toolu_123",
+						"content": "72°F, sunny"
+					},
+					{"type": "text", "text": "What do you think?"}
+				]
+			}
+		]
+	}`
+
+	result, err := transformer.TransformRequest([]byte(anthropicReq), "anthropic")
+	if err != nil {
+		t.Fatalf("TransformRequest failed: %v", err)
+	}
+
+	var openaiReq map[string]interface{}
+	json.Unmarshal(result, &openaiReq)
+
+	messages := openaiReq["messages"].([]interface{})
+	
+	// Should have: user, assistant, user (text), tool, (potentially another user for trailing text)
+	// At minimum: user, assistant, user (with text), tool
+	if len(messages) < 4 {
+		t.Fatalf("expected at least 4 messages, got %d", len(messages))
+	}
+
+	// Find the user message with text content
+	foundTextMessage := false
+	for _, msg := range messages {
+		msgMap := msg.(map[string]interface{})
+		if msgMap["role"] == "user" {
+			if content, ok := msgMap["content"].(string); ok {
+				if strings.Contains(content, "Here's some context:") && strings.Contains(content, "What do you think?") {
+					foundTextMessage = true
+					break
+				}
+			}
+		}
+	}
+
+	if !foundTextMessage {
+		t.Error("expected user message with concatenated text content")
+	}
+
+	// Find the tool message
+	foundToolMessage := false
+	for _, msg := range messages {
+		msgMap := msg.(map[string]interface{})
+		if msgMap["role"] == "tool" {
+			if msgMap["tool_call_id"] == "toolu_123" {
+				foundToolMessage = true
+				break
+			}
+		}
+	}
+
+	if !foundToolMessage {
+		t.Error("expected tool message with tool_call_id")
 	}
 }

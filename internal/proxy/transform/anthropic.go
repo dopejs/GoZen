@@ -124,12 +124,152 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 		}
 	}
 
+	// Transform OpenAI messages to Anthropic format
+	if messages, ok := data["messages"].([]interface{}); ok {
+		transformedMessages, systemPrompt := t.transformOpenAIMessagesToAnthropic(messages)
+		data["messages"] = transformedMessages
+
+		// Merge system prompt if extracted from messages
+		if systemPrompt != "" {
+			if existing, ok := data["system"].(string); ok && existing != "" {
+				data["system"] = existing + "\n\n" + systemPrompt
+			} else {
+				data["system"] = systemPrompt
+			}
+		}
+	}
+
 	result, err := toJSON(data)
 	if err != nil {
 		return body, err
 	}
 
 	return result, nil
+}
+
+// transformOpenAIMessagesToAnthropic converts OpenAI messages array to Anthropic format.
+// Returns transformed messages and extracted system prompt.
+func (t *AnthropicTransformer) transformOpenAIMessagesToAnthropic(messages []interface{}) ([]interface{}, string) {
+	var systemPrompt string
+	var anthropicMessages []interface{}
+
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role, _ := msgMap["role"].(string)
+
+		switch role {
+		case "system":
+			// Extract system message
+			if content, ok := msgMap["content"].(string); ok {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n" + content
+				} else {
+					systemPrompt = content
+				}
+			}
+
+		case "assistant":
+			// Transform assistant message with potential tool_calls
+			anthropicMessages = append(anthropicMessages, t.transformOpenAIAssistantMessage(msgMap))
+
+		case "tool":
+			// Transform tool result message to user message with tool_result block
+			if toolMsg := t.transformOpenAIToolMessage(msgMap); toolMsg != nil {
+				anthropicMessages = append(anthropicMessages, toolMsg)
+			}
+
+		case "user":
+			// Regular user message
+			content := msgMap["content"]
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "user",
+				"content": content,
+			})
+		}
+	}
+
+	return anthropicMessages, systemPrompt
+}
+
+// transformOpenAIAssistantMessage converts OpenAI assistant message to Anthropic format.
+func (t *AnthropicTransformer) transformOpenAIAssistantMessage(msg map[string]interface{}) map[string]interface{} {
+	var contentBlocks []interface{}
+
+	// Add text content if present
+	if content, ok := msg["content"].(string); ok && content != "" {
+		contentBlocks = append(contentBlocks, map[string]interface{}{
+			"type": "text",
+			"text": content,
+		})
+	}
+
+	// Transform tool_calls to tool_use blocks
+	if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
+		for _, tc := range toolCalls {
+			toolCall, ok := tc.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			if function, ok := toolCall["function"].(map[string]interface{}); ok {
+				// Parse arguments JSON string to object
+				var input interface{}
+				if argsStr, ok := function["arguments"].(string); ok {
+					json.Unmarshal([]byte(argsStr), &input)
+				}
+
+				contentBlocks = append(contentBlocks, map[string]interface{}{
+					"type":  "tool_use",
+					"id":    toolCall["id"],
+					"name":  function["name"],
+					"input": input,
+				})
+			}
+		}
+	}
+
+	// If no content blocks, add empty text block
+	if len(contentBlocks) == 0 {
+		contentBlocks = append(contentBlocks, map[string]interface{}{
+			"type": "text",
+			"text": "",
+		})
+	}
+
+	return map[string]interface{}{
+		"role":    "assistant",
+		"content": contentBlocks,
+	}
+}
+
+// transformOpenAIToolMessage converts OpenAI tool message to Anthropic user message with tool_result.
+func (t *AnthropicTransformer) transformOpenAIToolMessage(msg map[string]interface{}) map[string]interface{} {
+	toolCallID, _ := msg["tool_call_id"].(string)
+	content := msg["content"]
+
+	// Create tool_result block
+	toolResult := map[string]interface{}{
+		"type":        "tool_result",
+		"tool_use_id": toolCallID,
+	}
+
+	// Handle content (can be string or structured)
+	if contentStr, ok := content.(string); ok {
+		toolResult["content"] = contentStr
+	} else {
+		toolResult["content"] = content
+	}
+
+	return map[string]interface{}{
+		"role": "user",
+		"content": []interface{}{
+			toolResult,
+		},
+	}
 }
 
 // TransformResponse transforms a response from Anthropic format.

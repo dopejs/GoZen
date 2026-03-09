@@ -518,8 +518,17 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 	scanner.Buffer(buf, 1024*1024)
 
 	var messageStarted bool
-	var contentBlockStarted bool
 	var inputTokens, outputTokens int
+	var finalStopReason string
+	var messageStopped bool
+
+	// Track current content block state
+	type blockState struct {
+		started bool
+		index   int
+		typ     string // "text" or "tool_use"
+	}
+	var currentBlock blockState
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -538,30 +547,41 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Handle [DONE] signal
 		if data == "[DONE]" {
-			// Send content_block_stop if we started a content block
-			if contentBlockStarted {
-				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
-					"type":  "content_block_stop",
-					"index": 0,
+			// Only send termination if we haven't already sent it via finish_reason
+			if !messageStopped {
+				// Send content_block_stop if we have an open block
+				if currentBlock.started {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": currentBlock.index,
+					}))
+					currentBlock.started = false
+				}
+
+				// Use finalStopReason if set, otherwise default to end_turn
+				stopReason := finalStopReason
+				if stopReason == "" {
+					stopReason = "end_turn"
+				}
+
+				// Send message_delta with stop_reason
+				fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+					"type": "message_delta",
+					"delta": map[string]interface{}{
+						"stop_reason":   stopReason,
+						"stop_sequence": nil,
+					},
+					"usage": map[string]interface{}{
+						"output_tokens": outputTokens,
+					},
 				}))
+
+				// Send message_stop
+				fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+					"type": "message_stop",
+				}))
+				messageStopped = true
 			}
-
-			// Send message_delta with stop_reason
-			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
-				"type": "message_delta",
-				"delta": map[string]interface{}{
-					"stop_reason":   "end_turn",
-					"stop_sequence": nil,
-				},
-				"usage": map[string]interface{}{
-					"output_tokens": outputTokens,
-				},
-			}))
-
-			// Send message_stop
-			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
-				"type": "message_stop",
-			}))
 			continue
 		}
 
@@ -641,12 +661,11 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 				// Check if this is a new tool call (has id)
 				if id, ok := toolCall["id"].(string); ok && id != "" {
-					// Start new tool_use block
-					if contentBlockStarted {
-						// Stop previous content block
+					// Close previous block if open
+					if currentBlock.started {
 						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 							"type":  "content_block_stop",
-							"index": index,
+							"index": currentBlock.index,
 						}))
 					}
 
@@ -669,7 +688,7 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 							"input": map[string]interface{}{},
 						},
 					}))
-					contentBlockStarted = true
+					currentBlock = blockState{started: true, index: index, typ: "tool_use"}
 				}
 
 				// Check for function arguments delta
@@ -680,7 +699,7 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 							"type":  "content_block_delta",
 							"index": index,
 							"delta": map[string]interface{}{
-								"type":        "input_json_delta",
+								"type":         "input_json_delta",
 								"partial_json": args,
 							},
 						}))
@@ -692,23 +711,37 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Check for content delta
 		if content, ok := delta["content"].(string); ok && content != "" {
-			// Start content block if not started
-			if !contentBlockStarted {
+			// Start content block if not started or if switching from tool to text
+			if !currentBlock.started || currentBlock.typ != "text" {
+				// Close previous block if it was a different type
+				if currentBlock.started && currentBlock.typ != "text" {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": currentBlock.index,
+					}))
+				}
+
+				// Start new text block
+				newIndex := 0
+				if currentBlock.started {
+					newIndex = currentBlock.index + 1
+				}
+
 				fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
 					"type":  "content_block_start",
-					"index": 0,
+					"index": newIndex,
 					"content_block": map[string]interface{}{
 						"type": "text",
 						"text": "",
 					},
 				}))
-				contentBlockStarted = true
+				currentBlock = blockState{started: true, index: newIndex, typ: "text"}
 			}
 
 			// Send content_block_delta
 			fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": 0,
+				"index": currentBlock.index,
 				"delta": map[string]interface{}{
 					"type": "text_delta",
 					"text": content,
@@ -718,13 +751,13 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Check for finish_reason
 		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			// Send content_block_stop if we started a content block
-			if contentBlockStarted {
+			// Close current content block if open
+			if currentBlock.started {
 				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 					"type":  "content_block_stop",
-					"index": 0,
+					"index": currentBlock.index,
 				}))
-				contentBlockStarted = false
+				currentBlock.started = false
 			}
 
 			// Map finish_reason to stop_reason
@@ -737,6 +770,9 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			case "content_filter":
 				stopReason = "end_turn"
 			}
+
+			// Store the stop reason for potential [DONE] handling
+			finalStopReason = stopReason
 
 			// Send message_delta with stop_reason
 			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
@@ -754,6 +790,7 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
 				"type": "message_stop",
 			}))
+			messageStopped = true
 		}
 	}
 

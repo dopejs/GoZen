@@ -460,3 +460,104 @@ func TestHealthChecker_CheckProvider_RateLimit(t *testing.T) {
 		t.Error("Expected healthy result for rate limit (429 < 500)")
 	}
 }
+
+// TestHealthChecker_StopAndRestart verifies that health checker can be stopped and restarted
+func TestHealthChecker_StopAndRestart(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Set health check config
+	config.SetHealthCheck(&config.HealthCheckConfig{
+		Enabled:      true,
+		IntervalSecs: 1,
+		TimeoutSecs:  5,
+	})
+
+	hc := NewHealthChecker(nil)
+
+	// Start the checker
+	hc.Start()
+	if !hc.IsRunning() {
+		t.Fatal("Expected health checker to be running after Start()")
+	}
+
+	// Wait a bit to ensure it's actually running
+	time.Sleep(100 * time.Millisecond)
+
+	// Stop the checker
+	hc.Stop()
+	if hc.IsRunning() {
+		t.Error("Expected health checker to be stopped after Stop()")
+	}
+
+	// Verify stopped flag is set
+	hc.mu.RLock()
+	wasStopped := hc.stopped
+	hc.mu.RUnlock()
+	if !wasStopped {
+		t.Error("Expected stopped flag to be true after Stop()")
+	}
+
+	// Restart the checker (this is the critical test)
+	hc.Start()
+	if !hc.IsRunning() {
+		t.Fatal("Expected health checker to be running after restart")
+	}
+
+	// Verify stopped flag is cleared
+	hc.mu.RLock()
+	isStopped := hc.stopped
+	hc.mu.RUnlock()
+	if isStopped {
+		t.Error("Expected stopped flag to be false after restart")
+	}
+
+	// Wait a bit to ensure it's actually running
+	time.Sleep(100 * time.Millisecond)
+
+	// Clean up
+	hc.Stop()
+}
+
+// TestHealthChecker_MultipleStopRestart verifies multiple stop/restart cycles
+func TestHealthChecker_MultipleStopRestart(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	config.SetHealthCheck(&config.HealthCheckConfig{
+		Enabled:      true,
+		IntervalSecs: 1,
+		TimeoutSecs:  5,
+	})
+
+	hc := NewHealthChecker(nil)
+
+	// Perform multiple start/stop cycles
+	for i := 0; i < 3; i++ {
+		hc.Start()
+		if !hc.IsRunning() {
+			t.Fatalf("Cycle %d: Expected health checker to be running after Start()", i)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+
+		hc.Stop()
+		if hc.IsRunning() {
+			t.Errorf("Cycle %d: Expected health checker to be stopped after Stop()", i)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+}

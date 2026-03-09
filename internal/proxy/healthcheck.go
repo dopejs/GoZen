@@ -87,13 +87,19 @@ func (h *HealthChecker) ReloadConfig() {
 // Start begins periodic health checking.
 func (h *HealthChecker) Start() {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.running {
-		h.mu.Unlock()
 		return
 	}
-	h.running = true
-	h.mu.Unlock()
 
+	// If previously stopped, recreate the stop channel
+	if h.stopped {
+		h.stopCh = make(chan struct{})
+		h.stopped = false
+	}
+
+	h.running = true
 	h.wg.Add(1)
 	go h.checkLoop()
 }

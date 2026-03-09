@@ -23,9 +23,15 @@ type TempProfileProvider interface {
 type ProfileProxy struct {
 	Logger       *log.Logger
 	TempProfiles TempProfileProvider // optional, for _tmp_ profiles
+	MetricsRecorder MetricsRecorder   // optional, for recording request metrics
 
 	mu    sync.RWMutex
 	cache map[string]*ProxyServer // profile name -> cached proxy server
+}
+
+// MetricsRecorder is an interface for recording request metrics
+type MetricsRecorder interface {
+	RecordRequest(provider string, latency time.Duration, err error)
 }
 
 // NewProfileProxy creates a new profile-based proxy router.
@@ -124,7 +130,13 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Zen-Client", clientType)
 	}
 
-	srv.ServeHTTP(w, r)
+	// Wrap response writer to capture status code
+	mrw := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+	srv.ServeHTTP(mrw, r)
+
+	// Note: Metrics are recorded by the underlying ProxyServer with the correct provider name.
+	// We don't record here to avoid double-counting and incorrect provider attribution.
 }
 
 // profileInfo holds resolved profile data for proxy construction.
@@ -269,6 +281,10 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 	} else {
 		srv = NewProxyServer(providers, pp.Logger)
 	}
+	// Set concurrency limiter (100 concurrent requests as per spec)
+	srv.Limiter = NewLimiter(100)
+	// Pass through metrics recorder from ProfileProxy to ProxyServer
+	srv.MetricsRecorder = pp.MetricsRecorder
 	pp.cache[profile] = srv
 	return srv
 }
@@ -278,7 +294,16 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 func (pp *ProfileProxy) InvalidateCache() {
 	pp.mu.Lock()
 	defer pp.mu.Unlock()
+	for _, srv := range pp.cache {
+		if srv != nil {
+			srv.Close()
+		}
+	}
 	pp.cache = make(map[string]*ProxyServer)
+}
+
+func (pp *ProfileProxy) Close() {
+	pp.InvalidateCache()
 }
 
 func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, message string) {
@@ -313,4 +338,24 @@ func detectClientFormat(path, clientType string) string {
 
 	// Default to Anthropic
 	return config.ProviderTypeAnthropic
+}
+
+// metricsResponseWriter wraps http.ResponseWriter to capture status code
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (m *metricsResponseWriter) WriteHeader(code int) {
+	m.statusCode = code
+	m.ResponseWriter.WriteHeader(code)
+}
+
+// metricsError represents an error for metrics recording
+type metricsError struct {
+	statusCode int
+}
+
+func (e *metricsError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.statusCode)
 }

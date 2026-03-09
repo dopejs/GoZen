@@ -19,6 +19,40 @@ import (
 	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
+// ProxyError represents a categorized error from the proxy
+type ProxyError struct {
+	Provider string
+	ErrType  string
+	Err      error
+}
+
+func (e *ProxyError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s [%s]: %v", e.Provider, e.ErrType, e.Err)
+	}
+	return fmt.Sprintf("%s [%s]", e.Provider, e.ErrType)
+}
+
+func (e *ProxyError) Unwrap() error {
+	return e.Err
+}
+
+// Type returns the error type for metrics classification
+func (e *ProxyError) Type() string {
+	return e.ErrType
+}
+
+// Error type constants for metrics classification
+const (
+	ErrorTypeAuth       = "auth"
+	ErrorTypeRateLimit  = "rate_limit"
+	ErrorTypeRequest    = "request"
+	ErrorTypeServer     = "server"
+	ErrorTypeNetwork    = "network"
+	ErrorTypeTimeout    = "timeout"
+	ErrorTypeConcurrency = "concurrency"
+)
+
 var (
 	globalLogger     *StructuredLogger
 	globalLogDB      *LogDB
@@ -90,6 +124,42 @@ type ProxyServer struct {
 	Logger           *log.Logger
 	StructuredLogger *StructuredLogger
 	Client           *http.Client
+	Limiter          *Limiter        // optional; nil means unlimited
+	MetricsRecorder  MetricsRecorder // optional; for recording request metrics
+}
+
+func (s *ProxyServer) Close() {
+	seenClients := make(map[*http.Client]struct{})
+	closeClient := func(client *http.Client) {
+		if client == nil {
+			return
+		}
+		if _, ok := seenClients[client]; ok {
+			return
+		}
+		seenClients[client] = struct{}{}
+		closeHTTPClientIdleConnections(client)
+	}
+
+	closeClient(s.Client)
+	for _, provider := range s.allProviders() {
+		closeClient(provider.Client)
+	}
+}
+
+func (s *ProxyServer) allProviders() []*Provider {
+	providers := make([]*Provider, 0, len(s.Providers))
+	providers = append(providers, s.Providers...)
+	if s.Routing == nil {
+		return providers
+	}
+	for _, scenarioProviders := range s.Routing.ScenarioRoutes {
+		if scenarioProviders == nil {
+			continue
+		}
+		providers = append(providers, scenarioProviders.Providers...)
+	}
+	return providers
 }
 
 func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
@@ -97,9 +167,7 @@ func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
 		Providers:        providers,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
-		Client: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
+		Client:           newHTTPClient(10 * time.Minute),
 	}
 }
 
@@ -110,9 +178,7 @@ func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *Prox
 		Routing:          routing,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
-		Client: &http.Client{
-			Timeout: 10 * time.Minute,
-		},
+		Client:           newHTTPClient(10 * time.Minute),
 	}
 }
 
@@ -152,6 +218,27 @@ func (s *ProxyServer) writeAllProvidersUnavailableError(w http.ResponseWriter, d
 }
 
 func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	requestStart := time.Now()
+
+	// Acquire concurrency slot if limiter is configured
+	// Pass request context so limiter respects client cancellation
+	if s.Limiter != nil {
+		if err := s.Limiter.Acquire(r.Context()); err != nil {
+			// Record concurrency limit error in metrics
+			// Use empty provider to indicate system-level error (not provider-specific)
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest("", time.Since(requestStart), &ProxyError{
+					Provider: "",
+					ErrType:  ErrorTypeConcurrency,
+					Err:      err,
+				})
+			}
+			http.Error(w, "service unavailable: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		defer s.Limiter.Release()
+	}
+
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadGateway)
@@ -285,8 +372,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try scenario providers first, then fallback to default if all fail
-	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures)
+	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 	if success {
+		// Log request_received only if duration >1s (selective logging per T067)
+		duration := time.Since(requestStart)
+		if duration > time.Second {
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, nil)
+		}
 		return
 	}
 
@@ -299,11 +391,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.Logger.Printf("[proxy] all default providers also unavailable (manually disabled): %v", defaultDisabledNames)
 			allDisabled := append(disabledNames, defaultDisabledNames...)
 			s.writeAllProvidersUnavailableError(w, allDisabled)
+			// Log request_received for error (selective logging per T067)
+			duration := time.Since(requestStart)
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all providers unavailable"))
 			return
 		}
 		// Clear model overrides for default providers
-		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures)
+		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {
+			// Log request_received only if duration >1s (selective logging per T067)
+			duration := time.Since(requestStart)
+			if duration > time.Second {
+				s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, nil)
+			}
 			return
 		}
 	}
@@ -324,15 +424,17 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.StructuredLogger != nil {
 		s.StructuredLogger.Error("", errStr)
 	}
+	// Log request_received for error (selective logging per T067)
+	duration := time.Since(requestStart)
+	s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all providers failed"))
 	http.Error(w, errStr, http.StatusBadGateway)
 }
 
 // tryProviders attempts to forward the request to each provider in order.
 // Returns true if a provider successfully handled the request.
-func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure) bool {
+func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, providers []*Provider, modelOverrides map[string]string, bodyBytes []byte, sessionID, clientType, requestFormat string, failures *[]providerFailure, requestStart time.Time) bool {
 	// Generate request ID for monitoring
 	requestID := generateRequestID()
-	requestStart := time.Now()
 
 	for i, p := range providers {
 		isLast := i == len(providers)-1
@@ -382,7 +484,22 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("request error: %v", err)
 			s.Logger.Printf("[%s] %s", p.Name, msg)
 			s.logStructuredError(p.Name, r.Method, r.URL.Path, err, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, err.Error(), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error(), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				// Classify network/timeout errors
+				errType := ErrorTypeNetwork
+				if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout") {
+					errType = ErrorTypeTimeout
+				}
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  errType,
+					Err:      err,
+				})
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -394,7 +511,17 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (auth/account error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("auth error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeAuth,
+					Err:      fmt.Errorf("status %d", resp.StatusCode),
+				})
+			}
 			p.MarkAuthFailed()
 			continue
 		}
@@ -406,7 +533,17 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (rate limited), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, "rate limited", elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeRateLimit,
+					Err:      fmt.Errorf("status 429"),
+				})
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -429,6 +566,19 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
 					p.MarkHealthy()
 					s.Logger.Printf("[%s] Responses API retry success %d", p.Name, retryResp.StatusCode)
+					s.logStructured(p.Name, r.Method, r.URL.Path, retryResp.StatusCode, LogLevelInfo, fmt.Sprintf("success %d (Responses API)", retryResp.StatusCode), sessionID, clientType)
+
+					// Update session cache with token usage from response
+					s.updateSessionCache(sessionID, retryResp)
+
+					// Record usage and metrics
+					s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, retryResp, requestID, requestStart, requestFormat, failures)
+
+					// Record daemon-level metrics if recorder is available
+					if s.MetricsRecorder != nil {
+						s.MetricsRecorder.RecordRequest(p.Name, time.Since(requestStart), nil)
+					}
+
 					s.copyResponseFromResponsesAPI(w, retryResp, p, requestFormat)
 					return true
 				}
@@ -445,7 +595,17 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				msg := fmt.Sprintf("got %d (request-related error), failing over without backoff, request_body_size=%d", resp.StatusCode, len(bodyBytes))
 				s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 				s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+				// Log provider_failed event (T068)
+				s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("request error: %d", resp.StatusCode), elapsed)
 				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+				// Record daemon-level metrics for error (request-related, not provider issue)
+				if s.MetricsRecorder != nil {
+					s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+						Provider: p.Name,
+						ErrType:  ErrorTypeRequest,
+						Err:      fmt.Errorf("status %d", resp.StatusCode),
+					})
+				}
 				continue
 			}
 
@@ -453,7 +613,17 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			msg := fmt.Sprintf("got %d (server error), failing over", resp.StatusCode)
 			s.Logger.Printf("[%s] %s response=%s", p.Name, msg, string(errBody))
 			s.logStructuredWithResponse(p.Name, r.Method, r.URL.Path, resp.StatusCode, msg, errBody, sessionID, clientType)
+			// Log provider_failed event (T068)
+			s.logProviderFailed(sessionID, p.Name, fmt.Sprintf("server error: %d", resp.StatusCode), elapsed)
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
+			// Record daemon-level metrics for error
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeServer,
+					Err:      fmt.Errorf("status %d", resp.StatusCode),
+				})
+			}
 			p.MarkFailed()
 			continue
 		}
@@ -468,6 +638,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 
 		// Record usage and metrics
 		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp, requestID, requestStart, requestFormat, failures)
+
+		// Record daemon-level metrics if recorder is available
+		if s.MetricsRecorder != nil {
+			s.MetricsRecorder.RecordRequest(p.Name, time.Since(requestStart), nil)
+		}
 
 		s.copyResponse(w, resp, p, requestFormat)
 		return true
@@ -741,7 +916,10 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
-			w.Write(buf[:n])
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				s.Logger.Printf("[%s] streaming response write error: %v", p.Name, writeErr)
+				return
+			}
 			if ok {
 				flusher.Flush()
 			}
@@ -785,7 +963,10 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		for {
 			n, err := reader.Read(buf)
 			if n > 0 {
-				w.Write(buf[:n])
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					s.Logger.Printf("[%s] streaming response write error: %v", p.Name, writeErr)
+					return
+				}
 				if ok {
 					flusher.Flush()
 				}
@@ -1257,4 +1438,74 @@ func StartProxyWithRouting(routing *RoutingConfig, clientFormat string, listenAd
 	go http.Serve(ln, srv)
 
 	return port, nil
+}
+
+// logRequestReceived logs request_received event (T067: only if error or duration >1s)
+func (s *ProxyServer) logRequestReceived(method, path, sessionID, clientType string, duration time.Duration, err error) {
+	// Get daemon structured logger if available
+	daemonLogger := GetDaemonLogger()
+	if daemonLogger == nil {
+		return
+	}
+
+	fields := map[string]interface{}{
+		"method":       method,
+		"path":         path,
+		"session":      sessionID,
+		"client_type":  clientType,
+		"duration_ms":  duration.Milliseconds(),
+	}
+
+	if err != nil {
+		fields["error"] = err.Error()
+		daemonLogger.Error("request_received", fields)
+	} else {
+		daemonLogger.Info("request_received", fields)
+	}
+}
+
+// logProviderFailed logs provider_failed event (T068)
+func (s *ProxyServer) logProviderFailed(sessionID, provider, errorMsg string, duration time.Duration) {
+	// Get daemon structured logger if available
+	daemonLogger := GetDaemonLogger()
+	if daemonLogger == nil {
+		return
+	}
+
+	daemonLogger.Error("provider_failed", map[string]interface{}{
+		"session":     sessionID,
+		"provider":    provider,
+		"error":       errorMsg,
+		"duration_ms": duration.Milliseconds(),
+	})
+}
+
+// daemonStructuredLogger holds the daemon's structured logger
+var (
+	daemonStructuredLogger     *daemonLogger
+	daemonStructuredLoggerOnce sync.Once
+	daemonStructuredLoggerMu   sync.RWMutex
+)
+
+// daemonLogger interface matches daemon.StructuredLogger methods
+type daemonLogger interface {
+	Error(event string, fields map[string]interface{})
+	Info(event string, fields map[string]interface{})
+}
+
+// SetDaemonLogger sets the daemon's structured logger for proxy logging
+func SetDaemonLogger(logger daemonLogger) {
+	daemonStructuredLoggerMu.Lock()
+	defer daemonStructuredLoggerMu.Unlock()
+	daemonStructuredLogger = &logger
+}
+
+// GetDaemonLogger returns the daemon's structured logger if available
+func GetDaemonLogger() daemonLogger {
+	daemonStructuredLoggerMu.RLock()
+	defer daemonStructuredLoggerMu.RUnlock()
+	if daemonStructuredLogger != nil {
+		return *daemonStructuredLogger
+	}
+	return nil
 }

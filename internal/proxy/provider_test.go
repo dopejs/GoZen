@@ -1,10 +1,28 @@
 package proxy
 
 import (
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
+
+type trackingTransport struct {
+	closed bool
+}
+
+func (t *trackingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+func (t *trackingTransport) CloseIdleConnections() {
+	t.closed = true
+}
 
 func newTestProvider(name string) *Provider {
 	u, _ := url.Parse("https://api.example.com")
@@ -115,5 +133,16 @@ func TestProviderIsHealthyDuringBackoff(t *testing.T) {
 
 	if p.IsHealthy() {
 		t.Error("should not be healthy during backoff period")
+	}
+}
+
+func TestCloseHTTPClientIdleConnections(t *testing.T) {
+	transport := &trackingTransport{}
+	client := &http.Client{Transport: transport}
+
+	closeHTTPClientIdleConnections(client)
+
+	if !transport.closed {
+		t.Fatal("expected CloseIdleConnections to be called")
 	}
 }

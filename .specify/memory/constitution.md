@@ -1,18 +1,17 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.1.0 → 1.2.0 (MINOR — updated web frontend constraint, tooling reference)
+Version change: 1.2.0 → 1.3.0 (MINOR — added Principle VII: Automated Testing Priority)
 
 Modified principles: none
 
 Modified sections:
-  - Technology & Architecture Constraints: Web frontend updated from
-    "Vanilla JS" to "React + TypeScript + Vite" to reflect migration
-    completed in feature 006-revert-tag-add-monitoring.
-  - Principle VI: Changed `npm run test:coverage` to
-    `pnpm run test:coverage` to match project tooling (CLAUDE.md).
+  - Added Principle VII: Automated Testing Priority — mandates automated
+    tests over manual testing, integration tests for daemon stability,
+    and load testing for performance validation.
 
-Added sections: none
+Added sections:
+  - Principle VII: Automated Testing Priority
 
 Removed sections: none
 
@@ -120,6 +119,26 @@ Follow-up TODOs: none
   coverage after merge is more expensive and blocks other PRs. Each
   feature owner is responsible for maintaining the coverage bar.
 
+### VII. Automated Testing Priority (NON-NEGOTIABLE)
+
+- Automated tests MUST be preferred over manual testing for all
+  verification scenarios. Manual testing is only acceptable when
+  automation is technically infeasible (e.g., visual design review,
+  hardware-specific behavior).
+- Integration tests MUST be written for daemon stability features
+  (auto-restart, graceful shutdown, resource leak detection) in
+  `tests/integration/`.
+- Load and stress tests MUST be written for performance-critical
+  features (concurrent request handling, connection pooling) to
+  validate behavior under realistic conditions.
+- Test execution MUST be reproducible and deterministic. Tests that
+  require external services MUST use mocks or test doubles.
+- Rationale: Manual testing is error-prone, time-consuming, and
+  doesn't scale. Automated tests provide continuous validation,
+  catch regressions immediately, and serve as executable
+  specifications. For a daemon that runs 24/7, automated stability
+  and load tests are essential to ensure reliability.
+
 ## Technology & Architecture Constraints
 
 - **Language**: Go. All production code MUST be in Go.
@@ -167,4 +186,4 @@ Follow-up TODOs: none
 - Compliance review: at the start of each feature branch, verify the
   plan's Constitution Check section against current principles.
 
-**Version**: 1.2.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-04
+**Version**: 1.3.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-08

@@ -116,8 +116,16 @@ func TestProfileProxyInvalidateCache(t *testing.T) {
 	logger := log.New(os.Stderr, "[test] ", 0)
 	pp := NewProfileProxy(logger)
 
-	// Manually populate cache
-	pp.cache["test"] = &ProxyServer{}
+	sharedTransport := &trackingTransport{}
+	providerTransport := &trackingTransport{}
+
+	pp.cache["test"] = &ProxyServer{
+		Client: &http.Client{Transport: sharedTransport},
+		Providers: []*Provider{{
+			Name:   "provider-a",
+			Client: &http.Client{Transport: providerTransport},
+		}},
+	}
 	if len(pp.cache) != 1 {
 		t.Fatal("cache should have 1 entry")
 	}
@@ -125,6 +133,12 @@ func TestProfileProxyInvalidateCache(t *testing.T) {
 	pp.InvalidateCache()
 	if len(pp.cache) != 0 {
 		t.Error("cache should be empty after InvalidateCache")
+	}
+	if !sharedTransport.closed {
+		t.Error("expected shared proxy client idle connections to be closed")
+	}
+	if !providerTransport.closed {
+		t.Error("expected provider proxy client idle connections to be closed")
 	}
 }
 

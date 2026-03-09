@@ -21,16 +21,16 @@ const (
 
 // ProviderHealthStatus holds the current health status of a provider.
 type ProviderHealthStatus struct {
-	Provider      string        `json:"provider"`
-	Status        HealthStatus  `json:"status"`
-	LastCheck     *time.Time    `json:"last_check,omitempty"`
-	LastSuccess   *time.Time    `json:"last_success,omitempty"`
-	LastError     *time.Time    `json:"last_error,omitempty"`
-	LastErrorMsg  string        `json:"last_error_msg,omitempty"`
-	LatencyMs     int           `json:"latency_ms,omitempty"`
-	SuccessRate   float64       `json:"success_rate"`
-	CheckCount    int           `json:"check_count"`
-	FailCount     int           `json:"fail_count"`
+	Provider     string       `json:"provider"`
+	Status       HealthStatus `json:"status"`
+	LastCheck    *time.Time   `json:"last_check,omitempty"`
+	LastSuccess  *time.Time   `json:"last_success,omitempty"`
+	LastError    *time.Time   `json:"last_error,omitempty"`
+	LastErrorMsg string       `json:"last_error_msg,omitempty"`
+	LatencyMs    int          `json:"latency_ms,omitempty"`
+	SuccessRate  float64      `json:"success_rate"`
+	CheckCount   int          `json:"check_count"`
+	FailCount    int          `json:"fail_count"`
 }
 
 // HealthResult represents the result of a single health check.
@@ -87,13 +87,19 @@ func (h *HealthChecker) ReloadConfig() {
 // Start begins periodic health checking.
 func (h *HealthChecker) Start() {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if h.running {
-		h.mu.Unlock()
 		return
 	}
-	h.running = true
-	h.mu.Unlock()
 
+	// If previously stopped, recreate the stop channel
+	if h.stopped {
+		h.stopCh = make(chan struct{})
+		h.stopped = false
+	}
+
+	h.running = true
 	h.wg.Add(1)
 	go h.checkLoop()
 }
@@ -190,6 +196,7 @@ func (h *HealthChecker) CheckProvider(name string, baseURL string, proxyURL stri
 			return result
 		}
 		client = proxyClient
+		defer closeHTTPClientIdleConnections(client)
 	}
 
 	// Simple connectivity check - HEAD request to base URL

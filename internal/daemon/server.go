@@ -2,12 +2,17 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,22 +21,43 @@ import (
 	"github.com/dopejs/gozen/internal/bot"
 	"github.com/dopejs/gozen/internal/bot/adapters"
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/httpx"
 	"github.com/dopejs/gozen/internal/middleware"
 	"github.com/dopejs/gozen/internal/proxy"
 	gosync "github.com/dopejs/gozen/internal/sync"
 	"github.com/dopejs/gozen/internal/web"
 )
 
+// FatalError represents an unrecoverable error that should not trigger auto-restart
+type FatalError struct {
+	Err error
+}
+
+func (e *FatalError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *FatalError) Unwrap() error {
+	return e.Err
+}
+
+// IsFatalError checks if an error is a fatal error
+func IsFatalError(err error) bool {
+	var fatalErr *FatalError
+	return errors.As(err, &fatalErr)
+}
+
 // Daemon is the zend main server that hosts both the proxy and web UI.
 type Daemon struct {
-	webServer    *web.Server
-	proxyServer  *http.Server
-	proxyMux     *http.ServeMux
-	profileProxy *proxy.ProfileProxy
-	botGateway   *bot.Gateway
-	logger       *log.Logger
-	version      string
-	watcher      *ConfigWatcher
+	webServer      *web.Server
+	proxyServer    *http.Server
+	proxyMux       *http.ServeMux
+	profileProxy   *proxy.ProfileProxy
+	botGateway     *bot.Gateway
+	logger         *log.Logger
+	structuredLog  *StructuredLogger
+	version        string
+	watcher        *ConfigWatcher
 
 	// Session tracking
 	mu       sync.RWMutex
@@ -42,9 +68,12 @@ type Daemon struct {
 	tmpProfiles map[string]*TempProfile
 
 	// Sync
-	syncMgr    *gosync.SyncManager
-	syncCancel context.CancelFunc // cancels auto-pull ticker
-	pushTimer  *time.Timer        // debounced auto-push
+	syncMgr       *gosync.SyncManager
+	syncCancel    context.CancelFunc // cancels auto-pull ticker
+	pushTimer     *time.Timer        // debounced auto-push
+	pushMu        sync.Mutex          // protects pushTimer
+	pushCtx       context.Context    // controls pushTimer callback lifecycle
+	pushCtxCancel context.CancelFunc // cancels pushTimer callbacks
 
 	startTime time.Time
 	proxyPort int
@@ -55,6 +84,19 @@ type Daemon struct {
 
 	// Shutdown channel - closed when shutdown is requested via API
 	shutdownCh chan struct{}
+	runCtx     context.Context
+	runCancel  context.CancelFunc
+	bgWG       sync.WaitGroup
+
+	// Goroutine leak detection
+	baselineGoroutines int
+	leakCheckTicker    *time.Ticker
+
+	// Metrics collection
+	metrics *Metrics
+
+	// Proxy server error channel for crash detection
+	proxyErrCh chan error
 }
 
 // SessionInfo tracks an active client session.
@@ -85,12 +127,22 @@ func DaemonLogPath() string {
 
 // NewDaemon creates a new zend daemon instance.
 func NewDaemon(version string, logger *log.Logger) *Daemon {
+	runCtx, runCancel := context.WithCancel(context.Background())
+
+	// Create structured logger that writes to stderr
+	structuredLog := NewStructuredLogger(os.Stderr)
+
 	return &Daemon{
-		version:     version,
-		logger:      logger,
-		sessions:    make(map[string]*SessionInfo),
-		tmpProfiles: make(map[string]*TempProfile),
-		shutdownCh:  make(chan struct{}),
+		version:       version,
+		logger:        logger,
+		structuredLog: structuredLog,
+		sessions:      make(map[string]*SessionInfo),
+		tmpProfiles:   make(map[string]*TempProfile),
+		shutdownCh:    make(chan struct{}),
+		runCtx:        runCtx,
+		runCancel:     runCancel,
+		metrics:       NewMetrics(),
+		proxyErrCh:    make(chan error, 1), // buffered to avoid blocking
 	}
 }
 
@@ -113,6 +165,10 @@ func (d *Daemon) Start() error {
 	if err := proxy.InitGlobalLogger(config.ConfigDirPath()); err != nil {
 		d.logger.Printf("Warning: failed to initialize structured logger: %v", err)
 	}
+
+	// Set daemon structured logger for proxy and httpx selective logging
+	proxy.SetDaemonLogger(d.structuredLog)
+	httpx.SetDaemonLogger(d.structuredLog)
 
 	// Initialize usage tracker, budget checker, health checker, and load balancer
 	logDB := proxy.GetGlobalLogDB()
@@ -161,6 +217,8 @@ func (d *Daemon) Start() error {
 
 	// Register daemon API routes on the web server
 	d.webServer.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.webServer.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
+	d.webServer.HandleFunc("/api/v1/daemon/metrics", d.handleDaemonMetrics)
 	d.webServer.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.webServer.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.webServer.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
@@ -172,7 +230,14 @@ func (d *Daemon) Start() error {
 	go d.watcher.Start()
 
 	// Start session cleanup goroutine
-	go d.sessionCleanupLoop()
+	d.bgWG.Add(1)
+	go d.sessionCleanupLoop(d.runCtx)
+
+	// Start goroutine leak detection monitor
+	d.baselineGoroutines = runtime.NumGoroutine()
+	d.leakCheckTicker = time.NewTicker(1 * time.Minute)
+	d.bgWG.Add(1)
+	go d.goroutineLeakMonitor(d.runCtx)
 
 	// Initialize sync if configured
 	d.initSync()
@@ -185,8 +250,105 @@ func (d *Daemon) Start() error {
 
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
-	// Start web server (blocks)
-	return d.webServer.Start()
+	// Start web server in a goroutine
+	webErrCh := make(chan error, 1)
+	go func() {
+		webErrCh <- d.webServer.Start()
+	}()
+
+	// Block until either proxy or web server exits
+	select {
+	case err := <-d.proxyErrCh:
+		// Proxy crashed, clean up and return error to trigger restart
+		d.logger.Printf("proxy server crashed, cleaning up: %v", err)
+
+		// Stop all background components (same as Shutdown)
+		// Stop bot gateway
+		if d.botGateway != nil {
+			d.botGateway.Stop()
+		}
+
+		// Stop health checker
+		proxy.StopGlobalHealthChecker()
+
+		// Stop sync auto-pull ticker
+		if d.syncCancel != nil {
+			d.syncCancel()
+		}
+		d.pushMu.Lock()
+		if d.pushCtxCancel != nil {
+			d.pushCtxCancel() // Cancel any pending push callbacks
+		}
+		if d.pushTimer != nil {
+			d.pushTimer.Stop()
+		}
+		d.pushMu.Unlock()
+
+		// Stop config watcher
+		if d.watcher != nil {
+			d.watcher.Stop()
+		}
+
+		// Stop leak check ticker
+		if d.leakCheckTicker != nil {
+			d.leakCheckTicker.Stop()
+		}
+
+		// Close profile proxy and its cached connections
+		if d.profileProxy != nil {
+			d.profileProxy.Close()
+		}
+
+		// Cancel background goroutines
+		d.runCancel()
+
+		// Stop web server
+		if d.webServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			d.webServer.Shutdown(shutdownCtx)
+			cancel()
+		}
+
+		// Wait for background goroutines to finish
+		d.bgWG.Wait()
+
+		return fmt.Errorf("proxy server crashed: %w", err)
+
+	case err := <-webErrCh:
+		// Web server exited (either error or shutdown)
+		if err != nil {
+			d.logger.Printf("web server failed, cleaning up: %v", err)
+
+			// Cancel background goroutines
+			d.runCancel()
+
+			// Stop proxy server
+			if d.proxyServer != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				d.proxyServer.Shutdown(shutdownCtx)
+				cancel()
+			}
+
+			// Stop watcher
+			if d.watcher != nil {
+				d.watcher.Stop()
+			}
+
+			// Stop leak check ticker
+			if d.leakCheckTicker != nil {
+				d.leakCheckTicker.Stop()
+			}
+
+			// Wait for background goroutines to finish
+			d.bgWG.Wait()
+
+			// Wrap as FatalError since web port conflict is unrecoverable
+			return &FatalError{Err: fmt.Errorf("web server: %w", err)}
+		}
+
+		// Normal shutdown (web server stopped gracefully)
+		return nil
+	}
 }
 
 // startProxy creates and starts the proxy HTTP server on the configured port.
@@ -196,9 +358,12 @@ func (d *Daemon) startProxy() error {
 	// Create profile-based proxy router
 	d.profileProxy = proxy.NewProfileProxy(d.logger)
 	d.profileProxy.TempProfiles = d
+	d.profileProxy.MetricsRecorder = d.metrics
 
 	// Daemon API routes on the proxy mux (for internal use)
 	d.proxyMux.HandleFunc("/api/v1/daemon/status", d.handleDaemonStatus)
+	d.proxyMux.HandleFunc("/api/v1/daemon/health", d.handleDaemonHealth)
+	d.proxyMux.HandleFunc("/api/v1/daemon/metrics", d.handleDaemonMetrics)
 	d.proxyMux.HandleFunc("/api/v1/daemon/shutdown", d.handleDaemonShutdown)
 	d.proxyMux.HandleFunc("/api/v1/daemon/reload", d.handleDaemonReload)
 	d.proxyMux.HandleFunc("/api/v1/daemon/sessions", d.handleDaemonSessions)
@@ -212,21 +377,29 @@ func (d *Daemon) startProxy() error {
 	addr := fmt.Sprintf("127.0.0.1:%d", d.proxyPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		// Port is busy — identify who's using it
+		// Port is busy — use multi-layer detection to identify the process
 		pid, procName, identErr := GetProcessOnPort(d.proxyPort)
 		if identErr != nil {
-			return fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)
+			return &FatalError{Err: fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)}
 		}
 
 		if IsZenProcess(procName) {
-			// Stale zen daemon — kill it and retry
-			d.logger.Printf("Port %d occupied by stale zen process (PID %d: %s), killing...", d.proxyPort, pid, procName)
+			// Process name looks like zen/gozen, but verify it's actually a daemon instance
+			// Try to probe daemon status API to confirm it's a real daemon
+			canTakeover, reason := d.canTakeoverProcess(pid, procName)
+
+			if !canTakeover {
+				return &FatalError{Err: fmt.Errorf("port %d is occupied by %s (PID %d): %s", d.proxyPort, procName, pid, reason)}
+			}
+
+			// Safe to takeover - terminate the old instance
+			d.logger.Printf("Port %d occupied by takeover-eligible process (PID %d: %s), reason: %s", d.proxyPort, pid, procName, reason)
 			proc, findErr := os.FindProcess(pid)
 			if findErr != nil {
-				return fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)
+				return &FatalError{Err: fmt.Errorf("port %d occupied by process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)}
 			}
 			if killErr := proc.Signal(syscall.SIGTERM); killErr != nil {
-				return fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)
+				return &FatalError{Err: fmt.Errorf("port %d occupied by process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)}
 			}
 			// Wait briefly for process to die
 			for i := 0; i < 10; i++ {
@@ -235,30 +408,146 @@ func (d *Daemon) startProxy() error {
 					break // process is dead
 				}
 			}
-			d.logger.Printf("Daemon restarted (replaced stale process %d)", pid)
+			d.logger.Printf("Daemon restarted (replaced process %d)", pid)
 
 			// Retry bind
 			ln, err = net.Listen("tcp", addr)
 			if err != nil {
-				return fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)
+				return &FatalError{Err: fmt.Errorf("port %d still in use after killing process: %w", d.proxyPort, err)}
 			}
 		} else {
-			return fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)
+			return &FatalError{Err: fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)}
 		}
 	}
 
 	d.proxyServer = &http.Server{
-		Handler: d.proxyMux,
+		Handler:           httpx.Recover(d.logger, "proxy", d.proxyMux),
+		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      10 * time.Minute,
+		IdleTimeout:       90 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
 		if err := d.proxyServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			d.logger.Printf("proxy server error: %v", err)
+			// Send error to channel for crash detection
+			select {
+			case d.proxyErrCh <- err:
+			default:
+				// Channel full, error already pending
+			}
 		}
 	}()
 
 	d.logger.Printf("proxy server listening on %s", addr)
+
+	// Log daemon_started event with structured logging
+	d.structuredLog.Info("daemon_started", map[string]interface{}{
+		"pid":         os.Getpid(),
+		"version":     d.version,
+		"proxy_port":  d.proxyPort,
+		"web_port":    d.webPort,
+		"config_path": config.ConfigDirPath(),
+	})
+
 	return nil
+}
+
+// canTakeoverProcess performs multi-layer verification to determine if it's safe
+// to kill a process occupying the proxy port. Returns (canTakeover, reason).
+//
+// Philosophy: Only refuse takeover if we can CONFIRM the process is a healthy daemon.
+// In all other cases (unresponsive, stale, orphaned), allow takeover for self-healing.
+//
+// Verification layers:
+// 1. Probe daemon status API - if responsive with valid JSON, it's healthy (don't kill)
+// 2. Check if process is actually listening on the port (lsof/netstat verification)
+// 3. Check PID file for additional context (but don't block on missing PID file)
+// 4. Default: allow takeover (prefer self-healing over false protection)
+func (d *Daemon) canTakeoverProcess(pid int, procName string) (bool, string) {
+	// Layer 1: Probe daemon status API with strict validation
+	// Only refuse takeover if we get a valid, healthy response
+	statusURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/status", d.proxyPort)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(statusURL)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			// Verify it's actually a valid daemon response (not just any HTTP server)
+			var statusResp map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&statusResp) == nil {
+				// Check for daemon-specific fields
+				if _, hasVersion := statusResp["version"]; hasVersion {
+					if _, hasUptime := statusResp["uptime"]; hasUptime {
+						// Confirmed: healthy daemon with valid status response
+						return false, "daemon is healthy and responsive (verified status API)"
+					}
+				}
+			}
+		}
+	}
+
+	// Layer 2: Verify process is actually listening on the port
+	// If the process isn't listening, it's definitely safe to takeover
+	listening, checkErr := isProcessListeningOnPort(pid, d.proxyPort)
+	if checkErr == nil && !listening {
+		return true, "process not listening on port (stale/zombie)"
+	}
+
+	// Layer 3: Check PID file for additional context (non-blocking)
+	pidPath := DaemonPidPath()
+	pidData, err := os.ReadFile(pidPath)
+	if err == nil {
+		var storedPID int
+		if _, scanErr := fmt.Sscanf(string(pidData), "%d", &storedPID); scanErr == nil {
+			if storedPID == pid {
+				// PID matches but daemon is unresponsive - likely crashed/hung
+				return true, "PID file matches but daemon unresponsive (crashed/hung)"
+			}
+			if storedPID != pid {
+				// PID file points to different process - stale PID file
+				return true, "PID file points to different process (stale PID file)"
+			}
+		}
+	}
+
+	// Layer 4: Default to allowing takeover for self-healing
+	// We couldn't confirm it's a healthy daemon, so prefer self-healing:
+	// - No PID file: could be orphaned process
+	// - Unresponsive API: could be hung/crashed
+	// - Invalid response: could be wrong service on this port
+	// In all these cases, allowing takeover enables recovery
+	return true, "daemon unresponsive and cannot verify health (allowing takeover for self-healing)"
+}
+
+// isProcessListeningOnPort checks if a process is actually listening on the specified port.
+// This helps distinguish between:
+// - Active daemon listening on the port (don't kill)
+// - Zombie/orphaned process not listening (safe to kill)
+func isProcessListeningOnPort(pid int, port int) (bool, error) {
+	// Use lsof to check if the process has the port open
+	// lsof -nP -iTCP:<port> -sTCP:LISTEN -t returns PIDs listening on the port
+	cmd := fmt.Sprintf("lsof -nP -iTCP:%d -sTCP:LISTEN -t 2>/dev/null", port)
+	output, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		// lsof not available or command failed - can't verify
+		return false, fmt.Errorf("lsof check failed: %w", err)
+	}
+
+	// Parse PIDs from output
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		var foundPID int
+		if _, err := fmt.Sscanf(line, "%d", &foundPID); err == nil {
+			if foundPID == pid {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // Shutdown gracefully stops the daemon.
@@ -277,20 +566,35 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if d.syncCancel != nil {
 		d.syncCancel()
 	}
+	d.pushMu.Lock()
+	if d.pushCtxCancel != nil {
+		d.pushCtxCancel() // Cancel any pending push callbacks
+	}
 	if d.pushTimer != nil {
 		d.pushTimer.Stop()
+	}
+	d.pushMu.Unlock()
+	if d.leakCheckTicker != nil {
+		d.leakCheckTicker.Stop()
+	}
+	if d.runCancel != nil {
+		d.runCancel()
 	}
 
 	// Stop config watcher
 	if d.watcher != nil {
 		d.watcher.Stop()
 	}
+	d.bgWG.Wait()
 
 	// Shutdown proxy server
 	if d.proxyServer != nil {
 		if err := d.proxyServer.Shutdown(ctx); err != nil {
 			d.logger.Printf("proxy shutdown error: %v", err)
 		}
+	}
+	if d.profileProxy != nil {
+		d.profileProxy.Close()
 	}
 
 	// Shutdown web server
@@ -302,6 +606,13 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 
 	// Remove PID file
 	os.Remove(DaemonPidPath())
+
+	// Log daemon_shutdown event with structured logging
+	uptime := time.Since(d.startTime)
+	d.structuredLog.Info("daemon_shutdown", map[string]interface{}{
+		"uptime_seconds": uptime.Seconds(),
+		"reason":         "graceful_shutdown",
+	})
 
 	d.logger.Println("zend stopped")
 	return nil
@@ -344,10 +655,16 @@ func (d *Daemon) RemoveSession(id string) {
 }
 
 // sessionCleanupLoop periodically removes stale sessions.
-func (d *Daemon) sessionCleanupLoop() {
+func (d *Daemon) sessionCleanupLoop(ctx context.Context) {
+	defer d.bgWG.Done()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		d.mu.Lock()
 		now := time.Now()
 		for id, s := range d.sessions {
@@ -437,6 +754,19 @@ func (d *Daemon) onConfigReload() {
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()
 	}
+
+	// Reload health checker: stop if disabled, start if enabled
+	if checker := proxy.GetGlobalHealthChecker(); checker != nil {
+		checker.ReloadConfig()
+		cfg := config.GetHealthCheck()
+		if cfg != nil && cfg.Enabled {
+			proxy.StartGlobalHealthChecker()
+		} else {
+			// Health check disabled, stop the checker
+			proxy.StopGlobalHealthChecker()
+		}
+	}
+
 	// Reinitialize sync if config changed
 	d.initSync()
 	// Reinitialize bot gateway if config changed
@@ -451,6 +781,18 @@ func (d *Daemon) initSync() {
 		d.syncCancel()
 		d.syncCancel = nil
 	}
+
+	// Cancel any pending push timer callbacks
+	d.pushMu.Lock()
+	if d.pushCtxCancel != nil {
+		d.pushCtxCancel()
+		d.pushCtxCancel = nil
+	}
+	if d.pushTimer != nil {
+		d.pushTimer.Stop()
+		d.pushTimer = nil
+	}
+	d.pushMu.Unlock()
 
 	cfg := config.GetSyncConfig()
 	if cfg == nil || cfg.Backend == "" {
@@ -473,24 +815,45 @@ func (d *Daemon) initSync() {
 		d.webServer.SetSyncManager(mgr)
 	}
 
+	// Create new context for push timer callbacks
+	d.pushMu.Lock()
+	d.pushCtx, d.pushCtxCancel = context.WithCancel(context.Background())
+	pushCtx := d.pushCtx // capture for closure
+	d.pushMu.Unlock()
+
 	// Register auto-push hook (debounced)
 	store := config.DefaultStore()
 	store.SetOnSave(func() {
 		if mgr.IsPulling() {
 			return
 		}
+		d.pushMu.Lock()
 		if d.pushTimer != nil {
 			d.pushTimer.Stop()
 		}
 		d.pushTimer = time.AfterFunc(2*time.Second, func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// Check if context is still valid (not cancelled)
+			select {
+			case <-pushCtx.Done():
+				// Context cancelled, don't execute push
+				return
+			default:
+			}
+
+			// Use pushCtx as parent so cancellation propagates to mgr.Push()
+			ctx, cancel := context.WithTimeout(pushCtx, 30*time.Second)
 			defer cancel()
 			if err := mgr.Push(ctx); err != nil {
+				// Ignore context cancelled errors (expected during shutdown)
+				if ctx.Err() == context.Canceled {
+					return
+				}
 				d.logger.Printf("sync auto-push failed: %v", err)
 			} else {
 				d.logger.Println("sync auto-push completed")
 			}
 		})
+		d.pushMu.Unlock()
 	})
 
 	// Start auto-pull ticker if enabled
@@ -734,5 +1097,44 @@ func (d *Daemon) initBot() {
 	// Expose gateway to web server for skill management API
 	if d.webServer != nil {
 		d.webServer.SetBotGateway(d.botGateway)
+	}
+}
+
+// goroutineLeakMonitor checks for goroutine leaks every minute
+func (d *Daemon) goroutineLeakMonitor(ctx context.Context) {
+	defer d.bgWG.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.leakCheckTicker.C:
+			current := runtime.NumGoroutine()
+
+			// Update resource peaks for metrics
+			if d.metrics != nil {
+				var mem runtime.MemStats
+				runtime.ReadMemStats(&mem)
+				memoryMB := int64(mem.Alloc / 1024 / 1024)
+				d.metrics.UpdateResourcePeaks(current, memoryMB)
+			}
+
+			// Allow 20% growth tolerance for normal fluctuations
+			threshold := d.baselineGoroutines + (d.baselineGoroutines / 5)
+			if current > threshold {
+				// Potential leak detected, dump stack traces
+				buf := make([]byte, 1<<20) // 1MB buffer
+				stackLen := runtime.Stack(buf, true)
+				d.logger.Printf("[goroutine-leak] detected: baseline=%d current=%d threshold=%d\n%s",
+					d.baselineGoroutines, current, threshold, buf[:stackLen])
+
+				// Log structured event
+				d.structuredLog.Warn("goroutine_leak_detected", map[string]interface{}{
+					"baseline_goroutines": d.baselineGoroutines,
+					"current_goroutines":  current,
+					"threshold":           threshold,
+					"growth_percent":      float64(current-d.baselineGoroutines) / float64(d.baselineGoroutines) * 100,
+				})
+			}
+		}
 	}
 }

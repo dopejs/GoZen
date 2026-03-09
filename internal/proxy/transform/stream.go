@@ -33,8 +33,11 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 
 	go func() {
 		defer pw.Close()
-		// Provider is Anthropic, client expects OpenAI
-		if normalizedProvider == "anthropic" && normalizedClient == "openai" {
+		// Check specific format first before normalized comparison
+		if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
+			st.transformResponsesAPIToAnthropic(r, pw)
+		} else if normalizedProvider == "anthropic" && normalizedClient == "openai" {
+			// Provider is Anthropic, client expects OpenAI
 			// Distinguish between openai-chat and openai-responses
 			// Default to Responses API for backward compatibility with legacy "openai"
 			if st.ClientFormat == FormatOpenAIChat {
@@ -45,8 +48,6 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 			}
 		} else if normalizedProvider == "openai" && normalizedClient == "anthropic" {
 			st.transformOpenAIToAnthropic(r, pw)
-		} else if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
-			st.transformResponsesAPIToAnthropic(r, pw)
 		}
 	}()
 

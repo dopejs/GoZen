@@ -151,9 +151,6 @@ data: {"type":"message_stop"}
 
 	outputStr := string(output)
 
-	// Debug output
-	t.Logf("Output:\n%s", outputStr)
-
 	// Verify OpenAI Responses API events are present
 	if !strings.Contains(outputStr, "event: response.created") {
 		t.Error("missing response.created event")
@@ -254,9 +251,6 @@ func TestTransformResponsesAPIToAnthropic_Text(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	result := string(output)
-
-	// Debug output
-	t.Logf("Result:\n%s", result)
 
 	// Verify Anthropic SSE events
 	if !strings.Contains(result, "event: message_start") {

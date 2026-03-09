@@ -1,17 +1,17 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.2.0 → 1.3.0 (MINOR — added Principle VII: Automated Testing Priority)
+Version change: 1.3.0 → 1.4.0 (MINOR — added Principle VIII: Daemon Proxy Stability Priority)
 
 Modified principles: none
 
 Modified sections:
-  - Added Principle VII: Automated Testing Priority — mandates automated
-    tests over manual testing, integration tests for daemon stability,
-    and load testing for performance validation.
+  - Added Principle VIII: Daemon Proxy Stability Priority — establishes daemon proxy
+    as P0 (highest priority) component where all issues are blocking and must be
+    resolved. No non-blocking issues exist for daemon proxy work.
 
 Added sections:
-  - Principle VII: Automated Testing Priority
+  - Principle VIII: Daemon Proxy Stability Priority
 
 Removed sections: none
 
@@ -139,6 +139,29 @@ Follow-up TODOs: none
   specifications. For a daemon that runs 24/7, automated stability
   and load tests are essential to ensure reliability.
 
+### VIII. Daemon Proxy Stability Priority (NON-NEGOTIABLE)
+
+- The daemon proxy is the P0 (highest priority) component of the
+  entire system. It is the foundation upon which all other features
+  depend.
+- Any issue related to daemon proxy stability, reliability, or
+  correctness MUST be treated as blocking. There are NO non-blocking
+  issues for daemon proxy work — all issues MUST be resolved before
+  proceeding.
+- Code reviews for daemon proxy changes MUST apply the strictest
+  standards. Issues categorized as "medium", "advisory", or
+  "non-blocking" in other contexts are considered BLOCKING for daemon
+  proxy code.
+- Daemon proxy features MUST include comprehensive test coverage
+  (unit, integration, and load tests) before being considered
+  complete. Test gaps are blocking issues.
+- Rationale: The daemon proxy handles all API requests and manages
+  provider failover. If it crashes, becomes unresponsive, or behaves
+  incorrectly, the entire system fails. Users depend on 24/7 uptime
+  and reliable request routing. Any instability in this component
+  cascades to all downstream features, making it the single most
+  critical piece of infrastructure in GoZen.
+
 ## Technology & Architecture Constraints
 
 - **Language**: Go. All production code MUST be in Go.
@@ -186,4 +209,4 @@ Follow-up TODOs: none
 - Compliance review: at the start of each feature branch, verify the
   plan's Constitution Check section against current principles.
 
-**Version**: 1.3.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-08
+**Version**: 1.4.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-09

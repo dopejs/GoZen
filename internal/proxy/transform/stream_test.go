@@ -1040,6 +1040,113 @@ data: [DONE]
 	}
 }
 
+// Test tool -> text -> late tool delta: late tool deltas should be ignored
+func TestStreamTransformer_OpenAIChatToAnthropic_LateToolDeltaAfterText(t *testing.T) {
+	// Simulate scenario where tool delta arrives after switching to text
+	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"tool_a","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"x\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"content":"Here is text"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"content":" content"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Parse events
+	events := parseSSEEvents(outputStr)
+
+	// Track deltas by index
+	deltasByIndex := make(map[int][]string)
+	for _, event := range events {
+		if event.Type == "content_block_delta" {
+			index := int(event.Data["index"].(float64))
+			if delta, ok := event.Data["delta"].(map[string]interface{}); ok {
+				if deltaType, ok := delta["type"].(string); ok {
+					if deltaType == "input_json_delta" {
+						if partialJSON, ok := delta["partial_json"].(string); ok {
+							deltasByIndex[index] = append(deltasByIndex[index], "tool:"+partialJSON)
+						}
+					} else if deltaType == "text_delta" {
+						if text, ok := delta["text"].(string); ok {
+							deltasByIndex[index] = append(deltasByIndex[index], "text:"+text)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Find block indices
+	var toolIndex, textIndex int = -1, -1
+	for _, event := range events {
+		if event.Type == "content_block_start" {
+			index := int(event.Data["index"].(float64))
+			if blockType, ok := event.Data["content_block"].(map[string]interface{})["type"].(string); ok {
+				if blockType == "tool_use" && toolIndex == -1 {
+					toolIndex = index
+				} else if blockType == "text" && textIndex == -1 {
+					textIndex = index
+				}
+			}
+		}
+	}
+
+	// Verify tool block only received deltas before text started
+	toolDeltas := deltasByIndex[toolIndex]
+	if len(toolDeltas) != 1 {
+		t.Errorf("expected tool block to receive 1 delta (before text), got %d: %v", len(toolDeltas), toolDeltas)
+	}
+	if len(toolDeltas) > 0 && toolDeltas[0] != "tool:{\"x\":" {
+		t.Errorf("expected tool delta to be 'tool:{\"x\":', got %s", toolDeltas[0])
+	}
+
+	// Verify text block received all text deltas
+	textDeltas := deltasByIndex[textIndex]
+	if len(textDeltas) != 2 {
+		t.Errorf("expected text block to receive 2 deltas, got %d: %v", len(textDeltas), textDeltas)
+	}
+	if len(textDeltas) >= 2 {
+		if textDeltas[0] != "text:Here is text" {
+			t.Errorf("expected first text delta to be 'text:Here is text', got %s", textDeltas[0])
+		}
+		if textDeltas[1] != "text: content" {
+			t.Errorf("expected second text delta to be 'text: content', got %s", textDeltas[1])
+		}
+	}
+
+	// Verify the late tool delta (1}) was NOT sent to the closed tool block
+	// It should not appear in any deltas
+	for idx, deltas := range deltasByIndex {
+		for _, delta := range deltas {
+			if strings.Contains(delta, "1}") {
+				t.Errorf("late tool delta '1}' was incorrectly sent to index %d", idx)
+			}
+		}
+	}
+}
+
 // Helper to parse SSE events for testing
 type sseEvent struct {
 	Type string

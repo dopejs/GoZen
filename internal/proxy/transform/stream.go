@@ -728,8 +728,9 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 				if function, ok := toolCall["function"].(map[string]interface{}); ok {
 					if args, ok := function["arguments"].(string); ok && args != "" {
 						// Get the block for this OpenAI tool index
-						if block, exists := toolBlocksByOpenAIIndex[openaiToolIndex]; exists {
-							// Send input_json_delta
+						if block, exists := toolBlocksByOpenAIIndex[openaiToolIndex]; exists && block.started {
+							// Only send delta if block is still open
+							// Skip if block was closed (e.g., by switching to text)
 							fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
 								"type":  "content_block_delta",
 								"index": block.anthropicIndex,

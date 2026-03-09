@@ -681,12 +681,16 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 						textBlock.started = false
 					}
 
-					// Close previous tool block at this OpenAI tool index if open
-					if existingBlock, exists := toolBlocksByOpenAIIndex[openaiToolIndex]; exists && existingBlock.started {
-						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
-							"type":  "content_block_stop",
-							"index": existingBlock.anthropicIndex,
-						}))
+					// Close ALL open tool blocks (strict sequential lifecycle)
+					// This ensures only one block is open at a time, even for parallel tool calls
+					for _, block := range toolBlocksByOpenAIIndex {
+						if block.started {
+							fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+								"type":  "content_block_stop",
+								"index": block.anthropicIndex,
+							}))
+							block.started = false
+						}
 					}
 
 					// Get function name

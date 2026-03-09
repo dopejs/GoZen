@@ -842,6 +842,99 @@ data: [DONE]
 	}
 }
 
+// Test parallel tool calls lifecycle: each tool block must be closed before the next starts
+func TestStreamTransformer_OpenAIChatToAnthropic_ParallelToolCallsLifecycle(t *testing.T) {
+	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"tool_a","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"x\":1}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_def","type":"function","function":{"name":"tool_b","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"y\":2}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Parse events to verify strict lifecycle
+	events := parseSSEEvents(outputStr)
+
+	// Find tool block start/stop positions
+	var tool0StartPos, tool0StopPos, tool1StartPos, tool1StopPos int = -1, -1, -1, -1
+	var tool0Index, tool1Index int = -1, -1
+
+	for i, event := range events {
+		if event.Type == "content_block_start" {
+			if blockType, ok := event.Data["content_block"].(map[string]interface{})["type"].(string); ok {
+				if blockType == "tool_use" {
+					index := int(event.Data["index"].(float64))
+					if tool0Index == -1 {
+						tool0Index = index
+						tool0StartPos = i
+					} else if tool1Index == -1 {
+						tool1Index = index
+						tool1StartPos = i
+					}
+				}
+			}
+		} else if event.Type == "content_block_stop" {
+			index := int(event.Data["index"].(float64))
+			if tool0Index != -1 && index == tool0Index && tool0StopPos == -1 {
+				tool0StopPos = i
+			} else if tool1Index != -1 && index == tool1Index && tool1StopPos == -1 {
+				tool1StopPos = i
+			}
+		}
+	}
+
+	// Verify both tools were found
+	if tool0StartPos == -1 {
+		t.Error("tool 0 start not found")
+	}
+	if tool0StopPos == -1 {
+		t.Error("tool 0 stop not found")
+	}
+	if tool1StartPos == -1 {
+		t.Error("tool 1 start not found")
+	}
+	if tool1StopPos == -1 {
+		t.Error("tool 1 stop not found")
+	}
+
+	// Verify strict lifecycle: start(tool0) < stop(tool0) < start(tool1) < stop(tool1)
+	if tool0StopPos <= tool0StartPos {
+		t.Errorf("tool 0 stop (%d) should come after start (%d)", tool0StopPos, tool0StartPos)
+	}
+	if tool1StartPos <= tool0StopPos {
+		t.Errorf("tool 1 start (%d) should come after tool 0 stop (%d)", tool1StartPos, tool0StopPos)
+	}
+	if tool1StopPos <= tool1StartPos {
+		t.Errorf("tool 1 stop (%d) should come after start (%d)", tool1StopPos, tool1StartPos)
+	}
+
+	// Verify indices are sequential
+	if tool1Index != tool0Index+1 {
+		t.Errorf("expected tool 1 index (%d) to be tool 0 index (%d) + 1", tool1Index, tool0Index)
+	}
+}
+
 // Helper to parse SSE events for testing
 type sseEvent struct {
 	Type string

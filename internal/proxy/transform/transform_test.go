@@ -215,3 +215,38 @@ func TestTransformPackage_NoDebugLogger(t *testing.T) {
 		t.Errorf("transform should work without debugLogger: %v", err)
 	}
 }
+
+// Test TransformPath with new fine-grained formats
+func TestTransformPath_FineGrainedFormats(t *testing.T) {
+	tests := []struct {
+		name           string
+		clientFormat   string
+		providerFormat string
+		inputPath      string
+		expectedPath   string
+	}{
+		// anthropic-messages -> openai
+		{"anthropic-messages to openai", "anthropic-messages", "openai", "/v1/messages", "/v1/chat/completions"},
+		
+		// openai-chat -> anthropic
+		{"openai-chat to anthropic", "openai-chat", "anthropic", "/v1/chat/completions", "/v1/messages"},
+		
+		// openai-responses -> anthropic
+		{"openai-responses to anthropic", "openai-responses", "anthropic", "/v1/responses", "/v1/messages"},
+		
+		// Same format (no transform)
+		{"anthropic-messages to anthropic", "anthropic-messages", "anthropic", "/v1/messages", "/v1/messages"},
+		{"openai-chat to openai", "openai-chat", "openai", "/v1/chat/completions", "/v1/chat/completions"},
+		{"openai-responses to openai", "openai-responses", "openai", "/v1/responses", "/v1/responses"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TransformPath(tt.clientFormat, tt.providerFormat, tt.inputPath)
+			if result != tt.expectedPath {
+				t.Errorf("TransformPath(%q, %q, %q) = %q, want %q",
+					tt.clientFormat, tt.providerFormat, tt.inputPath, result, tt.expectedPath)
+			}
+		})
+	}
+}

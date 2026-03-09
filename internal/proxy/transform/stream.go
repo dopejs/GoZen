@@ -20,7 +20,7 @@ type StreamTransformer struct {
 
 // writeStreamError emits a protocol-native error event based on client format
 func (st *StreamTransformer) writeStreamError(w io.Writer, err error) {
-	normalizedClient := normalizeFormat(st.ClientFormat)
+	normalizedClient := NormalizeFormat(st.ClientFormat)
 
 	if normalizedClient == "openai" {
 		// OpenAI formats use error event
@@ -41,8 +41,8 @@ func (st *StreamTransformer) writeStreamError(w io.Writer, err error) {
 // Returns a reader that produces the appropriate SSE events.
 func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 	// Normalize formats for comparison
-	normalizedClient := normalizeFormat(st.ClientFormat)
-	normalizedProvider := normalizeFormat(st.ProviderFormat)
+	normalizedClient := NormalizeFormat(st.ClientFormat)
+	normalizedProvider := NormalizeFormat(st.ProviderFormat)
 
 	if normalizedClient == normalizedProvider {
 		return r

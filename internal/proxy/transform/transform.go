@@ -50,17 +50,23 @@ func NeedsTransform(clientFormat, providerFormat string) bool {
 	}
 
 	// Normalize new format constants to legacy provider types for comparison
-	normalizedClient := normalizeFormat(clientFormat)
-	normalizedProvider := normalizeFormat(providerFormat)
+	normalizedClient := NormalizeFormat(clientFormat)
+	normalizedProvider := NormalizeFormat(providerFormat)
 
 	return normalizedClient != normalizedProvider
 }
 
-// normalizeFormat converts fine-grained format identifiers to provider types.
+// NormalizeFormat converts fine-grained format identifiers to provider types.
 // anthropic-messages → anthropic
 // openai-chat → openai
 // openai-responses → openai
-func normalizeFormat(format string) string {
+// empty string → anthropic (default)
+func NormalizeFormat(format string) string {
+	// Empty defaults to anthropic
+	if format == "" {
+		return "anthropic"
+	}
+
 	switch format {
 	case FormatAnthropicMessages:
 		return "anthropic"
@@ -72,26 +78,22 @@ func normalizeFormat(format string) string {
 }
 
 // TransformPath converts API endpoint paths between OpenAI and Anthropic formats.
-// clientFormat: the format the client is using ("openai" or "anthropic")
+// clientFormat: the format the client is using ("openai-chat", "openai-responses", "anthropic-messages", or legacy "openai"/"anthropic")
 // providerFormat: the format the provider expects ("openai" or "anthropic")
 // path: the original request path
 // Returns the transformed path.
 func TransformPath(clientFormat, providerFormat, path string) string {
-	// Normalize empty to anthropic (default)
-	if clientFormat == "" {
-		clientFormat = "anthropic"
-	}
-	if providerFormat == "" {
-		providerFormat = "anthropic"
-	}
+	// Normalize formats to base types for path transformation
+	normalizedClient := NormalizeFormat(clientFormat)
+	normalizedProvider := NormalizeFormat(providerFormat)
 
 	// No transformation needed if formats match
-	if clientFormat == providerFormat {
+	if normalizedClient == normalizedProvider {
 		return path
 	}
 
 	// OpenAI client → Anthropic provider
-	if clientFormat == "openai" && providerFormat == "anthropic" {
+	if normalizedClient == "openai" && normalizedProvider == "anthropic" {
 		// OpenAI Responses API: /v1/responses or /responses
 		if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
 			return "/v1/messages"
@@ -103,7 +105,7 @@ func TransformPath(clientFormat, providerFormat, path string) string {
 	}
 
 	// Anthropic client → OpenAI provider
-	if clientFormat == "anthropic" && providerFormat == "openai" {
+	if normalizedClient == "anthropic" && normalizedProvider == "openai" {
 		// Anthropic Messages API: /v1/messages
 		if strings.HasSuffix(path, "/messages") {
 			return "/v1/chat/completions"

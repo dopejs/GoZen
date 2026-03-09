@@ -892,7 +892,8 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 		}
 
 		// Transform Responses API → Anthropic
-		if requestFormat == config.ProviderTypeAnthropic {
+		// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
+		if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
 			transformed, err := transform.ResponsesAPIToAnthropic(body)
 			if err != nil {
 				s.Logger.Printf("[%s] Responses API response transform error: %v", p.Name, err)
@@ -927,7 +928,8 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 	flusher, ok := w.(http.Flusher)
 
 	var reader io.Reader = resp.Body
-	if requestFormat == config.ProviderTypeAnthropic {
+	// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
+	if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
 		st := &transform.StreamTransformer{
 			ClientFormat:   "anthropic",
 			ProviderFormat: "openai-responses",

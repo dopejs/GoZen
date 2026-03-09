@@ -365,3 +365,71 @@ func TestOpenAITransformer_EmptyMessages(t *testing.T) {
 		t.Errorf("messages length = %d, want 1", len(messages))
 	}
 }
+
+func TestOpenAITransformer_ToolsTransformation(t *testing.T) {
+	tr := &OpenAITransformer{}
+
+	// OpenAI Chat tools format
+	input := map[string]interface{}{
+		"model": "gpt-4",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role":    "user",
+				"content": "What's the weather?",
+			},
+		},
+		"tools": []interface{}{
+			map[string]interface{}{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        "get_weather",
+					"description": "Get weather info",
+					"parameters": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"location": map[string]interface{}{
+								"type":        "string",
+								"description": "City name",
+							},
+						},
+						"required": []interface{}{"location"},
+					},
+				},
+			},
+		},
+	}
+	inputBytes, _ := json.Marshal(input)
+
+	result, err := tr.TransformRequest(inputBytes, "anthropic")
+	if err != nil {
+		t.Fatalf("TransformRequest() error = %v", err)
+	}
+
+	var output map[string]interface{}
+	if err := json.Unmarshal(result, &output); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// Verify tools transformed to Anthropic format
+	tools, ok := output["tools"].([]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools not transformed correctly")
+	}
+
+	tool := tools[0].(map[string]interface{})
+	if tool["name"] != "get_weather" {
+		t.Errorf("tool name = %v, want get_weather", tool["name"])
+	}
+	if tool["description"] != "Get weather info" {
+		t.Errorf("tool description = %v, want Get weather info", tool["description"])
+	}
+
+	// Verify input_schema exists (Anthropic format)
+	inputSchema, ok := tool["input_schema"].(map[string]interface{})
+	if !ok {
+		t.Fatal("input_schema not found in Anthropic tool format")
+	}
+	if inputSchema["type"] != "object" {
+		t.Errorf("input_schema type = %v, want object", inputSchema["type"])
+	}
+}

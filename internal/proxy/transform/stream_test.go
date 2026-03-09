@@ -403,3 +403,99 @@ func TestStreamTransformerRouting(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamTransformer_AnthropicToolUseToOpenAIChat(t *testing.T) {
+	// Anthropic streaming tool_use events
+	input := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_abc","name":"get_weather"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"location\":"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"SF\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":50}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   FormatOpenAIChat,
+		ProviderFormat: "anthropic",
+		MessageID:      "chatcmpl_123",
+		Model:          "claude-sonnet-4-5",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	// Verify tool_calls delta events
+	if !strings.Contains(result, `"tool_calls"`) {
+		t.Error("should emit tool_calls in delta")
+	}
+	if !strings.Contains(result, `"get_weather"`) {
+		t.Error("should include tool name in delta")
+	}
+	if !strings.Contains(result, `"arguments"`) {
+		t.Error("should emit function arguments delta")
+	}
+	if !strings.Contains(result, `"finish_reason":"tool_calls"`) {
+		t.Error("should set finish_reason to tool_calls")
+	}
+}
+
+func TestStreamTransformer_AnthropicToolUseToOpenAIResponses(t *testing.T) {
+	// Anthropic streaming tool_use events
+	input := `event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_abc","name":"get_weather"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"location\":\"SF\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   FormatOpenAIResponses,
+		ProviderFormat: "anthropic",
+		MessageID:      "resp_123",
+		Model:          "claude-sonnet-4-5",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	// Verify Responses API function_call_arguments.delta events
+	if !strings.Contains(result, `"function_call_arguments"`) {
+		t.Error("should emit function_call_arguments in Responses API format")
+	}
+	if !strings.Contains(result, `"delta"`) {
+		t.Error("should emit delta field")
+	}
+}

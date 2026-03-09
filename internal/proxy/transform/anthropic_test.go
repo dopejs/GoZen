@@ -606,3 +606,76 @@ func TestAnthropicTransformer_TransformRequest_InputWithSystemMessages(t *testin
 		t.Errorf("system = %v, want 'Be concise.'", output["system"])
 	}
 }
+
+func TestAnthropicTransformer_ToolUseToToolCalls(t *testing.T) {
+	tr := &AnthropicTransformer{}
+
+	// Anthropic response with tool_use
+	input := map[string]interface{}{
+		"id":    "msg_123",
+		"type":  "message",
+		"role":  "assistant",
+		"model": "claude-sonnet-4-5",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "tool_use",
+				"id":   "toolu_abc",
+				"name": "get_weather",
+				"input": map[string]interface{}{
+					"location": "San Francisco",
+				},
+			},
+		},
+		"stop_reason": "tool_use",
+		"usage": map[string]interface{}{
+			"input_tokens":  100,
+			"output_tokens": 50,
+		},
+	}
+	inputBytes, _ := json.Marshal(input)
+
+	result, err := tr.TransformResponse(inputBytes, FormatOpenAIChat)
+	if err != nil {
+		t.Fatalf("TransformResponse() error = %v", err)
+	}
+
+	var output map[string]interface{}
+	if err := json.Unmarshal(result, &output); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// Verify tool_calls array exists
+	choices := output["choices"].([]interface{})
+	if len(choices) != 1 {
+		t.Fatalf("choices length = %d, want 1", len(choices))
+	}
+
+	choice := choices[0].(map[string]interface{})
+	message := choice["message"].(map[string]interface{})
+
+	toolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		t.Fatal("tool_calls not found in message")
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls length = %d, want 1", len(toolCalls))
+	}
+
+	toolCall := toolCalls[0].(map[string]interface{})
+	if toolCall["id"] != "toolu_abc" {
+		t.Errorf("tool_call id = %v, want toolu_abc", toolCall["id"])
+	}
+	if toolCall["type"] != "function" {
+		t.Errorf("tool_call type = %v, want function", toolCall["type"])
+	}
+
+	function := toolCall["function"].(map[string]interface{})
+	if function["name"] != "get_weather" {
+		t.Errorf("function name = %v, want get_weather", function["name"])
+	}
+
+	// Verify finish_reason is tool_calls
+	if choice["finish_reason"] != "tool_calls" {
+		t.Errorf("finish_reason = %v, want tool_calls", choice["finish_reason"])
+	}
+}

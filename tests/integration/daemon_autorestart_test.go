@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -131,12 +132,10 @@ func TestDaemonAutoRestart(t *testing.T) {
 		cmd := exec.CommandContext(ctx, binaryPath, "daemon", "start", "--foreground")
 		cmd.Env = append(os.Environ(), "GOZEN_CONFIG_DIR="+configDir, "GOZEN_DAEMON=1")
 
-		// Capture output
-		outputCh := make(chan string, 1)
-		go func() {
-			output, _ := cmd.CombinedOutput()
-			outputCh <- string(output)
-		}()
+		// Capture output using pipes
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
 
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("failed to start daemon: %v", err)
@@ -151,8 +150,15 @@ func TestDaemonAutoRestart(t *testing.T) {
 		}
 
 		// Wait for process to exit
+		waitDone := make(chan error, 1)
+		go func() {
+			waitDone <- cmd.Wait()
+		}()
+
 		select {
-		case output := <-outputCh:
+		case <-waitDone:
+			// Process exited, check output
+			output := stdout.String() + stderr.String()
 			// Verify no restart attempts after signal
 			if strings.Contains(output, "restarting") {
 				t.Errorf("daemon should not restart after signal, but found restart attempts: %s", output)

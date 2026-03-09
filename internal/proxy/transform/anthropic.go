@@ -19,8 +19,8 @@ func (t *AnthropicTransformer) Name() string {
 func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string) ([]byte, error) {
 	// Normalize format
 	normalized := normalizeFormat(clientFormat)
-	if normalized == "anthropic" {
-		// No transformation needed
+	if normalized == "anthropic" || normalized == "" {
+		// No transformation needed (empty defaults to anthropic)
 		return body, nil
 	}
 
@@ -138,8 +138,8 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat string) ([]byte, error) {
 	// Normalize format
 	normalized := normalizeFormat(clientFormat)
-	if normalized == "anthropic" {
-		// No transformation needed
+	if normalized == "anthropic" || normalized == "" {
+		// No transformation needed (empty defaults to anthropic)
 		return body, nil
 	}
 

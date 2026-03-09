@@ -36,13 +36,17 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 		// Provider is Anthropic, client expects OpenAI
 		if normalizedProvider == "anthropic" && normalizedClient == "openai" {
 			// Distinguish between openai-chat and openai-responses
-			if st.ClientFormat == FormatOpenAIChat || st.ClientFormat == "openai" {
+			// Default to Responses API for backward compatibility with legacy "openai"
+			if st.ClientFormat == FormatOpenAIChat {
 				st.transformAnthropicToOpenAIChat(r, pw)
-			} else if st.ClientFormat == FormatOpenAIResponses {
+			} else {
+				// FormatOpenAIResponses or legacy "openai" → Responses API
 				st.transformAnthropicToOpenAIResponses(r, pw)
 			}
 		} else if normalizedProvider == "openai" && normalizedClient == "anthropic" {
 			st.transformOpenAIToAnthropic(r, pw)
+		} else if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
+			st.transformResponsesAPIToAnthropic(r, pw)
 		}
 	}()
 
@@ -260,26 +264,7 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 			}
 		}
 
-	case "content_block_start":
-		// Handle content block start (text or tool_use)
-		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
-			if contentBlock["type"] == "tool_use" {
-				// Tool use block - emit function_call_output.added
-				toolID := contentBlock["id"].(string)
-				toolName := contentBlock["name"].(string)
-				event := map[string]interface{}{
-					"type":       "response.function_call_arguments.added",
-					"item_id":    toolID,
-					"output_index": *outputIndex,
-					"call_id":    toolID,
-					"name":       toolName,
-					"arguments":  "",
-				}
-				events = append(events, formatSSEEvent("response.function_call_arguments.added", event))
-			}
-		}
-
-		// Send response.created
+		// Send response.created on message_start
 		if !*responseCreated {
 			events = append(events, st.createResponseCreated(created))
 			// Send response.in_progress
@@ -289,6 +274,25 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 			// Send response.content_part.added
 			events = append(events, st.createContentPartAdded(created, *outputIndex, itemID, *contentIndex))
 			*responseCreated = true
+		}
+
+	case "content_block_start":
+		// Handle content block start (text or tool_use)
+		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
+			if contentBlock["type"] == "tool_use" {
+				// Tool use block - emit function_call_output.added
+				toolID := contentBlock["id"].(string)
+				toolName := contentBlock["name"].(string)
+				event := map[string]interface{}{
+					"type":         "response.function_call_arguments.added",
+					"item_id":      toolID,
+					"output_index": *outputIndex,
+					"call_id":      toolID,
+					"name":         toolName,
+					"arguments":    "",
+				}
+				events = append(events, formatSSEEvent("response.function_call_arguments.added", event))
+			}
 		}
 
 	case "content_block_delta":

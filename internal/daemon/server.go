@@ -244,20 +244,25 @@ func (d *Daemon) Start() error {
 
 	d.logger.Printf("zend started: proxy=:%d web=:%d", d.proxyPort, d.webPort)
 
-	// Start web server (blocks)
-	err := d.webServer.Start()
+	// Start web server in a goroutine
+	webErrCh := make(chan error, 1)
+	go func() {
+		webErrCh <- d.webServer.Start()
+	}()
 
-	// If web server fails to start, clean up resources
-	if err != nil {
-		d.logger.Printf("web server failed to start, cleaning up: %v", err)
+	// Block until either proxy or web server exits
+	select {
+	case err := <-d.proxyErrCh:
+		// Proxy crashed, clean up and return error to trigger restart
+		d.logger.Printf("proxy server crashed, cleaning up: %v", err)
 
 		// Cancel background goroutines
 		d.runCancel()
 
-		// Stop proxy server
-		if d.proxyServer != nil {
+		// Stop web server
+		if d.webServer != nil {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			d.proxyServer.Shutdown(shutdownCtx)
+			d.webServer.Shutdown(shutdownCtx)
 			cancel()
 		}
 
@@ -274,11 +279,43 @@ func (d *Daemon) Start() error {
 		// Wait for background goroutines to finish
 		d.bgWG.Wait()
 
-		// Wrap as FatalError since web port conflict is unrecoverable
-		return &FatalError{Err: fmt.Errorf("web server: %w", err)}
-	}
+		return fmt.Errorf("proxy server crashed: %w", err)
 
-	return nil
+	case err := <-webErrCh:
+		// Web server exited (either error or shutdown)
+		if err != nil {
+			d.logger.Printf("web server failed, cleaning up: %v", err)
+
+			// Cancel background goroutines
+			d.runCancel()
+
+			// Stop proxy server
+			if d.proxyServer != nil {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				d.proxyServer.Shutdown(shutdownCtx)
+				cancel()
+			}
+
+			// Stop watcher
+			if d.watcher != nil {
+				d.watcher.Stop()
+			}
+
+			// Stop leak check ticker
+			if d.leakCheckTicker != nil {
+				d.leakCheckTicker.Stop()
+			}
+
+			// Wait for background goroutines to finish
+			d.bgWG.Wait()
+
+			// Wrap as FatalError since web port conflict is unrecoverable
+			return &FatalError{Err: fmt.Errorf("web server: %w", err)}
+		}
+
+		// Normal shutdown (web server stopped gracefully)
+		return nil
+	}
 }
 
 // startProxy creates and starts the proxy HTTP server on the configured port.

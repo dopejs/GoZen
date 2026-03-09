@@ -1,6 +1,9 @@
 package proxy
 
 import (
+	"fmt"
+	"log"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,17 +46,95 @@ func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanc
 		return providers
 	}
 
+	var result []*Provider
+	var strategyName string
+	var reason string
+
 	switch strategy {
 	case config.LoadBalanceRoundRobin:
-		return lb.selectRoundRobin(providers)
+		strategyName = "round-robin"
+		result = lb.selectRoundRobin(providers)
+		if len(result) > 0 {
+			reason = "round-robin rotation"
+		}
 	case config.LoadBalanceLeastLatency:
-		return lb.selectLeastLatency(providers)
+		strategyName = "least-latency"
+		result = lb.selectLeastLatency(providers)
+		if len(result) > 0 {
+			metrics := lb.getMetricsCache()
+			if m, ok := metrics[result[0].Name]; ok {
+				reason = fmt.Sprintf("lowest latency: %.2fms", m.AvgLatencyMs)
+			} else {
+				reason = "insufficient samples, using configured order"
+			}
+		}
 	case config.LoadBalanceLeastCost:
-		return lb.selectLeastCost(providers, model)
+		strategyName = "least-cost"
+		result = lb.selectLeastCost(providers, model)
+		if len(result) > 0 {
+			// Get pricing info for the selected provider
+			lb.mu.RLock()
+			pricing := lb.pricing
+			lb.mu.RUnlock()
+
+			providerModel := model
+			if result[0].Model != "" {
+				providerModel = result[0].Model
+			}
+
+			if price := findModelPricing(providerModel, pricing); price != nil {
+				totalCost := price.InputPerMillion + price.OutputPerMillion
+				reason = fmt.Sprintf("lowest cost: $%.3f/1M tokens", totalCost)
+			} else {
+				reason = "lowest cost"
+			}
+		}
+	case config.LoadBalanceWeighted:
+		strategyName = "weighted"
+		result = lb.selectWeighted(providers)
+		if len(result) > 0 {
+			// Calculate percentage for selected provider
+			totalWeight := 0
+			selectedWeight := result[0].Weight
+			for _, p := range providers {
+				if p.IsHealthy() {
+					totalWeight += p.Weight
+				}
+			}
+			// If no weights configured, use equal weights for percentage calculation
+			if totalWeight == 0 {
+				healthyCount := 0
+				for _, p := range providers {
+					if p.IsHealthy() {
+						healthyCount++
+					}
+				}
+				if healthyCount > 0 {
+					percentage := 100.0 / float64(healthyCount)
+					reason = fmt.Sprintf("weighted: %.1f%%", percentage)
+				} else {
+					reason = "weighted: equal distribution"
+				}
+			} else {
+				percentage := float64(selectedWeight) / float64(totalWeight) * 100
+				reason = fmt.Sprintf("weighted: %.1f%%", percentage)
+			}
+		}
 	default:
-		// Failover: return as-is (first healthy provider wins)
-		return lb.selectFailover(providers)
+		strategyName = "failover"
+		result = lb.selectFailover(providers)
+		if len(result) > 0 {
+			reason = "first healthy provider"
+		}
 	}
+
+	// Log strategy decision
+	if len(result) > 0 {
+		log.Printf("[strategy] strategy=%s selected=%s reason=%q candidates=%d",
+			strategyName, result[0].Name, reason, len(providers))
+	}
+
+	return result
 }
 
 // selectFailover returns providers in original order, with unhealthy ones moved to the end.
@@ -123,9 +204,15 @@ func (lb *LoadBalancer) selectLeastLatency(providers []*Provider) []*Provider {
 			if items[i].healthy && items[j].healthy {
 				// Both healthy: sort by latency
 				swap = items[i].latency > items[j].latency
+			} else if items[i].healthy && !items[j].healthy {
+				// i healthy, j unhealthy: keep order (don't swap)
+				swap = false
 			} else if !items[i].healthy && items[j].healthy {
-				// Unhealthy before healthy: swap
+				// i unhealthy, j healthy: swap to put healthy first
 				swap = true
+			} else {
+				// Both unhealthy: sort by latency
+				swap = items[i].latency > items[j].latency
 			}
 			if swap {
 				items[i], items[j] = items[j], items[i]
@@ -236,8 +323,8 @@ func (lb *LoadBalancer) getMetricsCache() map[string]*ProviderMetrics {
 	}
 
 	if lb.db != nil {
-		since := time.Now().Add(-1 * time.Hour)
-		if metrics, err := lb.db.GetAllProviderMetrics(since); err == nil {
+		since := time.Now().UTC().Add(-1 * time.Hour)
+		if metrics, err := lb.db.GetProviderLatencyMetrics(since, 100); err == nil {
 			lb.metricsCache = metrics
 			lb.cacheTime = time.Now()
 			return metrics
@@ -269,6 +356,86 @@ func findModelPricing(model string, pricing map[string]*config.ModelPricing) *co
 	}
 
 	return nil
+}
+
+// selectWeighted performs weighted random selection among healthy providers.
+// Weights are recalculated to exclude unhealthy providers.
+// If no weights are configured (all weights are 0), uses equal weights.
+func (lb *LoadBalancer) selectWeighted(providers []*Provider) []*Provider {
+	if len(providers) == 0 {
+		return providers
+	}
+
+	// Separate healthy and unhealthy providers
+	healthy := make([]*Provider, 0, len(providers))
+	unhealthy := make([]*Provider, 0)
+
+	for _, p := range providers {
+		if p.IsHealthy() {
+			healthy = append(healthy, p)
+		} else {
+			unhealthy = append(unhealthy, p)
+		}
+	}
+
+	if len(healthy) == 0 {
+		// No healthy providers, return all in original order
+		return providers
+	}
+
+	// Calculate total weight of healthy providers
+	totalWeight := 0
+	weights := make([]int, len(healthy))
+	for i, p := range healthy {
+		weights[i] = p.Weight
+		totalWeight += p.Weight
+	}
+
+	// If no weights configured (all 0), use equal weights
+	if totalWeight == 0 {
+		totalWeight = len(healthy)
+		for i := range weights {
+			weights[i] = 1
+		}
+	}
+
+	// Weighted random selection
+	randVal := lb.weightedRand(totalWeight)
+	cumulative := 0
+	selectedIdx := 0
+
+	for i := range healthy {
+		cumulative += weights[i]
+		if randVal < cumulative {
+			selectedIdx = i
+			break
+		}
+	}
+
+	// Rotate to put selected provider first
+	result := make([]*Provider, 0, len(providers))
+	result = append(result, healthy[selectedIdx])
+	for i, p := range healthy {
+		if i != selectedIdx {
+			result = append(result, p)
+		}
+	}
+	result = append(result, unhealthy...)
+
+	return result
+}
+
+// weightedRand returns a random number in [0, max)
+func (lb *LoadBalancer) weightedRand(max int) int {
+	if max <= 0 {
+		return 0
+	}
+	// Use atomic counter as seed for better distribution
+	seed := atomic.AddUint64(&lb.rrCounter, 1)
+	// Create a new random source with the seed
+	src := rand.NewSource(int64(seed))
+	r := rand.New(src)
+	return r.Intn(max)
 }
 
 func contains(s, substr string) bool {

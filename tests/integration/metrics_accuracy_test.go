@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/daemon"
 	"github.com/dopejs/gozen/internal/proxy"
 )
@@ -43,7 +44,7 @@ func TestMetricsAccuracyUnderLoad(t *testing.T) {
 
 	// Create proxy with metrics recording
 	provider := createTestProvider(mockProvider.URL)
-	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger())
+	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 	srv.Limiter = proxy.NewLimiter(100)
 
 	const concurrency = 100

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
 )
 
@@ -35,7 +36,7 @@ func TestRequestTimeout(t *testing.T) {
 		Healthy: true,
 	}
 
-	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger())
+	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 
 	// Create request with 1 second timeout
 	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`)
@@ -102,7 +103,7 @@ func TestRequestTimeoutWithFailover(t *testing.T) {
 		},
 	}
 
-	srv := proxy.NewProxyServer(providers, testLogger())
+	srv := proxy.NewProxyServer(providers, testLogger(), config.LoadBalanceFailover, nil)
 
 	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`)
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewReader(body))
@@ -161,7 +162,7 @@ func TestStreamingTimeout(t *testing.T) {
 		Healthy: true,
 	}
 
-	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger())
+	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 
 	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100,"stream":true}`)
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewReader(body))

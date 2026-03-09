@@ -51,18 +51,19 @@ func IsValidClient(name string) bool {
 
 // ProviderConfig holds connection and model settings for a single API provider.
 type ProviderConfig struct {
-	Type           string            `json:"type,omitempty"` // "anthropic" (default) or "openai"
-	BaseURL        string            `json:"base_url"`
-	AuthToken      string            `json:"auth_token"`
-	ProxyURL       string            `json:"proxy_url,omitempty"`
-	Model          string            `json:"model,omitempty"`
-	ReasoningModel string            `json:"reasoning_model,omitempty"`
-	HaikuModel     string            `json:"haiku_model,omitempty"`
-	OpusModel      string            `json:"opus_model,omitempty"`
-	SonnetModel    string            `json:"sonnet_model,omitempty"`
-	EnvVars        map[string]string `json:"env_vars,omitempty"`          // Claude Code env vars (legacy, for backward compat)
-	ClaudeEnvVars  map[string]string `json:"claude_env_vars,omitempty"`   // Claude Code specific env vars
-	CodexEnvVars   map[string]string `json:"codex_env_vars,omitempty"`    // Codex specific env vars
+	Type            string            `json:"type,omitempty"` // "anthropic" (default) or "openai"
+	BaseURL         string            `json:"base_url"`
+	AuthToken       string            `json:"auth_token"`
+	ProxyURL        string            `json:"proxy_url,omitempty"`
+	Model           string            `json:"model,omitempty"`
+	ReasoningModel  string            `json:"reasoning_model,omitempty"`
+	HaikuModel      string            `json:"haiku_model,omitempty"`
+	OpusModel       string            `json:"opus_model,omitempty"`
+	SonnetModel     string            `json:"sonnet_model,omitempty"`
+	Weight          int               `json:"weight,omitempty"`            // Weight for weighted load balancing (0 = equal weight)
+	EnvVars         map[string]string `json:"env_vars,omitempty"`          // Claude Code env vars (legacy, for backward compat)
+	ClaudeEnvVars   map[string]string `json:"claude_env_vars,omitempty"`   // Claude Code specific env vars
+	CodexEnvVars    map[string]string `json:"codex_env_vars,omitempty"`    // Codex specific env vars
 	OpenCodeEnvVars map[string]string `json:"opencode_env_vars,omitempty"` // OpenCode specific env vars
 }
 
@@ -110,6 +111,7 @@ func (p *ProviderConfig) Clone() *ProviderConfig {
 		HaikuModel:     p.HaikuModel,
 		OpusModel:      p.OpusModel,
 		SonnetModel:    p.SonnetModel,
+		Weight:         p.Weight,
 	}
 	if p.EnvVars != nil {
 		clone.EnvVars = make(map[string]string, len(p.EnvVars))
@@ -320,6 +322,7 @@ type ProfileConfig struct {
 	Routing              map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
 	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
 	Strategy             LoadBalanceStrategy         `json:"strategy,omitempty"`               // load balancing strategy
+	ProviderWeights      map[string]int              `json:"provider_weights,omitempty"`       // weights for weighted strategy
 }
 
 // Clone returns a deep copy of the ProfileConfig.
@@ -334,6 +337,12 @@ func (pc *ProfileConfig) Clone() *ProfileConfig {
 	if pc.Providers != nil {
 		clone.Providers = make([]string, len(pc.Providers))
 		copy(clone.Providers, pc.Providers)
+	}
+	if pc.ProviderWeights != nil {
+		clone.ProviderWeights = make(map[string]int, len(pc.ProviderWeights))
+		for k, v := range pc.ProviderWeights {
+			clone.ProviderWeights[k] = v
+		}
 	}
 	if pc.Routing != nil {
 		clone.Routing = make(map[Scenario]*ScenarioRoute, len(pc.Routing))
@@ -775,6 +784,7 @@ const (
 	LoadBalanceRoundRobin   LoadBalanceStrategy = "round-robin"
 	LoadBalanceLeastLatency LoadBalanceStrategy = "least-latency"
 	LoadBalanceLeastCost    LoadBalanceStrategy = "least-cost"
+	LoadBalanceWeighted     LoadBalanceStrategy = "weighted"
 )
 
 // --- Unavailability Marking ---

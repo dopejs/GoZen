@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dopejs/gozen/internal/config"
 	"github.com/dopejs/gozen/internal/proxy"
 )
 
@@ -39,7 +40,7 @@ func TestLoadSustained(t *testing.T) {
 
 	// Create proxy server with 100 concurrent limit
 	provider := createTestProvider(mockProvider.URL)
-	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger())
+	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 	srv.Limiter = proxy.NewLimiter(100)
 
 	// Test parameters
@@ -209,7 +210,7 @@ func TestLoadBurst(t *testing.T) {
 	defer mockProvider.Close()
 
 	provider := createTestProvider(mockProvider.URL)
-	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger())
+	srv := proxy.NewProxyServer([]*proxy.Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 	srv.Limiter = proxy.NewLimiter(100)
 
 	const burstSize = 100

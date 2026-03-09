@@ -533,3 +533,140 @@ func TestTableExists(t *testing.T) {
 		t.Error("mytable should exist after creation")
 	}
 }
+
+// TestGetProviderLatencyMetrics tests the GetProviderLatencyMetrics method
+// with 100-request window and minimum 10 samples requirement.
+func TestGetProviderLatencyMetrics(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	// Insert 15 metrics for provider-a (should be included)
+	for i := 0; i < 15; i++ {
+		err := db.RecordMetric("provider-a", 50+i, 200, false, false)
+		if err != nil {
+			t.Fatalf("RecordMetric provider-a: %v", err)
+		}
+	}
+
+	// Insert 5 metrics for provider-b (should be excluded, < 10 samples)
+	for i := 0; i < 5; i++ {
+		err := db.RecordMetric("provider-b", 100+i, 200, false, false)
+		if err != nil {
+			t.Fatalf("RecordMetric provider-b: %v", err)
+		}
+	}
+
+	// Insert 20 metrics for provider-c (should be included)
+	for i := 0; i < 20; i++ {
+		err := db.RecordMetric("provider-c", 30+i, 200, false, false)
+		if err != nil {
+			t.Fatalf("RecordMetric provider-c: %v", err)
+		}
+	}
+
+	// Small delay to ensure data is written
+	time.Sleep(100 * time.Millisecond)
+
+	// Use UTC time well before the data was inserted
+	since := time.Now().UTC().Add(-2 * time.Hour)
+
+	// Query with 100-request limit
+	metrics, err := db.GetProviderLatencyMetrics(since, 100)
+	if err != nil {
+		t.Fatalf("GetProviderLatencyMetrics: %v", err)
+	}
+
+	// Should only include provider-a and provider-c (>= 10 samples)
+	if len(metrics) != 2 {
+		t.Errorf("got %d providers, want 2 (provider-b excluded)", len(metrics))
+	}
+
+	// Verify provider-a metrics
+	if m, ok := metrics["provider-a"]; ok {
+		if m.TotalRequests != 15 {
+			t.Errorf("provider-a: got %d requests, want 15", m.TotalRequests)
+		}
+		// Average should be around 57 (50 + 14) / 2
+		if m.AvgLatencyMs < 50 || m.AvgLatencyMs > 65 {
+			t.Errorf("provider-a: avg latency %.2f out of expected range [50-65]", m.AvgLatencyMs)
+		}
+	} else {
+		t.Error("provider-a not found in metrics")
+	}
+
+	// Verify provider-c metrics
+	if m, ok := metrics["provider-c"]; ok {
+		if m.TotalRequests != 20 {
+			t.Errorf("provider-c: got %d requests, want 20", m.TotalRequests)
+		}
+		// Average should be around 39.5 (30 + 49) / 2
+		if m.AvgLatencyMs < 35 || m.AvgLatencyMs > 45 {
+			t.Errorf("provider-c: avg latency %.2f out of expected range [35-45]", m.AvgLatencyMs)
+		}
+	} else {
+		t.Error("provider-c not found in metrics")
+	}
+
+	// Verify provider-b is excluded
+	if _, ok := metrics["provider-b"]; ok {
+		t.Error("provider-b should be excluded (< 10 samples)")
+	}
+}
+
+// TestGetProviderLatencyMetricsEmptyResult tests behavior with no data.
+func TestGetProviderLatencyMetricsEmptyResult(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	since := time.Now().Add(-1 * time.Hour)
+	metrics, err := db.GetProviderLatencyMetrics(since, 100)
+	if err != nil {
+		t.Fatalf("GetProviderLatencyMetrics: %v", err)
+	}
+
+	if metrics == nil {
+		t.Error("expected empty map, got nil")
+	}
+	if len(metrics) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(metrics))
+	}
+}
+
+// TestGetProviderLatencyMetricsInvalidLimit tests behavior with invalid limit.
+func TestGetProviderLatencyMetricsInvalidLimit(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenLogDB(dir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	since := time.Now().Add(-1 * time.Hour)
+
+	// Test with zero limit
+	metrics, err := db.GetProviderLatencyMetrics(since, 0)
+	if err != nil {
+		t.Fatalf("GetProviderLatencyMetrics with limit=0: %v", err)
+	}
+	if len(metrics) != 0 {
+		t.Errorf("limit=0 should return empty map, got %d entries", len(metrics))
+	}
+
+	// Test with negative limit
+	metrics, err = db.GetProviderLatencyMetrics(since, -10)
+	if err != nil {
+		t.Fatalf("GetProviderLatencyMetrics with limit=-10: %v", err)
+	}
+	if len(metrics) != 0 {
+		t.Errorf("negative limit should return empty map, got %d entries", len(metrics))
+	}
+}
+

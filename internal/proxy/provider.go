@@ -36,6 +36,7 @@ type Provider struct {
 	OpenCodeEnvVars map[string]string // OpenCode specific
 	ProxyURL        string            // Proxy server URL (http/https/socks5)
 	Client          *http.Client      // Per-provider HTTP client (nil = use shared)
+	Weight          int               // Weight for weighted load balancing (0 = equal weight)
 	Healthy         bool
 	AuthFailed      bool
 	FailedAt        time.Time

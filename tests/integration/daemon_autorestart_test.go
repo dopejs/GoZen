@@ -34,8 +34,8 @@ func TestDaemonAutoRestart(t *testing.T) {
 	}
 
 	// Skip in CI environment - these tests are flaky on GitHub runners
-	if os.Getenv("CI") != "" {
-		t.Skip("skipping daemon auto-restart test in CI environment")
+	if os.Getenv("SKIP_FLAKY_TESTS") == "true" {
+		t.Skip("skipping daemon auto-restart test (SKIP_FLAKY_TESTS=true)")
 	}
 
 	// Create isolated test environment

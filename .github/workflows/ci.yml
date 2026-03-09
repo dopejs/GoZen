@@ -98,7 +98,7 @@ jobs:
       - name: Integration Tests
         run: go test -race -count=1 -timeout 240s ./tests/integration/...
         env:
-          CI: true  # Skip flaky tests in CI
+          SKIP_FLAKY_TESTS: "true"  # Skip flaky E2E tests in main CI
 
   web-tests:
     name: Web UI Tests

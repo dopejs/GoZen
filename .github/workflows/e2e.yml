@@ -61,9 +61,7 @@ jobs:
           else
             go test -v -timeout 600s ./tests/...
           fi
-        env:
-          # Don't skip flaky tests in E2E workflow
-          CI: false
+        # Note: SKIP_FLAKY_TESTS is not set, so E2E tests will run
 
       - name: Upload test results
         if: always()

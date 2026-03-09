@@ -54,7 +54,7 @@ go test -race ./tests/integration/...
 
 **Run in CI mode** (skips flaky tests):
 ```bash
-CI=true go test -race ./tests/integration/...
+SKIP_FLAKY_TESTS=true go test -race ./tests/integration/...
 ```
 
 ### Layer 3: E2E Tests (Non-blocking)
@@ -118,13 +118,13 @@ go test -v -run TestDaemonAutoRestart ./tests/integration/
 
 ## Test Annotations
 
-Tests that are flaky in CI should check the `CI` environment variable:
+Tests that are flaky in CI should check the `SKIP_FLAKY_TESTS` environment variable:
 
 ```go
 func TestDaemonAutoRestart(t *testing.T) {
     // Skip in CI environment - these tests are flaky on GitHub runners
-    if os.Getenv("CI") != "" {
-        t.Skip("skipping daemon auto-restart test in CI environment")
+    if os.Getenv("SKIP_FLAKY_TESTS") == "true" {
+        t.Skip("skipping daemon auto-restart test (SKIP_FLAKY_TESTS=true)")
     }
 
     // Test implementation...
@@ -169,20 +169,20 @@ go test -cover ./internal/proxy/
 ### Integration Test
 - Add to `tests/integration/<feature>_test.go`
 - Should be stable and controlled
-- If potentially flaky, add CI skip:
+- If potentially flaky, add skip check:
   ```go
-  if os.Getenv("CI") != "" {
-      t.Skip("skipping in CI environment")
+  if os.Getenv("SKIP_FLAKY_TESTS") == "true" {
+      t.Skip("skipping in CI environment (SKIP_FLAKY_TESTS=true)")
   }
   ```
 
 ### E2E Test
 - Add to `tests/integration/daemon_*_test.go` or similar
 - Can be slow and timing-dependent
-- Should skip in CI:
+- Should skip in main CI:
   ```go
-  if os.Getenv("CI") != "" {
-      t.Skip("skipping E2E test in CI environment")
+  if os.Getenv("SKIP_FLAKY_TESTS") == "true" {
+      t.Skip("skipping E2E test (SKIP_FLAKY_TESTS=true)")
   }
   ```
 

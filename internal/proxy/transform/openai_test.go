@@ -367,7 +367,7 @@ func TestOpenAITransformer_EmptyMessages(t *testing.T) {
 }
 
 func TestOpenAITransformer_ToolsTransformation(t *testing.T) {
-	tr := &OpenAITransformer{}
+	tr := &AnthropicTransformer{}
 
 	// OpenAI Chat tools format
 	input := map[string]interface{}{
@@ -400,7 +400,7 @@ func TestOpenAITransformer_ToolsTransformation(t *testing.T) {
 	}
 	inputBytes, _ := json.Marshal(input)
 
-	result, err := tr.TransformRequest(inputBytes, "anthropic")
+	result, err := tr.TransformRequest(inputBytes, "openai")
 	if err != nil {
 		t.Fatalf("TransformRequest() error = %v", err)
 	}

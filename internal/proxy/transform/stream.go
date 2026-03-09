@@ -170,10 +170,42 @@ func (st *StreamTransformer) transformAnthropicEventToChat(eventType, data strin
 		delta["role"] = "assistant"
 		delta["content"] = ""
 
+	case "content_block_start":
+		// Handle tool_use block start
+		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
+			if contentBlock["type"] == "tool_use" {
+				toolCall := map[string]interface{}{
+					"index": eventData["index"],
+					"id":    contentBlock["id"],
+					"type":  "function",
+					"function": map[string]interface{}{
+						"name":      contentBlock["name"],
+						"arguments": "",
+					},
+				}
+				delta["tool_calls"] = []interface{}{toolCall}
+			}
+		}
+
 	case "content_block_delta":
 		if deltaData, ok := eventData["delta"].(map[string]interface{}); ok {
 			if text, ok := deltaData["text"].(string); ok {
 				delta["content"] = text
+			} else if deltaData["type"] == "input_json_delta" {
+				// Tool use arguments delta
+				if partialJSON, ok := deltaData["partial_json"].(string); ok {
+					index := 0
+					if idx, ok := eventData["index"].(float64); ok {
+						index = int(idx)
+					}
+					toolCall := map[string]interface{}{
+						"index": index,
+						"function": map[string]interface{}{
+							"arguments": partialJSON,
+						},
+					}
+					delta["tool_calls"] = []interface{}{toolCall}
+				}
 			}
 		}
 
@@ -228,6 +260,25 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 			}
 		}
 
+	case "content_block_start":
+		// Handle content block start (text or tool_use)
+		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
+			if contentBlock["type"] == "tool_use" {
+				// Tool use block - emit function_call_output.added
+				toolID := contentBlock["id"].(string)
+				toolName := contentBlock["name"].(string)
+				event := map[string]interface{}{
+					"type":       "response.function_call_arguments.added",
+					"item_id":    toolID,
+					"output_index": *outputIndex,
+					"call_id":    toolID,
+					"name":       toolName,
+					"arguments":  "",
+				}
+				events = append(events, formatSSEEvent("response.function_call_arguments.added", event))
+			}
+		}
+
 		// Send response.created
 		if !*responseCreated {
 			events = append(events, st.createResponseCreated(created))
@@ -241,12 +292,25 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 		}
 
 	case "content_block_delta":
-		// Extract text delta
+		// Extract text delta or tool input delta
 		if delta, ok := eventData["delta"].(map[string]interface{}); ok {
-			if deltaType, ok := delta["type"].(string); ok && deltaType == "text_delta" {
-				if text, ok := delta["text"].(string); ok {
-					fullText.WriteString(text)
-					events = append(events, st.createOutputTextDelta(created, *outputIndex, itemID, *contentIndex, text))
+			if deltaType, ok := delta["type"].(string); ok {
+				if deltaType == "text_delta" {
+					if text, ok := delta["text"].(string); ok {
+						fullText.WriteString(text)
+						events = append(events, st.createOutputTextDelta(created, *outputIndex, itemID, *contentIndex, text))
+					}
+				} else if deltaType == "input_json_delta" {
+					// Tool arguments delta
+					if partialJSON, ok := delta["partial_json"].(string); ok {
+						event := map[string]interface{}{
+							"type":       "response.function_call_arguments.delta",
+							"item_id":    itemID,
+							"output_index": *outputIndex,
+							"delta":      partialJSON,
+						}
+						events = append(events, formatSSEEvent("response.function_call_arguments.delta", event))
+					}
 				}
 			}
 		}

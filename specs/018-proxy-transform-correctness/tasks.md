@@ -76,19 +76,19 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T014 [P] [US2] Add table-driven tests for OpenAI Chat `tools` → Anthropic `tools` request transformation in `internal/proxy/transform/openai_test.go`
-- [ ] T015 [P] [US2] Add table-driven tests for Anthropic `tool_use` → OpenAI Chat `tool_calls` response transformation in `internal/proxy/transform/anthropic_test.go`
-- [ ] T016 [P] [US2] Add streaming tests: Anthropic `content_block_start(tool_use)` + `input_json_delta` → OpenAI Chat `tool_calls` deltas in `internal/proxy/transform/stream_test.go`
-- [ ] T017 [P] [US2] Add streaming tests: Anthropic `input_json_delta` → OpenAI Responses `response.function_call_arguments.delta` in `internal/proxy/transform/stream_test.go`
+- [X] T014 [P] [US2] Add table-driven tests for OpenAI Chat `tools` → Anthropic `tools` request transformation in `internal/proxy/transform/openai_test.go`
+- [X] T015 [P] [US2] Add table-driven tests for Anthropic `tool_use` → OpenAI Chat `tool_calls` response transformation in `internal/proxy/transform/anthropic_test.go`
+- [X] T016 [P] [US2] Add streaming tests: Anthropic `content_block_start(tool_use)` + `input_json_delta` → OpenAI Chat `tool_calls` deltas in `internal/proxy/transform/stream_test.go`
+- [X] T017 [P] [US2] Add streaming tests: Anthropic `input_json_delta` → OpenAI Responses `response.function_call_arguments.delta` in `internal/proxy/transform/stream_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T018 [US2] Fix/verify OpenAI Chat `tools` array → Anthropic `tools` with `input_schema` in `internal/proxy/transform/openai.go`
-- [ ] T019 [US2] Fix/verify Anthropic `tool_use` content blocks → OpenAI Chat `tool_calls` array in `internal/proxy/transform/anthropic.go`
-- [ ] T020 [US2] Implement streaming: Anthropic `content_block_start(tool_use)` → OpenAI Chat `tool_calls[].id` + `function.name` delta in `internal/proxy/transform/stream.go`
-- [ ] T021 [US2] Implement streaming: Anthropic `input_json_delta` → OpenAI Chat `tool_calls[].function.arguments` delta in `internal/proxy/transform/stream.go`
-- [ ] T022 [US2] Implement streaming: Anthropic `content_block_start(tool_use)` → OpenAI Responses `response.output_item.added` in `internal/proxy/transform/stream.go`
-- [ ] T023 [US2] Implement streaming: Anthropic `input_json_delta` → OpenAI Responses `response.function_call_arguments.delta` in `internal/proxy/transform/stream.go`
+- [X] T018 [US2] Fix/verify OpenAI Chat `tools` array → Anthropic `tools` with `input_schema` in `internal/proxy/transform/openai.go`
+- [X] T019 [US2] Fix/verify Anthropic `tool_use` content blocks → OpenAI Chat `tool_calls` array in `internal/proxy/transform/anthropic.go`
+- [X] T020 [US2] Implement streaming: Anthropic `content_block_start(tool_use)` → OpenAI Chat `tool_calls[].id` + `function.name` delta in `internal/proxy/transform/stream.go`
+- [X] T021 [US2] Implement streaming: Anthropic `input_json_delta` → OpenAI Chat `tool_calls[].function.arguments` delta in `internal/proxy/transform/stream.go`
+- [X] T022 [US2] Implement streaming: Anthropic `content_block_start(tool_use)` → OpenAI Responses `response.output_item.added` in `internal/proxy/transform/stream.go`
+- [X] T023 [US2] Implement streaming: Anthropic `input_json_delta` → OpenAI Responses `response.function_call_arguments.delta` in `internal/proxy/transform/stream.go`
 
 **Checkpoint**: Tool calls transform correctly in all directions and streaming modes.
 

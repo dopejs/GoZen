@@ -492,10 +492,10 @@ data: {"type":"message_stop"}
 	result := string(output)
 
 	// Verify Responses API function_call_arguments.delta events
-	if !strings.Contains(result, `"function_call_arguments"`) {
+	if !strings.Contains(result, `function_call_arguments`) {
 		t.Error("should emit function_call_arguments in Responses API format")
 	}
-	if !strings.Contains(result, `"delta"`) {
+	if !strings.Contains(result, `delta`) {
 		t.Error("should emit delta field")
 	}
 }

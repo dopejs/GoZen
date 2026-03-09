@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"encoding/json"
 	"strings"
 )
 
@@ -172,14 +173,31 @@ func (t *AnthropicTransformer) transformToChatCompletions(data map[string]interf
 
 	// Transform content to choices
 	var messageContent string
+	var toolCalls []interface{}
 	if content, ok := data["content"].([]interface{}); ok {
 		for _, c := range content {
 			if cMap, ok := c.(map[string]interface{}); ok {
 				if cMap["type"] == "text" {
 					if text, ok := cMap["text"].(string); ok {
 						messageContent = text
-						break
 					}
+				} else if cMap["type"] == "tool_use" {
+					// Transform Anthropic tool_use to OpenAI tool_calls
+					toolCall := map[string]interface{}{
+						"id":   cMap["id"],
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      cMap["name"],
+							"arguments": "",
+						},
+					}
+					// Serialize input as JSON string
+					if input, ok := cMap["input"]; ok {
+						if inputJSON, err := json.Marshal(input); err == nil {
+							toolCall["function"].(map[string]interface{})["arguments"] = string(inputJSON)
+						}
+					}
+					toolCalls = append(toolCalls, toolCall)
 				}
 			}
 		}
@@ -209,6 +227,13 @@ func (t *AnthropicTransformer) transformToChatCompletions(data map[string]interf
 			},
 			"finish_reason": finishReason,
 		},
+	}
+
+	// Add tool_calls to message if present
+	if len(toolCalls) > 0 {
+		choice := openAIResponse["choices"].([]interface{})[0].(map[string]interface{})
+		message := choice["message"].(map[string]interface{})
+		message["tool_calls"] = toolCalls
 	}
 
 	// Transform usage

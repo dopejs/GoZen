@@ -129,3 +129,70 @@ func TestTransformPath(t *testing.T) {
 		})
 	}
 }
+
+func TestNeedsTransformWithNewFormats(t *testing.T) {
+	tests := []struct {
+		name           string
+		clientFormat   string
+		providerFormat string
+		want           bool
+	}{
+		{
+			name:           "anthropic-messages to anthropic",
+			clientFormat:   FormatAnthropicMessages,
+			providerFormat: "anthropic",
+			want:           false,
+		},
+		{
+			name:           "openai-chat to openai",
+			clientFormat:   FormatOpenAIChat,
+			providerFormat: "openai",
+			want:           false,
+		},
+		{
+			name:           "openai-responses to openai",
+			clientFormat:   FormatOpenAIResponses,
+			providerFormat: "openai",
+			want:           false,
+		},
+		{
+			name:           "openai-chat to anthropic",
+			clientFormat:   FormatOpenAIChat,
+			providerFormat: "anthropic",
+			want:           true,
+		},
+		{
+			name:           "openai-responses to anthropic",
+			clientFormat:   FormatOpenAIResponses,
+			providerFormat: "anthropic",
+			want:           true,
+		},
+		{
+			name:           "anthropic-messages to openai",
+			clientFormat:   FormatAnthropicMessages,
+			providerFormat: "openai",
+			want:           true,
+		},
+		{
+			name:           "legacy openai to anthropic",
+			clientFormat:   "openai",
+			providerFormat: "anthropic",
+			want:           true,
+		},
+		{
+			name:           "empty defaults to anthropic",
+			clientFormat:   "",
+			providerFormat: "",
+			want:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NeedsTransform(tt.clientFormat, tt.providerFormat)
+			if got != tt.want {
+				t.Errorf("NeedsTransform(%q, %q) = %v, want %v", tt.clientFormat, tt.providerFormat, got, tt.want)
+			}
+		})
+	}
+}

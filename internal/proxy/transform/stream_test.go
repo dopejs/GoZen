@@ -339,3 +339,67 @@ func TestTransformResponsesAPIToAnthropic_ToolCall(t *testing.T) {
 		t.Error("should include stop_reason tool_use in message_delta")
 	}
 }
+
+func TestStreamTransformerRouting(t *testing.T) {
+	tests := []struct {
+		name           string
+		clientFormat   string
+		providerFormat string
+		wantPassthrough bool
+	}{
+		{
+			name:           "openai-chat to anthropic",
+			clientFormat:   FormatOpenAIChat,
+			providerFormat: "anthropic",
+			wantPassthrough: false,
+		},
+		{
+			name:           "openai-responses to anthropic",
+			clientFormat:   FormatOpenAIResponses,
+			providerFormat: "anthropic",
+			wantPassthrough: false,
+		},
+		{
+			name:           "anthropic-messages to openai",
+			clientFormat:   FormatAnthropicMessages,
+			providerFormat: "openai",
+			wantPassthrough: false,
+		},
+		{
+			name:           "same format passthrough",
+			clientFormat:   FormatAnthropicMessages,
+			providerFormat: "anthropic",
+			wantPassthrough: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &StreamTransformer{
+				ClientFormat:   tt.clientFormat,
+				ProviderFormat: tt.providerFormat,
+				MessageID:      "test-id",
+				Model:          "test-model",
+			}
+
+			input := "event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
+			reader := st.TransformSSEStream(strings.NewReader(input))
+			output, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			result := string(output)
+			if tt.wantPassthrough {
+				if result != input {
+					t.Errorf("expected passthrough, got transformation")
+				}
+			} else {
+				// Verify transformation occurred (output differs from input)
+				if result == input {
+					t.Errorf("expected transformation, got passthrough")
+				}
+			}
+		})
+	}
+}

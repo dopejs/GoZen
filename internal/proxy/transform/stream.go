@@ -21,7 +21,11 @@ type StreamTransformer struct {
 // TransformSSEStream transforms SSE streams between API formats.
 // Returns a reader that produces the appropriate SSE events.
 func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
-	if st.ClientFormat == st.ProviderFormat {
+	// Normalize formats for comparison
+	normalizedClient := normalizeFormat(st.ClientFormat)
+	normalizedProvider := normalizeFormat(st.ProviderFormat)
+
+	if normalizedClient == normalizedProvider {
 		return r
 	}
 
@@ -29,12 +33,16 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 
 	go func() {
 		defer pw.Close()
-		if st.ProviderFormat == "anthropic" && st.ClientFormat == "openai" {
-			st.transformAnthropicToOpenAI(r, pw)
-		} else if st.ProviderFormat == "openai" && st.ClientFormat == "anthropic" {
+		// Provider is Anthropic, client expects OpenAI
+		if normalizedProvider == "anthropic" && normalizedClient == "openai" {
+			// Distinguish between openai-chat and openai-responses
+			if st.ClientFormat == FormatOpenAIChat || st.ClientFormat == "openai" {
+				st.transformAnthropicToOpenAIChat(r, pw)
+			} else if st.ClientFormat == FormatOpenAIResponses {
+				st.transformAnthropicToOpenAIResponses(r, pw)
+			}
+		} else if normalizedProvider == "openai" && normalizedClient == "anthropic" {
 			st.transformOpenAIToAnthropic(r, pw)
-		} else if st.ProviderFormat == "openai-responses" && st.ClientFormat == "anthropic" {
-			st.transformResponsesAPIToAnthropic(r, pw)
 		}
 	}()
 

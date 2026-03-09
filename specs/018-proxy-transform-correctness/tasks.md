@@ -50,9 +50,9 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T006 [P] [US1] Add table-driven tests for `detectClientFormat` covering all three format return values in `internal/proxy/profile_proxy_test.go`
-- [ ] T007 [P] [US1] Add table-driven tests for `NeedsTransform` with new format constants in `internal/proxy/transform/transform_test.go`
-- [ ] T008 [P] [US1] Add tests for `StreamTransformer` routing: `openai-chat`→anthropic and `openai-responses`→anthropic paths in `internal/proxy/transform/stream_test.go`
+- [X] T006 [P] [US1] Add table-driven tests for `detectClientFormat` covering all three format return values in `internal/proxy/profile_proxy_test.go`
+- [X] T007 [P] [US1] Add table-driven tests for `NeedsTransform` with new format constants in `internal/proxy/transform/transform_test.go`
+- [X] T008 [P] [US1] Add tests for `StreamTransformer` routing: `openai-chat`→anthropic and `openai-responses`→anthropic paths in `internal/proxy/transform/stream_test.go`
 
 ### Implementation for User Story 1
 

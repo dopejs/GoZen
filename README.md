@@ -578,12 +578,17 @@ GoZen automatically migrates configurations from previous versions:
 ## Development
 
 ```sh
+# Install Git hooks (branch naming validation)
+./scripts/install-hooks.sh
+
 # Build
 go build -o zen .
 
 # Test
 go test ./...
 ```
+
+**Branch Naming Convention**: All feature branches must follow the format `<type>/<description>` where type is one of: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`, `build`, `revert`. Examples: `feat/user-auth`, `fix/payment-bug`.
 
 Release: Push a tag and GitHub Actions will build automatically.
 

@@ -15,16 +15,8 @@ import (
 	"github.com/dopejs/gozen/internal/daemon"
 )
 
-// raceEnabled is true if tests are running with -race flag
+// raceEnabled is set to true by race_on.go when built with -race flag
 var raceEnabled = false
-
-func init() {
-	// Detect if race detector is enabled
-	// This is a simple heuristic - if GORACE env var is set, race detector is likely enabled
-	if os.Getenv("GORACE") != "" {
-		raceEnabled = true
-	}
-}
 
 // TestDaemonAutoRestart tests the real auto-restart behavior in cmd/daemon.go
 // Note: These tests build and run the actual binary, which may be flaky in CI

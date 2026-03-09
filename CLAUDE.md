@@ -178,6 +178,8 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence), structured JSON logs to stderr (017-proxy-stability)
 - New packages: internal/daemon/logger.go (structured JSON logging), internal/proxy/limiter.go (semaphore-based concurrency control), internal/daemon/metrics.go (request metrics with percentiles) (017-proxy-stability)
 - JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence) (017-proxy-stability)
+- Go 1.21+ + `bufio`, `encoding/json`, `io`, `net/http` (stdlib only) (018-proxy-transform-correctness)
+- N/A (no config schema changes) (018-proxy-transform-correctness)
 
 ## Recent Changes
 - 017-proxy-stability: Daemon proxy stability improvements for 24-hour uptime and 100 concurrent request handling

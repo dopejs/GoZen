@@ -256,6 +256,38 @@ func (d *Daemon) Start() error {
 		// Proxy crashed, clean up and return error to trigger restart
 		d.logger.Printf("proxy server crashed, cleaning up: %v", err)
 
+		// Stop all background components (same as Shutdown)
+		// Stop bot gateway
+		if d.botGateway != nil {
+			d.botGateway.Stop()
+		}
+
+		// Stop health checker
+		proxy.StopGlobalHealthChecker()
+
+		// Stop sync auto-pull ticker
+		if d.syncCancel != nil {
+			d.syncCancel()
+		}
+		if d.pushTimer != nil {
+			d.pushTimer.Stop()
+		}
+
+		// Stop config watcher
+		if d.watcher != nil {
+			d.watcher.Stop()
+		}
+
+		// Stop leak check ticker
+		if d.leakCheckTicker != nil {
+			d.leakCheckTicker.Stop()
+		}
+
+		// Close profile proxy and its cached connections
+		if d.profileProxy != nil {
+			d.profileProxy.Close()
+		}
+
 		// Cancel background goroutines
 		d.runCancel()
 
@@ -264,16 +296,6 @@ func (d *Daemon) Start() error {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			d.webServer.Shutdown(shutdownCtx)
 			cancel()
-		}
-
-		// Stop watcher
-		if d.watcher != nil {
-			d.watcher.Stop()
-		}
-
-		// Stop leak check ticker
-		if d.leakCheckTicker != nil {
-			d.leakCheckTicker.Stop()
 		}
 
 		// Wait for background goroutines to finish

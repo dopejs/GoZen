@@ -130,14 +130,14 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T032 [P] [US4] Add test: request transform error → HTTP 500 returned, provider `MarkFailed` NOT called in `internal/proxy/server_test.go`
-- [ ] T033 [P] [US4] Add test: response transform error → HTTP 500 returned, provider health unchanged in `internal/proxy/server_test.go`
+- [X] T032 [P] [US4] Add test: request transform error → HTTP 500 returned, provider `MarkFailed` NOT called in `internal/proxy/server_test.go`
+- [X] T033 [P] [US4] Add test: response transform error → HTTP 500 returned, provider health unchanged in `internal/proxy/server_test.go`
 
 ### Implementation for User Story 4
 
-- [ ] T034 [US4] Define `TransformError` type with `Op string` and `Err error` fields in `internal/proxy/server.go`
-- [ ] T035 [US4] Update `forwardRequest` in `internal/proxy/server.go` to return `&TransformError{Op: "request", Err: err}` when `TransformRequest` fails (instead of silently continuing)
-- [ ] T036 [US4] Update `tryProviders` in `internal/proxy/server.go` to detect `TransformError` via `errors.As`; return HTTP 500 with `{"error":{"type":"transform_error","message":"..."}}` without calling any provider health methods
+- [X] T034 [US4] Define `TransformError` type with `Op string` and `Err error` fields in `internal/proxy/server.go`
+- [X] T035 [US4] Update `forwardRequest` in `internal/proxy/server.go` to return `&TransformError{Op: "request", Err: err}` when `TransformRequest` fails (instead of silently continuing)
+- [X] T036 [US4] Update `tryProviders` in `internal/proxy/server.go` to detect `TransformError` via `errors.As`; return HTTP 500 with `{"error":{"type":"transform_error","message":"..."}}` without calling any provider health methods
 
 **Checkpoint**: Transform errors isolated from provider health; providers not penalized for local bugs.
 

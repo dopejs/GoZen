@@ -802,44 +802,44 @@ func TestOpenAITransformer_TransformRequest_MixedTextAndToolResult(t *testing.T)
 	json.Unmarshal(result, &openaiReq)
 
 	messages := openaiReq["messages"].([]interface{})
-	
-	// Should have: user, assistant, user (text), tool, (potentially another user for trailing text)
-	// At minimum: user, assistant, user (with text), tool
-	if len(messages) < 4 {
-		t.Fatalf("expected at least 4 messages, got %d", len(messages))
+
+	// Should have: user, assistant, user (text1), tool, user (text2)
+	// Total: 5 messages preserving original ordering
+	if len(messages) != 5 {
+		t.Fatalf("expected 5 messages, got %d", len(messages))
 	}
 
-	// Find the user message with text content
-	foundTextMessage := false
-	for _, msg := range messages {
-		msgMap := msg.(map[string]interface{})
-		if msgMap["role"] == "user" {
-			if content, ok := msgMap["content"].(string); ok {
-				if strings.Contains(content, "Here's some context:") && strings.Contains(content, "What do you think?") {
-					foundTextMessage = true
-					break
-				}
-			}
-		}
+	// Verify ordering is preserved: text -> tool_result -> text
+	// Message 0: user("Initial question")
+	// Message 1: assistant(tool_use)
+	// Message 2: user("Here's some context:")
+	// Message 3: tool(result)
+	// Message 4: user("What do you think?")
+
+	// Check message 2: first text block
+	msg2 := messages[2].(map[string]interface{})
+	if msg2["role"] != "user" {
+		t.Errorf("message 2 should be user, got %s", msg2["role"])
+	}
+	if content, ok := msg2["content"].(string); !ok || content != "Here's some context:" {
+		t.Errorf("message 2 should have first text content, got: %v", msg2["content"])
 	}
 
-	if !foundTextMessage {
-		t.Error("expected user message with concatenated text content")
+	// Check message 3: tool result
+	msg3 := messages[3].(map[string]interface{})
+	if msg3["role"] != "tool" {
+		t.Errorf("message 3 should be tool, got %s", msg3["role"])
+	}
+	if msg3["tool_call_id"] != "toolu_123" {
+		t.Errorf("message 3 should have tool_call_id toolu_123, got: %v", msg3["tool_call_id"])
 	}
 
-	// Find the tool message
-	foundToolMessage := false
-	for _, msg := range messages {
-		msgMap := msg.(map[string]interface{})
-		if msgMap["role"] == "tool" {
-			if msgMap["tool_call_id"] == "toolu_123" {
-				foundToolMessage = true
-				break
-			}
-		}
+	// Check message 4: second text block
+	msg4 := messages[4].(map[string]interface{})
+	if msg4["role"] != "user" {
+		t.Errorf("message 4 should be user, got %s", msg4["role"])
 	}
-
-	if !foundToolMessage {
-		t.Error("expected tool message with tool_call_id")
+	if content, ok := msg4["content"].(string); !ok || content != "What do you think?" {
+		t.Errorf("message 4 should have second text content, got: %v", msg4["content"])
 	}
 }

@@ -89,47 +89,93 @@ func (t *OpenAITransformer) TransformRequest(body []byte, clientFormat string) (
 
 				// Check if this is a tool results marker that needs expansion
 				if toolResults, ok := transformed["_anthropic_tool_results"].([]interface{}); ok {
-					// If there's text content mixed with tool results, add a user message first
-					if textContent, ok := transformed["_anthropic_text_content"].(string); ok && textContent != "" {
-						transformedMessages = append(transformedMessages, map[string]interface{}{
-							"role":    "user",
-							"content": textContent,
-						})
-					}
+					// Check if we need to preserve mixed content ordering
+					if contentBlocks, ok := transformed["_anthropic_content_blocks"].([]interface{}); ok {
+						// Preserve original ordering: emit messages in the order blocks appear
+						for _, block := range contentBlocks {
+							if blockMap, ok := block.(map[string]interface{}); ok {
+								blockType, _ := blockMap["type"].(string)
 
-					// Expand each tool_result into a separate OpenAI "tool" message
-					for _, tr := range toolResults {
-						if trMap, ok := tr.(map[string]interface{}); ok {
-							toolMsg := map[string]interface{}{
-								"role":         "tool",
-								"tool_call_id": trMap["tool_use_id"],
+								switch blockType {
+								case "text":
+									// Emit user message with text content
+									if text, ok := blockMap["text"].(string); ok {
+										transformedMessages = append(transformedMessages, map[string]interface{}{
+											"role":    "user",
+											"content": text,
+										})
+									}
+
+								case "tool_result":
+									// Emit tool message
+									toolMsg := map[string]interface{}{
+										"role":         "tool",
+										"tool_call_id": blockMap["tool_use_id"],
+									}
+
+									// Extract content from tool_result
+									if content, ok := blockMap["content"].([]interface{}); ok {
+										// Concatenate text blocks
+										var textParts []string
+										for _, c := range content {
+											if cMap, ok := c.(map[string]interface{}); ok {
+												if cMap["type"] == "text" {
+													if text, ok := cMap["text"].(string); ok {
+														textParts = append(textParts, text)
+													}
+												}
+											}
+										}
+										if len(textParts) > 0 {
+											content := textParts[0]
+											for i := 1; i < len(textParts); i++ {
+												content += "\n" + textParts[i]
+											}
+											toolMsg["content"] = content
+										}
+									} else if contentStr, ok := blockMap["content"].(string); ok {
+										toolMsg["content"] = contentStr
+									}
+
+									transformedMessages = append(transformedMessages, toolMsg)
+								}
 							}
+						}
+					} else {
+						// Legacy path: no mixed content, just expand tool results
+						for _, tr := range toolResults {
+							if trMap, ok := tr.(map[string]interface{}); ok {
+								toolMsg := map[string]interface{}{
+									"role":         "tool",
+									"tool_call_id": trMap["tool_use_id"],
+								}
 
-							// Extract content from tool_result
-							if content, ok := trMap["content"].([]interface{}); ok {
-								// Concatenate text blocks
-								var textParts []string
-								for _, c := range content {
-									if cMap, ok := c.(map[string]interface{}); ok {
-										if cMap["type"] == "text" {
-											if text, ok := cMap["text"].(string); ok {
-												textParts = append(textParts, text)
+								// Extract content from tool_result
+								if content, ok := trMap["content"].([]interface{}); ok {
+									// Concatenate text blocks
+									var textParts []string
+									for _, c := range content {
+										if cMap, ok := c.(map[string]interface{}); ok {
+											if cMap["type"] == "text" {
+												if text, ok := cMap["text"].(string); ok {
+													textParts = append(textParts, text)
+												}
 											}
 										}
 									}
-								}
-								if len(textParts) > 0 {
-									content := textParts[0]
-									for i := 1; i < len(textParts); i++ {
-										content += "\n" + textParts[i]
+									if len(textParts) > 0 {
+										content := textParts[0]
+										for i := 1; i < len(textParts); i++ {
+											content += "\n" + textParts[i]
+										}
+										toolMsg["content"] = content
 									}
-									toolMsg["content"] = content
+								} else if contentStr, ok := trMap["content"].(string); ok {
+									toolMsg["content"] = contentStr
 								}
-							} else if contentStr, ok := trMap["content"].(string); ok {
-								toolMsg["content"] = contentStr
-							}
 
-							transformedMessages = append(transformedMessages, toolMsg)
+								transformedMessages = append(transformedMessages, toolMsg)
+							}
 						}
 					}
 				} else {
@@ -258,28 +304,36 @@ func (t *OpenAITransformer) transformAssistantMessage(contentBlocks []interface{
 
 // transformUserMessageWithToolResults converts Anthropic user message with tool_result blocks.
 // In OpenAI format, tool results are separate "tool" role messages.
-// If there are text blocks mixed with tool_results, we need to preserve both.
+// If there are text blocks mixed with tool_results, we need to preserve both and their ordering.
 func (t *OpenAITransformer) transformUserMessageWithToolResults(contentBlocks []interface{}) map[string]interface{} {
-	// Collect text blocks and tool results separately
-	var textParts []string
+	// Collect tool results and check for text blocks
 	var toolResults []interface{}
+	var hasText bool
 
 	for _, block := range contentBlocks {
 		if blockMap, ok := block.(map[string]interface{}); ok {
 			blockType, _ := blockMap["type"].(string)
 			switch blockType {
 			case "text":
-				if text, ok := blockMap["text"].(string); ok {
-					textParts = append(textParts, text)
-				}
+				hasText = true
 			case "tool_result":
 				toolResults = append(toolResults, blockMap)
 			}
 		}
 	}
 
-	// If no tool results, return regular user message
+	// If no tool results, return regular user message with concatenated text
 	if len(toolResults) == 0 {
+		var textParts []string
+		for _, block := range contentBlocks {
+			if blockMap, ok := block.(map[string]interface{}); ok {
+				if blockMap["type"] == "text" {
+					if text, ok := blockMap["text"].(string); ok {
+						textParts = append(textParts, text)
+					}
+				}
+			}
+		}
 		if len(textParts) > 0 {
 			content := textParts[0]
 			for i := 1; i < len(textParts); i++ {
@@ -297,18 +351,11 @@ func (t *OpenAITransformer) transformUserMessageWithToolResults(contentBlocks []
 		}
 	}
 
-	// Has tool results - return marker structure with both text and tool results
+	// Has tool results - return marker structure preserving original ordering
 	result := map[string]interface{}{
-		"_anthropic_tool_results": toolResults,
-	}
-
-	// Include text parts if present
-	if len(textParts) > 0 {
-		content := textParts[0]
-		for i := 1; i < len(textParts); i++ {
-			content += "\n" + textParts[i]
-		}
-		result["_anthropic_text_content"] = content
+		"_anthropic_tool_results":      toolResults,
+		"_anthropic_has_mixed_content": hasText,
+		"_anthropic_content_blocks":    contentBlocks, // Preserve original ordering
 	}
 
 	return result

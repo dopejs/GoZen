@@ -522,13 +522,13 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 	var finalStopReason string
 	var messageStopped bool
 
-	// Track current content block state
+	// Track multiple content blocks by index for parallel tool calls
 	type blockState struct {
 		started bool
 		index   int
 		typ     string // "text" or "tool_use"
 	}
-	var currentBlock blockState
+	blocksByIndex := make(map[int]*blockState)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -549,13 +549,14 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 		if data == "[DONE]" {
 			// Only send termination if we haven't already sent it via finish_reason
 			if !messageStopped {
-				// Send content_block_stop if we have an open block
-				if currentBlock.started {
-					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
-						"type":  "content_block_stop",
-						"index": currentBlock.index,
-					}))
-					currentBlock.started = false
+				// Send content_block_stop for all open blocks
+				for _, block := range blocksByIndex {
+					if block.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": block.index,
+						}))
+					}
 				}
 
 				// Use finalStopReason if set, otherwise default to end_turn
@@ -661,11 +662,11 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 				// Check if this is a new tool call (has id)
 				if id, ok := toolCall["id"].(string); ok && id != "" {
-					// Close previous block if open
-					if currentBlock.started {
+					// Close previous block at this index if open
+					if existingBlock, exists := blocksByIndex[index]; exists && existingBlock.started {
 						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 							"type":  "content_block_stop",
-							"index": currentBlock.index,
+							"index": existingBlock.index,
 						}))
 					}
 
@@ -688,7 +689,7 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 							"input": map[string]interface{}{},
 						},
 					}))
-					currentBlock = blockState{started: true, index: index, typ: "tool_use"}
+					blocksByIndex[index] = &blockState{started: true, index: index, typ: "tool_use"}
 				}
 
 				// Check for function arguments delta
@@ -711,37 +712,36 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Check for content delta
 		if content, ok := delta["content"].(string); ok && content != "" {
+			// Text content always goes to index 0
+			textIndex := 0
+			textBlock, exists := blocksByIndex[textIndex]
+
 			// Start content block if not started or if switching from tool to text
-			if !currentBlock.started || currentBlock.typ != "text" {
-				// Close previous block if it was a different type
-				if currentBlock.started && currentBlock.typ != "text" {
+			if !exists || !textBlock.started || textBlock.typ != "text" {
+				// Close previous block at index 0 if it was a different type
+				if exists && textBlock.started && textBlock.typ != "text" {
 					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 						"type":  "content_block_stop",
-						"index": currentBlock.index,
+						"index": textBlock.index,
 					}))
 				}
 
-				// Start new text block
-				newIndex := 0
-				if currentBlock.started {
-					newIndex = currentBlock.index + 1
-				}
-
+				// Start new text block at index 0
 				fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
 					"type":  "content_block_start",
-					"index": newIndex,
+					"index": textIndex,
 					"content_block": map[string]interface{}{
 						"type": "text",
 						"text": "",
 					},
 				}))
-				currentBlock = blockState{started: true, index: newIndex, typ: "text"}
+				blocksByIndex[textIndex] = &blockState{started: true, index: textIndex, typ: "text"}
 			}
 
 			// Send content_block_delta
 			fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": currentBlock.index,
+				"index": textIndex,
 				"delta": map[string]interface{}{
 					"type": "text_delta",
 					"text": content,
@@ -751,13 +751,15 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Check for finish_reason
 		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			// Close current content block if open
-			if currentBlock.started {
-				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
-					"type":  "content_block_stop",
-					"index": currentBlock.index,
-				}))
-				currentBlock.started = false
+			// Close all open content blocks
+			for _, block := range blocksByIndex {
+				if block.started {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": block.index,
+					}))
+					block.started = false
+				}
 			}
 
 			// Map finish_reason to stop_reason

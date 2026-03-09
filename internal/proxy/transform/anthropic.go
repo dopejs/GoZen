@@ -153,6 +153,20 @@ func (t *AnthropicTransformer) transformOpenAIMessagesToAnthropic(messages []int
 	var systemPrompt string
 	var anthropicMessages []interface{}
 
+	// Track consecutive tool messages to merge them
+	var pendingToolResults []interface{}
+
+	flushToolResults := func() {
+		if len(pendingToolResults) > 0 {
+			// Merge all pending tool results into a single user message
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "user",
+				"content": pendingToolResults,
+			})
+			pendingToolResults = nil
+		}
+	}
+
 	for _, msg := range messages {
 		msgMap, ok := msg.(map[string]interface{})
 		if !ok {
@@ -173,16 +187,34 @@ func (t *AnthropicTransformer) transformOpenAIMessagesToAnthropic(messages []int
 			}
 
 		case "assistant":
+			// Flush any pending tool results before assistant message
+			flushToolResults()
 			// Transform assistant message with potential tool_calls
 			anthropicMessages = append(anthropicMessages, t.transformOpenAIAssistantMessage(msgMap))
 
 		case "tool":
-			// Transform tool result message to user message with tool_result block
-			if toolMsg := t.transformOpenAIToolMessage(msgMap); toolMsg != nil {
-				anthropicMessages = append(anthropicMessages, toolMsg)
+			// Accumulate tool result blocks for merging
+			toolCallID, _ := msgMap["tool_call_id"].(string)
+			content := msgMap["content"]
+
+			// Create tool_result block
+			toolResult := map[string]interface{}{
+				"type":        "tool_result",
+				"tool_use_id": toolCallID,
 			}
 
+			// Handle content (can be string or structured)
+			if contentStr, ok := content.(string); ok {
+				toolResult["content"] = contentStr
+			} else {
+				toolResult["content"] = content
+			}
+
+			pendingToolResults = append(pendingToolResults, toolResult)
+
 		case "user":
+			// Flush any pending tool results before user message
+			flushToolResults()
 			// Regular user message
 			content := msgMap["content"]
 			anthropicMessages = append(anthropicMessages, map[string]interface{}{
@@ -191,6 +223,9 @@ func (t *AnthropicTransformer) transformOpenAIMessagesToAnthropic(messages []int
 			})
 		}
 	}
+
+	// Flush any remaining tool results
+	flushToolResults()
 
 	return anthropicMessages, systemPrompt
 }
@@ -243,32 +278,6 @@ func (t *AnthropicTransformer) transformOpenAIAssistantMessage(msg map[string]in
 	return map[string]interface{}{
 		"role":    "assistant",
 		"content": contentBlocks,
-	}
-}
-
-// transformOpenAIToolMessage converts OpenAI tool message to Anthropic user message with tool_result.
-func (t *AnthropicTransformer) transformOpenAIToolMessage(msg map[string]interface{}) map[string]interface{} {
-	toolCallID, _ := msg["tool_call_id"].(string)
-	content := msg["content"]
-
-	// Create tool_result block
-	toolResult := map[string]interface{}{
-		"type":        "tool_result",
-		"tool_use_id": toolCallID,
-	}
-
-	// Handle content (can be string or structured)
-	if contentStr, ok := content.(string); ok {
-		toolResult["content"] = contentStr
-	} else {
-		toolResult["content"] = content
-	}
-
-	return map[string]interface{}{
-		"role": "user",
-		"content": []interface{}{
-			toolResult,
-		},
 	}
 }
 

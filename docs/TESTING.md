@@ -81,6 +81,22 @@ SKIP_FLAKY_TESTS=true go test -race ./tests/integration/...
 - PID file management
 - Full daemon lifecycle
 
+**Current limitations** (documented in test comments):
+- `TestAutoRestart`: Only tests daemon startup, not actual restart after crash
+- `TestDaemonAutoRestart`: Tests fatal error/signal handling, not crash recovery
+- `TestDaemonCrashRecovery`: Only tests error classification, not real crash injection
+
+**Future work**:
+- Real crash injection and recovery verification
+- Restart loop with exponential backoff validation
+- Max restart limit enforcement testing
+
+These limitations are acceptable because:
+- Core daemon stability is validated by Layer 1 & 2 tests
+- Crash detection logic (IsFatalError) is tested
+- Port takeover and process management are tested
+- Real crash recovery requires complex process injection
+
 **Run locally**:
 ```bash
 go test -v -timeout 600s ./tests/...

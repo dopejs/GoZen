@@ -14,7 +14,18 @@ import (
 	"github.com/dopejs/gozen/internal/config"
 )
 
-// TestAutoRestart verifies daemon auto-restart behavior after crash
+// TestAutoRestart verifies daemon can start and respond to health checks.
+//
+// Note: This test does NOT verify auto-restart after crash. It only validates
+// that the daemon binary can start successfully and respond to status API.
+// Full auto-restart behavior (crash detection, exponential backoff, restart loop)
+// requires a daemon wrapper process, which is tested separately in daemon_autorestart_test.go.
+//
+// What this test covers:
+// - Daemon binary builds successfully
+// - Daemon starts in foreground mode
+// - Daemon responds to /api/v1/daemon/status
+// - Basic daemon health verification
 func TestAutoRestart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping auto-restart test in short mode")

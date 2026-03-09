@@ -19,9 +19,21 @@ import (
 // raceEnabled is set to true by race_on.go when built with -race flag
 var raceEnabled = false
 
-// TestDaemonAutoRestart tests the real auto-restart behavior in cmd/daemon.go
-// Note: These tests build and run the actual binary, which may be flaky in CI
-// environments. They are skipped with race detector and in CI environments.
+// TestDaemonAutoRestart tests daemon behavior related to restart scenarios.
+//
+// Current coverage:
+// - Daemon starts successfully and creates PID file
+// - Fatal errors (port conflict) do NOT trigger restart
+// - Signal stop (SIGINT) does NOT trigger restart
+//
+// NOT currently covered (future work):
+// - Actual crash recovery (daemon crashes and auto-restarts)
+// - Exponential backoff between restart attempts
+// - Max restart limit enforcement
+//
+// These tests build and run the actual binary, which may be flaky in CI
+// environments due to process spawning, signals, and timing dependencies.
+// They are skipped with SKIP_FLAKY_TESTS=true in main CI.
 func TestDaemonAutoRestart(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping daemon auto-restart test in short mode")
@@ -169,7 +181,19 @@ func TestDaemonAutoRestart(t *testing.T) {
 	})
 }
 
-// TestDaemonCrashRecovery tests that daemon recovers from crashes
+// TestDaemonCrashRecovery validates crash detection logic exists.
+//
+// Current coverage:
+// - IsFatalError() function correctly identifies fatal vs recoverable errors
+//
+// NOT currently covered (future work):
+// - Actual crash injection and recovery verification
+// - Real daemon process crash → auto-restart flow
+// - Restart loop with exponential backoff
+//
+// This is a conceptual test that verifies the error classification logic.
+// Full crash recovery testing would require injecting crashes into a running
+// daemon and verifying the wrapper process restarts it correctly.
 func TestDaemonCrashRecovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping daemon crash recovery test in short mode")

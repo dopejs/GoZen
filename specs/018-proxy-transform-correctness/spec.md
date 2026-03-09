@@ -88,19 +88,18 @@ When a developer uses GoZen proxy in production, the proxy must not perform file
 
 1. **Given** the proxy is running in production mode, **When** requests are transformed, **Then** no request/response bodies are logged to disk
 2. **Given** the proxy is running with debug logging disabled (default), **When** transform operations occur, **Then** no file I/O is performed in the transform hot path
-3. **Given** a developer enables debug logging via environment variable or config flag, **When** requests are transformed, **Then** debug logs are written to the configured location
-4. **Given** the proxy handles 1000 requests/second, **When** debug logging is disabled, **Then** transform performance is not degraded by logging overhead
+3. **Given** the proxy handles 1000 requests/second, **When** debug logging is disabled, **Then** transform performance is not degraded by logging overhead
 
 ---
 
 ### Edge Cases
 
 - **Mixed protocol fields**: When a client sends a request with both Chat Completions and Responses API fields mixed together, path-based detection takes precedence and incompatible fields from other protocols are ignored
-- How does the system handle tool calls with extremely large `arguments` JSON (>100KB) in streaming mode?
-- What happens when an upstream provider returns a valid SSE stream but with unexpected event types not in the transform mapping?
-- How does the proxy handle partial tool call deltas that span multiple SSE events?
-- What happens when a transform error occurs mid-stream after some events have already been sent to the client?
-- How does the system handle requests to `/v1/messages` (native Anthropic) when the provider is also Anthropic (no transform needed)?
+- **Large tool arguments**: Tool calls with `arguments` JSON exceeding 100KB in streaming mode are passed through as-is; no size limit is enforced at the transform layer
+- **Unknown SSE event types**: When an upstream provider returns SSE events with types not in the transform mapping, the proxy passes them through unchanged to the client
+- **Partial tool call deltas**: Tool call deltas spanning multiple SSE events are accumulated in-order; each delta is forwarded as received without buffering
+- **Mid-stream transform error**: When a transform error occurs after some events have already been sent to the client, the proxy emits a protocol-native error event and closes the stream; partial responses are not retried
+- **Native passthrough**: When a client uses `/v1/messages` and the provider is also Anthropic, `NeedsTransform` returns false and the request/response passes through unchanged
 
 ## Requirements *(mandatory)*
 
@@ -122,7 +121,7 @@ When a developer uses GoZen proxy in production, the proxy must not perform file
 - **FR-014**: System MUST return HTTP 500 errors to clients when transform errors occur, with error messages indicating transform failure
 - **FR-015**: System MUST NOT perform file I/O in the transform hot path by default
 - **FR-016**: System MUST NOT log full request/response bodies in the transform hot path by default
-- **FR-017**: System MUST support optional debug logging via environment variable or config flag
+- **FR-017**: System MUST remove the unconditional `init()`-based debug logger; optional debug logging via `GOZEN_TRANSFORM_DEBUG` environment variable is deferred to future work
 - **FR-018**: System MUST preserve existing transform test coverage while implementing changes
 
 ### Key Entities
@@ -154,7 +153,7 @@ When a developer uses GoZen proxy in production, the proxy must not perform file
 - The existing `detectClientFormat()` function in `profile_proxy.go` will be extended to return the new protocol format identifiers
 - The existing `GetTransformer()` function will be updated to return protocol-specific transformers
 - Transform error classification will be implemented by adding error type checking in `server.go` error handling paths
-- Debug logging will be controlled by a new environment variable `GOZEN_TRANSFORM_DEBUG` or config field
+- Debug logging removal is complete; optional re-implementation via `GOZEN_TRANSFORM_DEBUG` environment variable is deferred to future work
 - The existing test suite structure will be preserved, with new test cases added for P0/P1 scenarios
 - No changes to the config schema version are required (this is an internal implementation change)
 
@@ -175,6 +174,7 @@ When a developer uses GoZen proxy in production, the proxy must not perform file
 ## Out of Scope
 
 - P2 item: Connecting profile load balancing strategy to provider selection (deferred to future work)
+- Optional debug logging via `GOZEN_TRANSFORM_DEBUG` environment variable or config field (deferred; FR-017 only requires removal of unconditional logger)
 - Changes to config schema or user-facing configuration
 - Performance optimization beyond removing debug logging overhead
 - Support for additional protocol formats beyond the three specified

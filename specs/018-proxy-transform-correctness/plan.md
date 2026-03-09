@@ -65,7 +65,7 @@ internal/proxy/
 
 ## Implementation Phases
 
-### Phase A: Protocol Format Constants + detectClientFormat (P0-1 foundation)
+### Phase 1: Protocol Format Constants + detectClientFormat (P0-1 foundation)
 
 **Goal**: Establish the three format identifiers and update format detection. All downstream changes depend on this.
 
@@ -79,7 +79,7 @@ internal/proxy/
 
 ---
 
-### Phase B: Remove Debug Logging (P1-5)
+### Phase 2: Remove Debug Logging (P1-5)
 
 **Goal**: Remove all file I/O from transform hot path.
 
@@ -92,7 +92,7 @@ internal/proxy/
 
 ---
 
-### Phase C: SSE Scanner Error Handling (P0-3)
+### Phase 3: SSE Scanner Error Handling (P0-3)
 
 **Goal**: Check `scanner.Err()` after every loop; emit protocol-native error events.
 
@@ -107,7 +107,7 @@ internal/proxy/
 
 ---
 
-### Phase D: Complete Tool Call Transformation (P0-2)
+### Phase 4: Complete Tool Call Transformation (P0-2)
 
 **Goal**: Correct bidirectional tool transformation including streaming deltas.
 
@@ -123,7 +123,7 @@ internal/proxy/
 
 ---
 
-### Phase E: Transform Error Classification (P1-4)
+### Phase 5: Transform Error Classification (P1-4)
 
 **Goal**: Transform failures return 500 to client without marking provider unhealthy.
 

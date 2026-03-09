@@ -5,7 +5,7 @@
 
 **Tests**: TDD required per Constitution Principle I — test tasks are included and MUST be written first.
 
-**Organization**: Tasks grouped by user story (Phase A→E from plan.md maps to US1→US5).
+**Organization**: Tasks grouped by user story (Phases 1-5 from plan.md map to US1-US5).
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -149,8 +149,16 @@
 
 **Independent Test**: Run proxy under load; verify no `~/.zen-dev/transform.log` created and no file I/O in transform path.
 
-- [ ] T037 [US5] Verify no references to `debugLogger` remain in `internal/proxy/transform/` via `grep -r debugLogger internal/proxy/transform/`
-- [ ] T038 [US5] Verify `~/.zen-dev/transform.log` is not created on proxy startup after changes
+### Tests for User Story 5
+
+> **Write these tests FIRST, ensure they FAIL before implementation**
+
+- [ ] T037 [US5] Add test: verify no `debugLogger` references exist in `internal/proxy/transform/` package via programmatic check in `internal/proxy/transform/transform_test.go`
+
+### Validation for User Story 5
+
+- [ ] T038 [US5] Verify no references to `debugLogger` remain in `internal/proxy/transform/` via `grep -r debugLogger internal/proxy/transform/`
+- [ ] T039 [US5] Verify `~/.zen-dev/transform.log` is not created on proxy startup after changes
 
 **Checkpoint**: Zero file I/O in transform hot path confirmed.
 
@@ -158,10 +166,10 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T039 [P] Run `go test ./internal/proxy/... -cover` and verify `internal/proxy/transform` coverage ≥ 80%
-- [ ] T040 [P] Run `go test ./internal/proxy/... -race` to verify no data races introduced
-- [ ] T041 Run `go build ./...` for final clean build verification
-- [ ] T042 Review `git status` and remove any generated/temporary files before committing
+- [ ] T040 [P] Run `go test ./internal/proxy/... -cover` and verify `internal/proxy/transform` coverage ≥ 80%
+- [ ] T041 [P] Run `go test ./internal/proxy/... -race` to verify no data races introduced
+- [ ] T042 Run `go build ./...` for final clean build verification
+- [ ] T043 Review `git status` and remove any generated/temporary files before committing
 
 ---
 
@@ -194,7 +202,7 @@
 - T014, T015, T016, T017 (US2 tests) can run in parallel
 - T024, T025, T026, T027 (US3 tests) can run in parallel
 - T032, T033 (US4 tests) can run in parallel
-- T039, T040 (coverage + race) can run in parallel
+- T040, T041 (coverage + race) can run in parallel
 
 ---
 
@@ -234,6 +242,6 @@ Task: T027 - clean EOF completion event tests
 ## Notes
 
 - [P] tasks = different files or independent test cases, no blocking dependencies
-- TDD required: all test tasks (T006–T008, T014–T017, T024–T027, T032–T033) MUST be written and confirmed failing before their implementation tasks
+- TDD required: all test tasks (T006–T008, T014–T017, T024–T027, T032–T033, T037) MUST be written and confirmed failing before their implementation tasks
 - Commit after each phase checkpoint
 - Constitution Principle VI: verify `internal/proxy/transform` coverage ≥ 80% before opening PR

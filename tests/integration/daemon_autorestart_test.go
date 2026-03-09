@@ -81,7 +81,7 @@ func TestDaemonAutoRestart(t *testing.T) {
 		time.Sleep(2 * time.Second)
 
 		// Check if PID file exists
-		pidPath := filepath.Join(configDir, "daemon.pid")
+		pidPath := filepath.Join(configDir, "zend.pid")
 		if _, err := os.Stat(pidPath); os.IsNotExist(err) {
 			t.Errorf("PID file not created: %s", pidPath)
 		}

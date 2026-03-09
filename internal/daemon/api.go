@@ -194,6 +194,11 @@ func (d *Daemon) ShutdownCh() <-chan struct{} {
 	return d.shutdownCh
 }
 
+// ProxyErrCh returns the proxy error channel for crash detection
+func (d *Daemon) ProxyErrCh() <-chan error {
+	return d.proxyErrCh
+}
+
 // --- Daemon Reload API ---
 
 func (d *Daemon) handleDaemonReload(w http.ResponseWriter, r *http.Request) {

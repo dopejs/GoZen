@@ -152,6 +152,11 @@ func runDaemonForeground() error {
 				shutdownMu.Lock()
 				intentionalShutdown = true
 				shutdownMu.Unlock()
+			case <-d.ProxyErrCh():
+				// Proxy server crashed, trigger restart
+				shutdownMu.Lock()
+				intentionalShutdown = false
+				shutdownMu.Unlock()
 			case <-instanceCtx.Done():
 				// Instance cancelled, exit goroutine without shutdown
 				return

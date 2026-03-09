@@ -88,6 +88,9 @@ type Daemon struct {
 
 	// Metrics collection
 	metrics *Metrics
+
+	// Proxy server error channel for crash detection
+	proxyErrCh chan error
 }
 
 // SessionInfo tracks an active client session.
@@ -133,6 +136,7 @@ func NewDaemon(version string, logger *log.Logger) *Daemon {
 		runCtx:        runCtx,
 		runCancel:     runCancel,
 		metrics:       NewMetrics(),
+		proxyErrCh:    make(chan error, 1), // buffered to avoid blocking
 	}
 }
 
@@ -350,6 +354,12 @@ func (d *Daemon) startProxy() error {
 	go func() {
 		if err := d.proxyServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			d.logger.Printf("proxy server error: %v", err)
+			// Send error to channel for crash detection
+			select {
+			case d.proxyErrCh <- err:
+			default:
+				// Channel full, error already pending
+			}
 		}
 	}()
 

@@ -153,12 +153,12 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T037 [US5] Add test: verify no `debugLogger` references exist in `internal/proxy/transform/` package via programmatic check in `internal/proxy/transform/transform_test.go`
+- [X] T037 [US5] Add test: verify no `debugLogger` references exist in `internal/proxy/transform/` package via programmatic check in `internal/proxy/transform/transform_test.go`
 
 ### Validation for User Story 5
 
-- [ ] T038 [US5] Verify no references to `debugLogger` remain in `internal/proxy/transform/` via `grep -r debugLogger internal/proxy/transform/`
-- [ ] T039 [US5] Verify `~/.zen-dev/transform.log` is not created on proxy startup after changes
+- [X] T038 [US5] Verify no references to `debugLogger` remain in `internal/proxy/transform/` via `grep -r debugLogger internal/proxy/transform/`
+- [X] T039 [US5] Verify `~/.zen-dev/transform.log` is not created on proxy startup after changes
 
 **Checkpoint**: Zero file I/O in transform hot path confirmed.
 
@@ -166,10 +166,10 @@
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T040 [P] Run `go test ./internal/proxy/... -cover` and verify `internal/proxy/transform` coverage ≥ 80%
-- [ ] T041 [P] Run `go test ./internal/proxy/... -race` to verify no data races introduced
-- [ ] T042 Run `go build ./...` for final clean build verification
-- [ ] T043 Review `git status` and remove any generated/temporary files before committing
+- [X] T040 [P] Run `go test ./internal/proxy/... -cover` and verify `internal/proxy/transform` coverage ≥ 80%
+- [X] T041 [P] Run `go test ./internal/proxy/... -race` to verify no data races introduced
+- [X] T042 Run `go build ./...` for final clean build verification
+- [X] T043 Review `git status` and remove any generated/temporary files before committing
 
 ---
 

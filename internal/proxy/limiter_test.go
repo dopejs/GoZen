@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -11,12 +12,12 @@ func TestLimiterBasic(t *testing.T) {
 	limiter := NewLimiter(2)
 
 	// Acquire first slot
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 
 	// Acquire second slot
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("second acquire failed: %v", err)
 	}
 
@@ -24,7 +25,7 @@ func TestLimiterBasic(t *testing.T) {
 	limiter.Release()
 
 	// Should be able to acquire again
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("acquire after release failed: %v", err)
 	}
 
@@ -38,14 +39,14 @@ func TestLimiterBlocking(t *testing.T) {
 	limiter := NewLimiter(2)
 
 	// Acquire both slots
-	limiter.Acquire()
-	limiter.Acquire()
+	limiter.Acquire(context.Background())
+	limiter.Acquire(context.Background())
 
 	// Third acquire should block
 	blocked := make(chan bool, 1)
 	go func() {
 		blocked <- true
-		limiter.Acquire()
+		limiter.Acquire(context.Background())
 		blocked <- false
 	}()
 
@@ -95,7 +96,7 @@ func TestLimiterConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			limiter.Acquire()
+			limiter.Acquire(context.Background())
 			defer limiter.Release()
 
 			// Track concurrent executions
@@ -131,7 +132,7 @@ func TestLimiterZeroLimit(t *testing.T) {
 
 	// Should be able to acquire many times without blocking
 	for i := 0; i < 100; i++ {
-		if err := limiter.Acquire(); err != nil {
+		if err := limiter.Acquire(context.Background()); err != nil {
 			t.Fatalf("acquire %d failed: %v", i, err)
 		}
 	}
@@ -148,16 +149,16 @@ func TestLimiterTimeout(t *testing.T) {
 	limiter.SetTimeout(100 * time.Millisecond)
 
 	// Acquire both slots
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("second acquire failed: %v", err)
 	}
 
 	// Third acquire should timeout
 	start := time.Now()
-	err := limiter.Acquire()
+	err := limiter.Acquire(context.Background())
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -179,14 +180,14 @@ func TestLimiterNoTimeout(t *testing.T) {
 	limiter.SetTimeout(0) // Disable timeout
 
 	// Acquire the only slot
-	if err := limiter.Acquire(); err != nil {
+	if err := limiter.Acquire(context.Background()); err != nil {
 		t.Fatalf("first acquire failed: %v", err)
 	}
 
 	// Second acquire should block indefinitely (we'll release after a delay)
 	done := make(chan error, 1)
 	go func() {
-		done <- limiter.Acquire()
+		done <- limiter.Acquire(context.Background())
 	}()
 
 	// Wait a bit to ensure it's blocking
@@ -234,7 +235,7 @@ func TestLimiterTimeoutConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			err := limiter.Acquire()
+			err := limiter.Acquire(context.Background())
 			if err != nil {
 				mu.Lock()
 				timeoutCount++
@@ -263,4 +264,123 @@ func TestLimiterTimeoutConcurrent(t *testing.T) {
 	}
 
 	t.Logf("success: %d, timeout: %d", successCount, timeoutCount)
+}
+
+// TestLimiterContextCancellation verifies that Acquire respects context cancellation
+func TestLimiterContextCancellation(t *testing.T) {
+	limiter := NewLimiter(1)
+	limiter.SetTimeout(10 * time.Second) // Long timeout to ensure context cancels first
+
+	// Acquire the only slot
+	if err := limiter.Acquire(context.Background()); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+
+	// Create a context that will be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Try to acquire in a goroutine
+	done := make(chan error, 1)
+	go func() {
+		done <- limiter.Acquire(ctx)
+	}()
+
+	// Wait a bit to ensure it's blocking
+	time.Sleep(50 * time.Millisecond)
+
+	// Cancel the context
+	cancel()
+
+	// Should return quickly with context error
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error from cancelled context, got nil")
+		}
+		t.Logf("got expected error: %v", err)
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("acquire didn't return after context cancellation")
+	}
+
+	// Cleanup
+	limiter.Release()
+}
+
+// TestLimiterContextTimeout verifies that Acquire respects context deadline
+func TestLimiterContextTimeout(t *testing.T) {
+	limiter := NewLimiter(1)
+	limiter.SetTimeout(0) // Disable limiter timeout to test context timeout only
+
+	// Acquire the only slot
+	if err := limiter.Acquire(context.Background()); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+
+	// Create a context with short timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Try to acquire - should timeout via context
+	start := time.Now()
+	err := limiter.Acquire(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	if elapsed < 90*time.Millisecond || elapsed > 200*time.Millisecond {
+		t.Errorf("timeout took %v, expected ~100ms", elapsed)
+	}
+
+	// Cleanup
+	limiter.Release()
+}
+
+// TestLimiterCombinedTimeout verifies limiter timeout and context work together
+func TestLimiterCombinedTimeout(t *testing.T) {
+	limiter := NewLimiter(1)
+	limiter.SetTimeout(200 * time.Millisecond)
+
+	// Acquire the only slot
+	if err := limiter.Acquire(context.Background()); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+
+	// Test 1: Context timeout shorter than limiter timeout
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel1()
+
+	start := time.Now()
+	err := limiter.Acquire(ctx1)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	// Should timeout at ~50ms (context), not 200ms (limiter)
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("timeout took %v, expected ~50ms (context timeout)", elapsed)
+	}
+
+	// Test 2: Limiter timeout shorter than context timeout
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel2()
+
+	start = time.Now()
+	err = limiter.Acquire(ctx2)
+	elapsed = time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	// Should timeout at ~200ms (limiter), not 500ms (context)
+	if elapsed < 150*time.Millisecond || elapsed > 300*time.Millisecond {
+		t.Errorf("timeout took %v, expected ~200ms (limiter timeout)", elapsed)
+	}
+
+	// Cleanup
+	limiter.Release()
 }

@@ -32,28 +32,36 @@ func (l *Limiter) SetTimeout(timeout time.Duration) {
 	l.timeout = timeout
 }
 
-// Acquire blocks until a slot is available or timeout is reached.
-// Returns an error if the timeout is exceeded.
-func (l *Limiter) Acquire() error {
+// Acquire blocks until a slot is available, timeout is reached, or context is cancelled.
+// Returns an error if the timeout is exceeded or context is cancelled.
+func (l *Limiter) Acquire(ctx context.Context) error {
 	if l.sem == nil {
 		// Unlimited mode
 		return nil
 	}
 
-	// No timeout configured - block indefinitely (original behavior)
+	// No timeout configured - use request context only
 	if l.timeout == 0 {
-		l.sem <- struct{}{}
-		return nil
+		select {
+		case l.sem <- struct{}{}:
+			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("request cancelled while waiting for concurrency slot: %w", ctx.Err())
+		}
 	}
 
-	// Try to acquire with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), l.timeout)
+	// Combine request context with timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, l.timeout)
 	defer cancel()
 
 	select {
 	case l.sem <- struct{}{}:
 		return nil
-	case <-ctx.Done():
+	case <-timeoutCtx.Done():
+		// Check which context was cancelled
+		if ctx.Err() != nil {
+			return fmt.Errorf("request cancelled while waiting for concurrency slot: %w", ctx.Err())
+		}
 		return fmt.Errorf("concurrency limit reached: request timed out after %v", l.timeout)
 	}
 }

@@ -221,8 +221,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	// Acquire concurrency slot if limiter is configured
+	// Pass request context so limiter respects client cancellation
 	if s.Limiter != nil {
-		if err := s.Limiter.Acquire(); err != nil {
+		if err := s.Limiter.Acquire(r.Context()); err != nil {
 			// Record concurrency limit error in metrics
 			// Use empty provider to indicate system-level error (not provider-specific)
 			if s.MetricsRecorder != nil {

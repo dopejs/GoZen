@@ -672,7 +672,16 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 				// Check if this is a new tool call (has id)
 				if id, ok := toolCall["id"].(string); ok && id != "" {
-					// Close previous block at this OpenAI tool index if open
+					// Close text block if it's open (switching from text to tool)
+					if textBlock != nil && textBlock.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": textBlock.anthropicIndex,
+						}))
+						textBlock.started = false
+					}
+
+					// Close previous tool block at this OpenAI tool index if open
 					if existingBlock, exists := toolBlocksByOpenAIIndex[openaiToolIndex]; exists && existingBlock.started {
 						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 							"type":  "content_block_stop",
@@ -735,6 +744,17 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 		if content, ok := delta["content"].(string); ok && content != "" {
 			// Start text block if not started
 			if textBlock == nil || !textBlock.started {
+				// Close all open tool blocks (switching from tool to text)
+				for _, block := range toolBlocksByOpenAIIndex {
+					if block.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": block.anthropicIndex,
+						}))
+						block.started = false
+					}
+				}
+
 				// Close previous text block if it exists
 				if textBlock != nil && textBlock.started {
 					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{

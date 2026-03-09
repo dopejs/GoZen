@@ -748,6 +748,7 @@ data: [DONE]
 }
 
 // Test that content block indices are correctly assigned (text=0, tool=1)
+// and that blocks are closed before opening new ones
 func TestStreamTransformer_OpenAIChatToAnthropic_ContentBlockIndices(t *testing.T) {
 	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":"Text first"},"finish_reason":null}]}
 
@@ -774,7 +775,7 @@ data: [DONE]
 
 	outputStr := string(output)
 
-	// Parse events to verify indices
+	// Parse events to verify indices and lifecycle
 	events := parseSSEEvents(outputStr)
 
 	// Find content_block_start events
@@ -802,27 +803,42 @@ data: [DONE]
 		t.Errorf("expected tool block at index 1, got %d", toolBlockIndex)
 	}
 
-	// Verify content_block_stop events use correct indices
-	var textStopIndex, toolStopIndex int = -1, -1
-	stopsSeen := 0
-	for _, event := range events {
-		if event.Type == "content_block_stop" {
-			index := int(event.Data["index"].(float64))
-			if stopsSeen == 0 {
-				textStopIndex = index
-			} else if stopsSeen == 1 {
-				toolStopIndex = index
+	// Verify strict lifecycle: text block must be stopped before tool block starts
+	var textStartPos, textStopPos, toolStartPos int = -1, -1, -1
+	for i, event := range events {
+		if event.Type == "content_block_start" {
+			if blockType, ok := event.Data["content_block"].(map[string]interface{})["type"].(string); ok {
+				index := int(event.Data["index"].(float64))
+				if blockType == "text" && index == 0 {
+					textStartPos = i
+				} else if blockType == "tool_use" && index == 1 {
+					toolStartPos = i
+				}
 			}
-			stopsSeen++
+		} else if event.Type == "content_block_stop" {
+			index := int(event.Data["index"].(float64))
+			if index == 0 && textStopPos == -1 {
+				textStopPos = i
+			}
 		}
 	}
 
-	if textStopIndex != 0 {
-		t.Errorf("expected text block stop at index 0, got %d", textStopIndex)
+	// Verify lifecycle order: start(text) < stop(text) < start(tool)
+	if textStartPos == -1 {
+		t.Error("text block start not found")
+	}
+	if textStopPos == -1 {
+		t.Error("text block stop not found")
+	}
+	if toolStartPos == -1 {
+		t.Error("tool block start not found")
 	}
 
-	if toolStopIndex != 1 {
-		t.Errorf("expected tool block stop at index 1, got %d", toolStopIndex)
+	if textStopPos <= textStartPos {
+		t.Errorf("text block stop (%d) should come after start (%d)", textStopPos, textStartPos)
+	}
+	if toolStartPos <= textStopPos {
+		t.Errorf("tool block start (%d) should come after text block stop (%d)", toolStartPos, textStopPos)
 	}
 }
 

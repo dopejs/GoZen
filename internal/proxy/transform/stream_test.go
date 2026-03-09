@@ -935,6 +935,111 @@ data: [DONE]
 	}
 }
 
+// Test interleaved tool call deltas: deltas for closed blocks should be ignored
+func TestStreamTransformer_OpenAIChatToAnthropic_InterleavedToolCallDeltas(t *testing.T) {
+	// Simulate real parallel tool call scenario with interleaved deltas
+	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"tool_a","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"x\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_def","type":"function","function":{"name":"tool_b","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"y\":"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"2}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Parse events
+	events := parseSSEEvents(outputStr)
+
+	// Track which Anthropic indices received deltas
+	deltasByIndex := make(map[int][]string)
+	for _, event := range events {
+		if event.Type == "content_block_delta" {
+			index := int(event.Data["index"].(float64))
+			if delta, ok := event.Data["delta"].(map[string]interface{}); ok {
+				if deltaType, ok := delta["type"].(string); ok {
+					if deltaType == "input_json_delta" {
+						if partialJSON, ok := delta["partial_json"].(string); ok {
+							deltasByIndex[index] = append(deltasByIndex[index], partialJSON)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Find tool block indices
+	var tool0Index, tool1Index int = -1, -1
+	for _, event := range events {
+		if event.Type == "content_block_start" {
+			if blockType, ok := event.Data["content_block"].(map[string]interface{})["type"].(string); ok {
+				if blockType == "tool_use" {
+					index := int(event.Data["index"].(float64))
+					if tool0Index == -1 {
+						tool0Index = index
+					} else if tool1Index == -1 {
+						tool1Index = index
+					}
+				}
+			}
+		}
+	}
+
+	// Verify tool 0 only received deltas before it was closed
+	// After tool 1 starts, tool 0 is closed, so no more deltas should go to tool 0
+	tool0Deltas := deltasByIndex[tool0Index]
+	if len(tool0Deltas) != 1 {
+		t.Errorf("expected tool 0 to receive 1 delta (before being closed), got %d: %v", len(tool0Deltas), tool0Deltas)
+	}
+	if len(tool0Deltas) > 0 && tool0Deltas[0] != "{\"x\":" {
+		t.Errorf("expected tool 0 first delta to be '{\"x\":', got %s", tool0Deltas[0])
+	}
+
+	// Verify tool 1 received all its deltas
+	tool1Deltas := deltasByIndex[tool1Index]
+	if len(tool1Deltas) != 2 {
+		t.Errorf("expected tool 1 to receive 2 deltas, got %d: %v", len(tool1Deltas), tool1Deltas)
+	}
+	if len(tool1Deltas) >= 2 {
+		if tool1Deltas[0] != "{\"y\":" {
+			t.Errorf("expected tool 1 first delta to be '{\"y\":', got %s", tool1Deltas[0])
+		}
+		if tool1Deltas[1] != "2}" {
+			t.Errorf("expected tool 1 second delta to be '2}', got %s", tool1Deltas[1])
+		}
+	}
+
+	// Verify no deltas were sent to non-existent indices
+	for idx := range deltasByIndex {
+		if idx != tool0Index && idx != tool1Index {
+			t.Errorf("unexpected deltas sent to index %d", idx)
+		}
+	}
+}
+
 // Helper to parse SSE events for testing
 type sseEvent struct {
 	Type string

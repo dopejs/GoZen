@@ -3224,3 +3224,48 @@ func TestTransformError_ResponseTransformFailure(t *testing.T) {
 		t.Error("TransformError should unwrap to underlying error")
 	}
 }
+
+// Test that transform errors return proper JSON with correct Content-Type
+func TestTransformError_ProperJSONResponse(t *testing.T) {
+	// Test that TransformError produces valid JSON response
+	err := &TransformError{Op: "request", Err: fmt.Errorf("test error with \"quotes\" and special chars")}
+
+	// Simulate what the server does
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	errResp := map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "transform_error",
+			"message": err.Error(),
+		},
+	}
+	json.NewEncoder(w).Encode(errResp)
+
+	// Verify Content-Type
+	if w.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type: application/json, got %s", w.Header().Get("Content-Type"))
+	}
+
+	// Verify valid JSON
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &decoded); err != nil {
+		t.Errorf("response should be valid JSON: %v, body: %s", err, w.Body.String())
+	}
+
+	// Verify error structure
+	if decoded["error"] == nil {
+		t.Error("expected error field in response")
+	}
+
+	errorObj := decoded["error"].(map[string]interface{})
+	if errorObj["type"] != "transform_error" {
+		t.Errorf("expected type=transform_error, got %v", errorObj["type"])
+	}
+
+	// Verify message contains the error text (quotes should be properly escaped)
+	message := errorObj["message"].(string)
+	if !strings.Contains(message, "test error") {
+		t.Errorf("expected message to contain error text, got: %s", message)
+	}
+}

@@ -433,3 +433,135 @@ func TestOpenAITransformer_ToolsTransformation(t *testing.T) {
 		t.Errorf("input_schema type = %v, want object", inputSchema["type"])
 	}
 }
+
+// Test OpenAI tool_calls transformation to Anthropic tool_use
+func TestOpenAITransformer_TransformResponse_ToolCalls(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	// OpenAI response with tool_calls
+	openaiResp := `{
+		"id": "chatcmpl-123",
+		"object": "chat.completion",
+		"created": 1677652288,
+		"model": "gpt-4",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": null,
+				"tool_calls": [{
+					"id": "call_abc123",
+					"type": "function",
+					"function": {
+						"name": "get_weather",
+						"arguments": "{\"location\":\"San Francisco\",\"unit\":\"celsius\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}],
+		"usage": {
+			"prompt_tokens": 10,
+			"completion_tokens": 20,
+			"total_tokens": 30
+		}
+	}`
+
+	result, err := transformer.TransformResponse([]byte(openaiResp), "anthropic-messages")
+	if err != nil {
+		t.Fatalf("TransformResponse failed: %v", err)
+	}
+
+	var anthropicResp map[string]interface{}
+	if err := json.Unmarshal(result, &anthropicResp); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// Verify stop_reason
+	if anthropicResp["stop_reason"] != "tool_use" {
+		t.Errorf("expected stop_reason=tool_use, got %v", anthropicResp["stop_reason"])
+	}
+
+	// Verify content blocks
+	content, ok := anthropicResp["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatalf("expected content blocks, got %v", anthropicResp["content"])
+	}
+
+	// Verify tool_use block
+	toolUse, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected tool_use block, got %v", content[0])
+	}
+
+	if toolUse["type"] != "tool_use" {
+		t.Errorf("expected type=tool_use, got %v", toolUse["type"])
+	}
+
+	if toolUse["id"] != "call_abc123" {
+		t.Errorf("expected id=call_abc123, got %v", toolUse["id"])
+	}
+
+	if toolUse["name"] != "get_weather" {
+		t.Errorf("expected name=get_weather, got %v", toolUse["name"])
+	}
+
+	// Verify input arguments
+	input, ok := toolUse["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected input object, got %v", toolUse["input"])
+	}
+
+	if input["location"] != "San Francisco" {
+		t.Errorf("expected location=San Francisco, got %v", input["location"])
+	}
+}
+
+// Test OpenAI response with both content and tool_calls
+func TestOpenAITransformer_TransformResponse_ContentAndToolCalls(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	openaiResp := `{
+		"id": "chatcmpl-123",
+		"choices": [{
+			"message": {
+				"role": "assistant",
+				"content": "Let me check the weather for you.",
+				"tool_calls": [{
+					"id": "call_123",
+					"type": "function",
+					"function": {
+						"name": "get_weather",
+						"arguments": "{\"location\":\"NYC\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}]
+	}`
+
+	result, err := transformer.TransformResponse([]byte(openaiResp), "anthropic")
+	if err != nil {
+		t.Fatalf("TransformResponse failed: %v", err)
+	}
+
+	var anthropicResp map[string]interface{}
+	json.Unmarshal(result, &anthropicResp)
+
+	content := anthropicResp["content"].([]interface{})
+	if len(content) != 2 {
+		t.Errorf("expected 2 content blocks (text + tool_use), got %d", len(content))
+	}
+
+	// First block should be text
+	textBlock := content[0].(map[string]interface{})
+	if textBlock["type"] != "text" {
+		t.Errorf("expected first block type=text, got %v", textBlock["type"])
+	}
+
+	// Second block should be tool_use
+	toolBlock := content[1].(map[string]interface{})
+	if toolBlock["type"] != "tool_use" {
+		t.Errorf("expected second block type=tool_use, got %v", toolBlock["type"])
+	}
+}

@@ -1,5 +1,7 @@
 package transform
 
+import "encoding/json"
+
 // OpenAITransformer handles OpenAI Chat Completions API format.
 // This is used by Codex and other OpenAI-compatible clients.
 type OpenAITransformer struct{}
@@ -113,13 +115,40 @@ func (t *OpenAITransformer) TransformResponse(body []byte, clientFormat string) 
 	if choices, ok := data["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if message, ok := choice["message"].(map[string]interface{}); ok {
-				if content, ok := message["content"].(string); ok {
-					anthropicResponse["content"] = []interface{}{
-						map[string]interface{}{
-							"type": "text",
-							"text": content,
-						},
+				var contentBlocks []interface{}
+
+				// Add text content if present
+				if content, ok := message["content"].(string); ok && content != "" {
+					contentBlocks = append(contentBlocks, map[string]interface{}{
+						"type": "text",
+						"text": content,
+					})
+				}
+
+				// Transform tool_calls to tool_use blocks
+				if toolCalls, ok := message["tool_calls"].([]interface{}); ok {
+					for _, tc := range toolCalls {
+						if toolCall, ok := tc.(map[string]interface{}); ok {
+							if function, ok := toolCall["function"].(map[string]interface{}); ok {
+								// Parse arguments JSON string
+								var args interface{}
+								if argsStr, ok := function["arguments"].(string); ok {
+									json.Unmarshal([]byte(argsStr), &args)
+								}
+
+								contentBlocks = append(contentBlocks, map[string]interface{}{
+									"type":  "tool_use",
+									"id":    toolCall["id"],
+									"name":  function["name"],
+									"input": args,
+								})
+							}
+						}
 					}
+				}
+
+				if len(contentBlocks) > 0 {
+					anthropicResponse["content"] = contentBlocks
 				}
 			}
 

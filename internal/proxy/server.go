@@ -493,7 +493,17 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				msg := fmt.Sprintf("transform error: %v", transformErr)
 				s.Logger.Printf("[%s] %s", p.Name, msg)
 				s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelError, msg, sessionID, clientType)
-				http.Error(w, fmt.Sprintf(`{"error":{"type":"transform_error","message":"%s"}}`, transformErr.Error()), http.StatusInternalServerError)
+
+				// Return proper JSON error response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				errResp := map[string]interface{}{
+					"error": map[string]interface{}{
+						"type":    "transform_error",
+						"message": transformErr.Error(),
+					},
+				}
+				json.NewEncoder(w).Encode(errResp)
 				return true
 			}
 
@@ -1017,7 +1027,17 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		transformed, err := transformer.TransformResponse(body, requestFormat)
 		if err != nil {
 			s.Logger.Printf("[%s] transform response error: %v", p.Name, err)
-			http.Error(w, fmt.Sprintf(`{"error":{"type":"transform_error","message":"response transformation failed: %v"}}`, err), http.StatusInternalServerError)
+
+			// Return proper JSON error response
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			errResp := map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "transform_error",
+					"message": fmt.Sprintf("response transformation failed: %v", err),
+				},
+			}
+			json.NewEncoder(w).Encode(errResp)
 			return
 		}
 		s.Logger.Printf("[%s] transformed response: %s → %s", p.Name, providerFormat, requestFormat)

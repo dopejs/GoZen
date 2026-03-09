@@ -42,6 +42,20 @@ func (e *ProxyError) Type() string {
 	return e.ErrType
 }
 
+// TransformError represents an error during request/response transformation
+type TransformError struct {
+	Op  string // "request" or "response"
+	Err error
+}
+
+func (e *TransformError) Error() string {
+	return fmt.Sprintf("transform %s failed: %v", e.Op, e.Err)
+}
+
+func (e *TransformError) Unwrap() error {
+	return e.Err
+}
+
 // Error type constants for metrics classification
 const (
 	ErrorTypeAuth       = "auth"
@@ -473,6 +487,26 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		resp, err := s.forwardRequest(r, p, bodyBytes, modelOverride, requestFormat)
 		elapsed := time.Since(start)
 		if err != nil {
+			// Check if this is a transform error - don't mark provider unhealthy
+			var transformErr *TransformError
+			if errors.As(err, &transformErr) {
+				msg := fmt.Sprintf("transform error: %v", transformErr)
+				s.Logger.Printf("[%s] %s", p.Name, msg)
+				s.logStructured(p.Name, r.Method, r.URL.Path, 0, LogLevelError, msg, sessionID, clientType)
+
+				// Return proper JSON error response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				errResp := map[string]interface{}{
+					"error": map[string]interface{}{
+						"type":    "transform_error",
+						"message": transformErr.Error(),
+					},
+				}
+				json.NewEncoder(w).Encode(errResp)
+				return true
+			}
+
 			// Check if client canceled the request - don't mark provider unhealthy
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				msg := fmt.Sprintf("request canceled by client: %v", err)
@@ -724,10 +758,10 @@ func (s *ProxyServer) forwardRequest(r *http.Request, p *Provider, body []byte, 
 		transformed, err := transformer.TransformRequest(modifiedBody, requestFormat)
 		if err != nil {
 			s.Logger.Printf("[%s] transform request error: %v", p.Name, err)
-		} else {
-			s.Logger.Printf("[%s] transformed request: %s → %s", p.Name, requestFormat, providerFormat)
-			modifiedBody = transformed
+			return nil, &TransformError{Op: "request", Err: err}
 		}
+		s.Logger.Printf("[%s] transformed request: %s → %s", p.Name, requestFormat, providerFormat)
+		modifiedBody = transformed
 	}
 
 	// Transform path if needed (e.g., /responses → /v1/messages)
@@ -868,7 +902,8 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 		}
 
 		// Transform Responses API → Anthropic
-		if requestFormat == config.ProviderTypeAnthropic {
+		// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
+		if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
 			transformed, err := transform.ResponsesAPIToAnthropic(body)
 			if err != nil {
 				s.Logger.Printf("[%s] Responses API response transform error: %v", p.Name, err)
@@ -903,7 +938,8 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 	flusher, ok := w.(http.Flusher)
 
 	var reader io.Reader = resp.Body
-	if requestFormat == config.ProviderTypeAnthropic {
+	// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
+	if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
 		st := &transform.StreamTransformer{
 			ClientFormat:   "anthropic",
 			ProviderFormat: "openai-responses",
@@ -991,10 +1027,21 @@ func (s *ProxyServer) copyResponse(w http.ResponseWriter, resp *http.Response, p
 		transformed, err := transformer.TransformResponse(body, requestFormat)
 		if err != nil {
 			s.Logger.Printf("[%s] transform response error: %v", p.Name, err)
-		} else {
-			s.Logger.Printf("[%s] transformed response: %s → %s", p.Name, providerFormat, requestFormat)
-			body = transformed
+
+			// Return proper JSON error response
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			errResp := map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "transform_error",
+					"message": fmt.Sprintf("response transformation failed: %v", err),
+				},
+			}
+			json.NewEncoder(w).Encode(errResp)
+			return
 		}
+		s.Logger.Printf("[%s] transformed response: %s → %s", p.Name, providerFormat, requestFormat)
+		body = transformed
 	}
 
 	// Copy headers (except Content-Length which may have changed)

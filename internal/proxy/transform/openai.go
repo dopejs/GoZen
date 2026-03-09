@@ -1,5 +1,7 @@
 package transform
 
+import "encoding/json"
+
 // OpenAITransformer handles OpenAI Chat Completions API format.
 // This is used by Codex and other OpenAI-compatible clients.
 type OpenAITransformer struct{}
@@ -12,8 +14,10 @@ func (t *OpenAITransformer) Name() string {
 // If the client is already using OpenAI format, no transformation is needed.
 // If the client is using Anthropic format, convert to OpenAI format.
 func (t *OpenAITransformer) TransformRequest(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "openai" {
-		// No transformation needed
+	// Normalize format
+	normalized := NormalizeFormat(clientFormat)
+	if normalized == "openai" || normalized == "" {
+		// No transformation needed (empty defaults to openai for this transformer)
 		return body, nil
 	}
 
@@ -76,15 +80,295 @@ func (t *OpenAITransformer) TransformRequest(body []byte, clientFormat string) (
 		delete(data, "system")
 	}
 
+	// Transform Anthropic message content blocks to OpenAI format
+	if messages, ok := data["messages"].([]interface{}); ok {
+		transformedMessages := make([]interface{}, 0, len(messages))
+		for _, msg := range messages {
+			if msgMap, ok := msg.(map[string]interface{}); ok {
+				transformed := t.transformAnthropicMessageToOpenAI(msgMap)
+
+				// Check if this is a tool results marker that needs expansion
+				if toolResults, ok := transformed["_anthropic_tool_results"].([]interface{}); ok {
+					// Check if we need to preserve mixed content ordering
+					if contentBlocks, ok := transformed["_anthropic_content_blocks"].([]interface{}); ok {
+						// Preserve original ordering: emit messages in the order blocks appear
+						for _, block := range contentBlocks {
+							if blockMap, ok := block.(map[string]interface{}); ok {
+								blockType, _ := blockMap["type"].(string)
+
+								switch blockType {
+								case "text":
+									// Emit user message with text content
+									if text, ok := blockMap["text"].(string); ok {
+										transformedMessages = append(transformedMessages, map[string]interface{}{
+											"role":    "user",
+											"content": text,
+										})
+									}
+
+								case "tool_result":
+									// Emit tool message
+									toolMsg := map[string]interface{}{
+										"role":         "tool",
+										"tool_call_id": blockMap["tool_use_id"],
+									}
+
+									// Extract content from tool_result
+									if content, ok := blockMap["content"].([]interface{}); ok {
+										// Concatenate text blocks
+										var textParts []string
+										for _, c := range content {
+											if cMap, ok := c.(map[string]interface{}); ok {
+												if cMap["type"] == "text" {
+													if text, ok := cMap["text"].(string); ok {
+														textParts = append(textParts, text)
+													}
+												}
+											}
+										}
+										if len(textParts) > 0 {
+											content := textParts[0]
+											for i := 1; i < len(textParts); i++ {
+												content += "\n" + textParts[i]
+											}
+											toolMsg["content"] = content
+										}
+									} else if contentStr, ok := blockMap["content"].(string); ok {
+										toolMsg["content"] = contentStr
+									}
+
+									transformedMessages = append(transformedMessages, toolMsg)
+								}
+							}
+						}
+					} else {
+						// Legacy path: no mixed content, just expand tool results
+						for _, tr := range toolResults {
+							if trMap, ok := tr.(map[string]interface{}); ok {
+								toolMsg := map[string]interface{}{
+									"role":         "tool",
+									"tool_call_id": trMap["tool_use_id"],
+								}
+
+								// Extract content from tool_result
+								if content, ok := trMap["content"].([]interface{}); ok {
+									// Concatenate text blocks
+									var textParts []string
+									for _, c := range content {
+										if cMap, ok := c.(map[string]interface{}); ok {
+											if cMap["type"] == "text" {
+												if text, ok := cMap["text"].(string); ok {
+													textParts = append(textParts, text)
+												}
+											}
+										}
+									}
+									if len(textParts) > 0 {
+										content := textParts[0]
+										for i := 1; i < len(textParts); i++ {
+											content += "\n" + textParts[i]
+										}
+										toolMsg["content"] = content
+									}
+								} else if contentStr, ok := trMap["content"].(string); ok {
+									toolMsg["content"] = contentStr
+								}
+
+								transformedMessages = append(transformedMessages, toolMsg)
+							}
+						}
+					}
+				} else {
+					transformedMessages = append(transformedMessages, transformed)
+				}
+			}
+		}
+		data["messages"] = transformedMessages
+	}
+
 	return toJSON(data)
+}
+
+// transformAnthropicMessageToOpenAI converts Anthropic message format to OpenAI format.
+// Handles tool_use and tool_result content blocks.
+func (t *OpenAITransformer) transformAnthropicMessageToOpenAI(msg map[string]interface{}) map[string]interface{} {
+	role, _ := msg["role"].(string)
+	content := msg["content"]
+
+	// If content is a string, return as-is
+	if contentStr, ok := content.(string); ok {
+		return map[string]interface{}{
+			"role":    role,
+			"content": contentStr,
+		}
+	}
+
+	// If content is an array of blocks, transform based on role
+	if contentBlocks, ok := content.([]interface{}); ok {
+		// Assistant message with tool_use blocks -> OpenAI assistant with tool_calls
+		if role == "assistant" {
+			return t.transformAssistantMessage(contentBlocks)
+		}
+
+		// User message with tool_result blocks -> OpenAI tool messages
+		if role == "user" {
+			return t.transformUserMessageWithToolResults(contentBlocks)
+		}
+
+		// Regular user message with text blocks
+		var textParts []string
+		for _, block := range contentBlocks {
+			if blockMap, ok := block.(map[string]interface{}); ok {
+				if blockMap["type"] == "text" {
+					if text, ok := blockMap["text"].(string); ok {
+						textParts = append(textParts, text)
+					}
+				}
+			}
+		}
+		if len(textParts) > 0 {
+			return map[string]interface{}{
+				"role":    role,
+				"content": textParts[0], // OpenAI expects single string
+			}
+		}
+	}
+
+	// Fallback
+	return msg
+}
+
+// transformAssistantMessage converts Anthropic assistant message with tool_use to OpenAI format.
+func (t *OpenAITransformer) transformAssistantMessage(contentBlocks []interface{}) map[string]interface{} {
+	var textParts []string
+	var toolCalls []interface{}
+
+	for _, block := range contentBlocks {
+		if blockMap, ok := block.(map[string]interface{}); ok {
+			blockType, _ := blockMap["type"].(string)
+
+			switch blockType {
+			case "text":
+				if text, ok := blockMap["text"].(string); ok {
+					textParts = append(textParts, text)
+				}
+
+			case "tool_use":
+				// Convert Anthropic tool_use to OpenAI tool_call
+				toolCall := map[string]interface{}{
+					"id":   blockMap["id"],
+					"type": "function",
+					"function": map[string]interface{}{
+						"name": blockMap["name"],
+					},
+				}
+
+				// Serialize input as JSON string
+				if input := blockMap["input"]; input != nil {
+					if inputBytes, err := json.Marshal(input); err == nil {
+						toolCall["function"].(map[string]interface{})["arguments"] = string(inputBytes)
+					}
+				}
+
+				toolCalls = append(toolCalls, toolCall)
+			}
+		}
+	}
+
+	result := map[string]interface{}{
+		"role": "assistant",
+	}
+
+	// Concatenate all text parts
+	textContent := ""
+	if len(textParts) > 0 {
+		textContent = textParts[0]
+		for i := 1; i < len(textParts); i++ {
+			textContent += "\n" + textParts[i]
+		}
+	}
+
+	// OpenAI requires content to be present (can be null if tool_calls exist)
+	if textContent != "" {
+		result["content"] = textContent
+	} else if len(toolCalls) > 0 {
+		result["content"] = nil
+	}
+
+	if len(toolCalls) > 0 {
+		result["tool_calls"] = toolCalls
+	}
+
+	return result
+}
+
+// transformUserMessageWithToolResults converts Anthropic user message with tool_result blocks.
+// In OpenAI format, tool results are separate "tool" role messages.
+// If there are text blocks mixed with tool_results, we need to preserve both and their ordering.
+func (t *OpenAITransformer) transformUserMessageWithToolResults(contentBlocks []interface{}) map[string]interface{} {
+	// Collect tool results and check for text blocks
+	var toolResults []interface{}
+	var hasText bool
+
+	for _, block := range contentBlocks {
+		if blockMap, ok := block.(map[string]interface{}); ok {
+			blockType, _ := blockMap["type"].(string)
+			switch blockType {
+			case "text":
+				hasText = true
+			case "tool_result":
+				toolResults = append(toolResults, blockMap)
+			}
+		}
+	}
+
+	// If no tool results, return regular user message with concatenated text
+	if len(toolResults) == 0 {
+		var textParts []string
+		for _, block := range contentBlocks {
+			if blockMap, ok := block.(map[string]interface{}); ok {
+				if blockMap["type"] == "text" {
+					if text, ok := blockMap["text"].(string); ok {
+						textParts = append(textParts, text)
+					}
+				}
+			}
+		}
+		if len(textParts) > 0 {
+			content := textParts[0]
+			for i := 1; i < len(textParts); i++ {
+				content += "\n" + textParts[i]
+			}
+			return map[string]interface{}{
+				"role":    "user",
+				"content": content,
+			}
+		}
+		// Empty message
+		return map[string]interface{}{
+			"role":    "user",
+			"content": "",
+		}
+	}
+
+	// Has tool results - return marker structure preserving original ordering
+	result := map[string]interface{}{
+		"_anthropic_tool_results":      toolResults,
+		"_anthropic_has_mixed_content": hasText,
+		"_anthropic_content_blocks":    contentBlocks, // Preserve original ordering
+	}
+
+	return result
 }
 
 // TransformResponse transforms a response from OpenAI format.
 // If the client expects OpenAI format, no transformation is needed.
 // If the client expects Anthropic format, convert from OpenAI format.
 func (t *OpenAITransformer) TransformResponse(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "openai" {
-		// No transformation needed
+	// Normalize format
+	normalized := NormalizeFormat(clientFormat)
+	if normalized == "openai" || normalized == "" {
+		// No transformation needed (empty defaults to openai for this transformer)
 		return body, nil
 	}
 
@@ -109,13 +393,40 @@ func (t *OpenAITransformer) TransformResponse(body []byte, clientFormat string) 
 	if choices, ok := data["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if message, ok := choice["message"].(map[string]interface{}); ok {
-				if content, ok := message["content"].(string); ok {
-					anthropicResponse["content"] = []interface{}{
-						map[string]interface{}{
-							"type": "text",
-							"text": content,
-						},
+				var contentBlocks []interface{}
+
+				// Add text content if present
+				if content, ok := message["content"].(string); ok && content != "" {
+					contentBlocks = append(contentBlocks, map[string]interface{}{
+						"type": "text",
+						"text": content,
+					})
+				}
+
+				// Transform tool_calls to tool_use blocks
+				if toolCalls, ok := message["tool_calls"].([]interface{}); ok {
+					for _, tc := range toolCalls {
+						if toolCall, ok := tc.(map[string]interface{}); ok {
+							if function, ok := toolCall["function"].(map[string]interface{}); ok {
+								// Parse arguments JSON string
+								var args interface{}
+								if argsStr, ok := function["arguments"].(string); ok {
+									json.Unmarshal([]byte(argsStr), &args)
+								}
+
+								contentBlocks = append(contentBlocks, map[string]interface{}{
+									"type":  "tool_use",
+									"id":    toolCall["id"],
+									"name":  function["name"],
+									"input": args,
+								})
+							}
+						}
 					}
+				}
+
+				if len(contentBlocks) > 0 {
+					anthropicResponse["content"] = contentBlocks
 				}
 			}
 

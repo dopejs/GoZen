@@ -401,3 +401,103 @@ func TestBuildProvidersModelDefaults(t *testing.T) {
 		t.Errorf("SonnetModel = %q, want custom-sonnet", p2.SonnetModel)
 	}
 }
+
+func TestDetectClientFormat(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		clientType string
+		want       string
+	}{
+		{
+			name:       "chat completions path",
+			path:       "/v1/chat/completions",
+			clientType: "",
+			want:       "openai-chat",
+		},
+		{
+			name:       "responses api path",
+			path:       "/responses",
+			clientType: "",
+			want:       "openai-responses",
+		},
+		{
+			name:       "responses api with prefix",
+			path:       "/v1/responses",
+			clientType: "",
+			want:       "openai-responses",
+		},
+		{
+			name:       "anthropic messages path",
+			path:       "/v1/messages",
+			clientType: "",
+			want:       "anthropic-messages",
+		},
+		{
+			name:       "codex client type",
+			path:       "/v1/messages",
+			clientType: "codex",
+			want:       "openai-chat",
+		},
+		{
+			name:       "unknown path defaults to anthropic",
+			path:       "/unknown",
+			clientType: "",
+			want:       "anthropic-messages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectClientFormat(tt.path, tt.clientType)
+			if got != tt.want {
+				t.Errorf("detectClientFormat(%q, %q) = %q, want %q", tt.path, tt.clientType, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test detectClientFormat with Codex client type
+func TestDetectClientFormat_Codex(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		clientType string
+		expected   string
+	}{
+		{
+			name:       "codex with responses path",
+			path:       "/v1/responses",
+			clientType: "codex",
+			expected:   "openai-responses",
+		},
+		{
+			name:       "codex with chat completions path",
+			path:       "/v1/chat/completions",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+		{
+			name:       "codex with unknown path defaults to chat",
+			path:       "/v1/unknown",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+		{
+			name:       "codex with messages path defaults to chat",
+			path:       "/v1/messages",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectClientFormat(tt.path, tt.clientType)
+			if result != tt.expected {
+				t.Errorf("detectClientFormat(%q, %q) = %q, want %q",
+					tt.path, tt.clientType, result, tt.expected)
+			}
+		})
+	}
+}

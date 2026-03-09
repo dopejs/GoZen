@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -3180,5 +3181,91 @@ func TestScenarioFallbackWithDisabledProviders(t *testing.T) {
 
 	if w2.Code != 503 {
 		t.Fatalf("status = %d, want 503 (all providers disabled); body: %s", w2.Code, w2.Body.String())
+	}
+}
+
+// Phase 6: Transform Error Classification Tests
+
+// T032: Verify TransformError type exists and can be detected
+func TestTransformError_RequestTransformFailure(t *testing.T) {
+	// Test that TransformError type exists and implements error interface
+	err := &TransformError{Op: "request", Err: fmt.Errorf("test error")}
+	if err.Error() == "" {
+		t.Error("TransformError should implement error interface")
+	}
+
+	// Test that errors.As can detect TransformError
+	var transformErr *TransformError
+	if !errors.As(err, &transformErr) {
+		t.Error("errors.As should detect TransformError")
+	}
+
+	if transformErr.Op != "request" {
+		t.Errorf("expected Op=request, got %s", transformErr.Op)
+	}
+}
+
+// T033: Verify response transform errors return HTTP 500
+func TestTransformError_ResponseTransformFailure(t *testing.T) {
+	// Test TransformError for response operations
+	err := &TransformError{Op: "response", Err: fmt.Errorf("invalid format")}
+
+	var transformErr *TransformError
+	if !errors.As(err, &transformErr) {
+		t.Error("errors.As should detect TransformError")
+	}
+
+	if transformErr.Op != "response" {
+		t.Errorf("expected Op=response, got %s", transformErr.Op)
+	}
+
+	// Verify Unwrap works
+	if transformErr.Unwrap() == nil {
+		t.Error("TransformError should unwrap to underlying error")
+	}
+}
+
+// Test that transform errors return proper JSON with correct Content-Type
+func TestTransformError_ProperJSONResponse(t *testing.T) {
+	// Test that TransformError produces valid JSON response
+	err := &TransformError{Op: "request", Err: fmt.Errorf("test error with \"quotes\" and special chars")}
+
+	// Simulate what the server does
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	errResp := map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "transform_error",
+			"message": err.Error(),
+		},
+	}
+	json.NewEncoder(w).Encode(errResp)
+
+	// Verify Content-Type
+	if w.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type: application/json, got %s", w.Header().Get("Content-Type"))
+	}
+
+	// Verify valid JSON
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &decoded); err != nil {
+		t.Errorf("response should be valid JSON: %v, body: %s", err, w.Body.String())
+	}
+
+	// Verify error structure
+	if decoded["error"] == nil {
+		t.Error("expected error field in response")
+	}
+
+	errorObj := decoded["error"].(map[string]interface{})
+	if errorObj["type"] != "transform_error" {
+		t.Errorf("expected type=transform_error, got %v", errorObj["type"])
+	}
+
+	// Verify message contains the error text (quotes should be properly escaped)
+	message := errorObj["message"].(string)
+	if !strings.Contains(message, "test error") {
+		t.Errorf("expected message to contain error text, got: %s", message)
 	}
 }

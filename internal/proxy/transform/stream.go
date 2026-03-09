@@ -18,6 +18,25 @@ type StreamTransformer struct {
 	Model          string
 }
 
+// writeStreamError emits a protocol-native error event based on client format
+func (st *StreamTransformer) writeStreamError(w io.Writer, err error) {
+	normalizedClient := normalizeFormat(st.ClientFormat)
+
+	if normalizedClient == "openai" {
+		// OpenAI formats use error event
+		if st.ClientFormat == FormatOpenAIChat {
+			// Chat Completions format
+			fmt.Fprintf(w, "data: {\"error\":{\"message\":\"%s\",\"type\":\"stream_error\"}}\n\n", err.Error())
+		} else {
+			// Responses API format
+			fmt.Fprintf(w, "event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"%s\",\"type\":\"stream_error\"}}\n\n", err.Error())
+		}
+	} else {
+		// Anthropic format uses error event
+		fmt.Fprintf(w, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"stream_error\",\"message\":\"%s\"}}\n\n", err.Error())
+	}
+}
+
 // TransformSSEStream transforms SSE streams between API formats.
 // Returns a reader that produces the appropriate SSE events.
 func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
@@ -104,6 +123,12 @@ func (st *StreamTransformer) transformAnthropicToOpenAIResponses(r io.Reader, w 
 		}
 	}
 
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
+
 	// Send response.completed
 	st.writeResponseCompleted(w, created, fullText.String(), inputTokens, outputTokens)
 }
@@ -142,6 +167,12 @@ func (st *StreamTransformer) transformAnthropicToOpenAIChat(r io.Reader, w io.Wr
 			}
 			currentEvent = ""
 		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
 	}
 
 	// Send [DONE]
@@ -661,6 +692,12 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			}))
 		}
 	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
 }
 
 // transformResponsesAPIToAnthropic converts OpenAI Responses API SSE events
@@ -877,5 +914,12 @@ func (st *StreamTransformer) transformResponsesAPIToAnthropic(r io.Reader, w io.
 			}
 		}
 	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
+
 	_ = inputTokens
 }

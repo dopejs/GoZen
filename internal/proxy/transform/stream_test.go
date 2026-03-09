@@ -499,3 +499,126 @@ data: {"type":"message_stop"}
 		t.Error("should emit delta field")
 	}
 }
+
+// Phase 5: SSE Error Handling Tests
+
+// truncatedReader simulates a stream that ends abruptly with an error
+type truncatedReader struct {
+	data []byte
+	pos  int
+}
+
+func (r *truncatedReader) Read(p []byte) (n int, err error) {
+	if r.pos >= len(r.data) {
+		return 0, io.ErrUnexpectedEOF
+	}
+	n = copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
+}
+
+// T024: Anthropic to OpenAI - truncated stream should emit error event
+func TestStreamTransformer_ErrorHandling_AnthropicToOpenAI(t *testing.T) {
+	// Truncated Anthropic stream (missing message_stop)
+	input := strings.Join([]string{
+		`event: message_start`,
+		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-3-sonnet","content":[],"usage":{"input_tokens":10,"output_tokens":0}}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+		``,
+		// Stream ends abruptly here
+	}, "\n")
+
+	tr := &truncatedReader{data: []byte(input)}
+	st := &StreamTransformer{
+		ClientFormat:   "openai",
+		ProviderFormat: "anthropic",
+	}
+	reader := st.TransformSSEStream(tr)
+	output, _ := io.ReadAll(reader)
+	result := string(output)
+
+	// Should emit error event instead of completion
+	if strings.Contains(result, "response.completed") {
+		t.Error("should emit error event instead of completion")
+	}
+}
+
+// T025: OpenAI to Anthropic - truncated stream should emit error event
+func TestStreamTransformer_ErrorHandling_OpenAIToAnthropic(t *testing.T) {
+	input := strings.Join([]string{
+		`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}`,
+		``,
+		// Stream ends abruptly
+	}, "\n")
+
+	tr := &truncatedReader{data: []byte(input)}
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai",
+	}
+	reader := st.TransformSSEStream(tr)
+	output, _ := io.ReadAll(reader)
+	result := string(output)
+
+	// Should emit error event instead of completion
+	if strings.Contains(result, "message_stop") {
+		t.Error("should emit error event instead of completion")
+	}
+}
+
+// T026: Responses API to Anthropic - truncated stream should emit error event
+func TestStreamTransformer_ErrorHandling_ResponsesAPIToAnthropic(t *testing.T) {
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_1","object":"response","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		// Stream ends abruptly
+	}, "\n")
+
+	tr := &truncatedReader{data: []byte(input)}
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-responses",
+	}
+	reader := st.TransformSSEStream(tr)
+	output, _ := io.ReadAll(reader)
+	result := string(output)
+
+	// Should emit error event instead of completion
+	if strings.Contains(result, "message_stop") {
+		t.Error("should emit error event instead of completion")
+	}
+}
+
+// T027: Clean EOF should emit correct completion event
+func TestStreamTransformer_ErrorHandling_CleanEOF(t *testing.T) {
+	input := strings.Join([]string{
+		`event: message_start`,
+		`data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-3-sonnet","content":[],"usage":{"input_tokens":10,"output_tokens":0}}}`,
+		``,
+		`event: content_block_delta`,
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+		``,
+		`event: message_delta`,
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`,
+		``,
+		`event: message_stop`,
+		`data: {"type":"message_stop"}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   "openai",
+		ProviderFormat: "anthropic",
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, _ := io.ReadAll(reader)
+	result := string(output)
+
+	// Should emit completion event (not error)
+	if !strings.Contains(result, "response.completed") {
+		t.Error("should emit completion event for clean EOF")
+	}
+}

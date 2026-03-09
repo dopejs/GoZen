@@ -104,17 +104,17 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T024 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted (not `message_stop`) for `transformAnthropicToOpenAI` in `internal/proxy/transform/stream_test.go`
-- [ ] T025 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted for `transformOpenAIToAnthropic` in `internal/proxy/transform/stream_test.go`
-- [ ] T026 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted for `transformResponsesAPIToAnthropic` in `internal/proxy/transform/stream_test.go`
-- [ ] T027 [P] [US3] Add test: clean EOF causes `scanner.Err() == nil` → correct completion event emitted for each streaming path in `internal/proxy/transform/stream_test.go`
+- [X] T024 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted (not `message_stop`) for `transformAnthropicToOpenAI` in `internal/proxy/transform/stream_test.go`
+- [X] T025 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted for `transformOpenAIToAnthropic` in `internal/proxy/transform/stream_test.go`
+- [X] T026 [P] [US3] Add test: truncated reader causes `scanner.Err()` → error event emitted for `transformResponsesAPIToAnthropic` in `internal/proxy/transform/stream_test.go`
+- [X] T027 [P] [US3] Add test: clean EOF causes `scanner.Err() == nil` → correct completion event emitted for each streaming path in `internal/proxy/transform/stream_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Add `writeStreamError(pw io.Writer, clientFormat string, err error)` helper in `internal/proxy/transform/stream.go` emitting protocol-native error events per data-model.md
-- [ ] T029 [US3] Add `scanner.Err()` check after loop in `transformAnthropicToOpenAI` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
-- [ ] T030 [US3] Add `scanner.Err()` check after loop in `transformOpenAIToAnthropic` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
-- [ ] T031 [US3] Add `scanner.Err()` check after loop in `transformResponsesAPIToAnthropic` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
+- [X] T028 [US3] Add `writeStreamError(pw io.Writer, clientFormat string, err error)` helper in `internal/proxy/transform/stream.go` emitting protocol-native error events per data-model.md
+- [X] T029 [US3] Add `scanner.Err()` check after loop in `transformAnthropicToOpenAI` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
+- [X] T030 [US3] Add `scanner.Err()` check after loop in `transformOpenAIToAnthropic` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
+- [X] T031 [US3] Add `scanner.Err()` check after loop in `transformResponsesAPIToAnthropic` in `internal/proxy/transform/stream.go`; call `writeStreamError` if non-nil, skip completion event
 
 **Checkpoint**: All three streaming paths propagate errors correctly; no fake completions on broken streams.
 

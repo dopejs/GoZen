@@ -565,3 +565,156 @@ func TestOpenAITransformer_TransformResponse_ContentAndToolCalls(t *testing.T) {
 		t.Errorf("expected second block type=tool_use, got %v", toolBlock["type"])
 	}
 }
+
+// Test Anthropic -> OpenAI request transformation with tool_use
+func TestOpenAITransformer_TransformRequest_ToolUse(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	// Anthropic request with assistant message containing tool_use
+	anthropicReq := `{
+		"model": "claude-3-5-sonnet-20241022",
+		"max_tokens": 1024,
+		"messages": [
+			{
+				"role": "user",
+				"content": "What's the weather in SF?"
+			},
+			{
+				"role": "assistant",
+				"content": [
+					{
+						"type": "text",
+						"text": "Let me check the weather for you."
+					},
+					{
+						"type": "tool_use",
+						"id": "toolu_123",
+						"name": "get_weather",
+						"input": {"location": "San Francisco", "unit": "celsius"}
+					}
+				]
+			}
+		]
+	}`
+
+	result, err := transformer.TransformRequest([]byte(anthropicReq), "anthropic-messages")
+	if err != nil {
+		t.Fatalf("TransformRequest failed: %v", err)
+	}
+
+	var openaiReq map[string]interface{}
+	if err := json.Unmarshal(result, &openaiReq); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// Verify max_tokens -> max_completion_tokens
+	if openaiReq["max_completion_tokens"] != float64(1024) {
+		t.Errorf("expected max_completion_tokens=1024, got %v", openaiReq["max_completion_tokens"])
+	}
+
+	// Verify messages
+	messages := openaiReq["messages"].([]interface{})
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(messages))
+	}
+
+	// Check assistant message with tool_calls
+	assistantMsg := messages[1].(map[string]interface{})
+	if assistantMsg["role"] != "assistant" {
+		t.Errorf("expected role=assistant, got %v", assistantMsg["role"])
+	}
+
+	if assistantMsg["content"] != "Let me check the weather for you." {
+		t.Errorf("expected text content, got %v", assistantMsg["content"])
+	}
+
+	toolCalls := assistantMsg["tool_calls"].([]interface{})
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool_call, got %d", len(toolCalls))
+	}
+
+	toolCall := toolCalls[0].(map[string]interface{})
+	if toolCall["id"] != "toolu_123" {
+		t.Errorf("expected id=toolu_123, got %v", toolCall["id"])
+	}
+
+	function := toolCall["function"].(map[string]interface{})
+	if function["name"] != "get_weather" {
+		t.Errorf("expected name=get_weather, got %v", function["name"])
+	}
+
+	// Verify arguments is JSON string
+	argsStr := function["arguments"].(string)
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+		t.Errorf("arguments should be valid JSON: %v", err)
+	}
+	if args["location"] != "San Francisco" {
+		t.Errorf("expected location=San Francisco, got %v", args["location"])
+	}
+}
+
+// Test Anthropic -> OpenAI request transformation with tool_result
+func TestOpenAITransformer_TransformRequest_ToolResult(t *testing.T) {
+	transformer := &OpenAITransformer{}
+
+	anthropicReq := `{
+		"model": "claude-3-5-sonnet-20241022",
+		"messages": [
+			{
+				"role": "user",
+				"content": "What's the weather?"
+			},
+			{
+				"role": "assistant",
+				"content": [
+					{
+						"type": "tool_use",
+						"id": "toolu_123",
+						"name": "get_weather",
+						"input": {"location": "SF"}
+					}
+				]
+			},
+			{
+				"role": "user",
+				"content": [
+					{
+						"type": "tool_result",
+						"tool_use_id": "toolu_123",
+						"content": "72°F, sunny"
+					}
+				]
+			}
+		]
+	}`
+
+	result, err := transformer.TransformRequest([]byte(anthropicReq), "anthropic")
+	if err != nil {
+		t.Fatalf("TransformRequest failed: %v", err)
+	}
+
+	var openaiReq map[string]interface{}
+	json.Unmarshal(result, &openaiReq)
+
+	messages := openaiReq["messages"].([]interface{})
+	
+	// Should have: user, assistant, tool
+	if len(messages) != 3 {
+		t.Fatalf("expected 3 messages (user, assistant, tool), got %d", len(messages))
+	}
+
+	// Check tool message
+	toolMsg := messages[2].(map[string]interface{})
+	if toolMsg["role"] != "tool" {
+		t.Errorf("expected role=tool, got %v", toolMsg["role"])
+	}
+
+	if toolMsg["tool_call_id"] != "toolu_123" {
+		t.Errorf("expected tool_call_id=toolu_123, got %v", toolMsg["tool_call_id"])
+	}
+
+	if toolMsg["content"] != "72°F, sunny" {
+		t.Errorf("expected content='72°F, sunny', got %v", toolMsg["content"])
+	}
+}

@@ -626,6 +626,70 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			continue
 		}
 
+		// Check for tool_calls delta
+		if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+			for _, tc := range toolCalls {
+				toolCall, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				index := 0
+				if idx, ok := toolCall["index"].(float64); ok {
+					index = int(idx)
+				}
+
+				// Check if this is a new tool call (has id)
+				if id, ok := toolCall["id"].(string); ok && id != "" {
+					// Start new tool_use block
+					if contentBlockStarted {
+						// Stop previous content block
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": index,
+						}))
+					}
+
+					// Get function name
+					var functionName string
+					if function, ok := toolCall["function"].(map[string]interface{}); ok {
+						if name, ok := function["name"].(string); ok {
+							functionName = name
+						}
+					}
+
+					// Send content_block_start for tool_use
+					fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
+						"type":  "content_block_start",
+						"index": index,
+						"content_block": map[string]interface{}{
+							"type":  "tool_use",
+							"id":    id,
+							"name":  functionName,
+							"input": map[string]interface{}{},
+						},
+					}))
+					contentBlockStarted = true
+				}
+
+				// Check for function arguments delta
+				if function, ok := toolCall["function"].(map[string]interface{}); ok {
+					if args, ok := function["arguments"].(string); ok && args != "" {
+						// Send input_json_delta
+						fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
+							"type":  "content_block_delta",
+							"index": index,
+							"delta": map[string]interface{}{
+								"type":        "input_json_delta",
+								"partial_json": args,
+							},
+						}))
+					}
+				}
+			}
+			continue
+		}
+
 		// Check for content delta
 		if content, ok := delta["content"].(string); ok && content != "" {
 			// Start content block if not started

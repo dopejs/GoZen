@@ -622,3 +622,126 @@ func TestStreamTransformer_ErrorHandling_CleanEOF(t *testing.T) {
 		t.Error("should emit completion event for clean EOF")
 	}
 }
+
+// Test OpenAI Chat SSE -> Anthropic SSE with streaming tool_calls
+func TestStreamTransformer_OpenAIChatToAnthropic_StreamingToolCalls(t *testing.T) {
+	// Simulate OpenAI streaming response with tool_calls
+	openaiStream := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc123","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"location\""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"SF\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic-messages",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Verify message_start
+	if !strings.Contains(outputStr, "event: message_start") {
+		t.Error("expected message_start event")
+	}
+
+	// Verify content_block_start with tool_use
+	if !strings.Contains(outputStr, "\"type\":\"tool_use\"") {
+		t.Error("expected tool_use content block")
+	}
+
+	if !strings.Contains(outputStr, "\"name\":\"get_weather\"") {
+		t.Error("expected tool name get_weather")
+	}
+
+	if !strings.Contains(outputStr, "\"id\":\"call_abc123\"") {
+		t.Error("expected tool call id")
+	}
+
+	// Verify input_json_delta events
+	if !strings.Contains(outputStr, "\"type\":\"input_json_delta\"") {
+		t.Error("expected input_json_delta events")
+	}
+
+	if !strings.Contains(outputStr, "\"partial_json\"") {
+		t.Error("expected partial_json in delta")
+	}
+
+	// Verify content_block_stop
+	if !strings.Contains(outputStr, "event: content_block_stop") {
+		t.Error("expected content_block_stop event")
+	}
+
+	// Verify stop_reason is tool_use
+	if !strings.Contains(outputStr, "\"stop_reason\":\"tool_use\"") {
+		t.Error("expected stop_reason=tool_use")
+	}
+
+	// Verify message_delta with usage
+	if !strings.Contains(outputStr, "event: message_delta") {
+		t.Error("expected message_delta event")
+	}
+}
+
+// Test OpenAI Chat SSE -> Anthropic SSE with text then tool_calls
+func TestStreamTransformer_OpenAIChatToAnthropic_TextThenToolCalls(t *testing.T) {
+	openaiStream := `data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"role":"assistant","content":"Let me check"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"content":" that"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"loc\":\"NYC\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+
+`
+
+	st := &StreamTransformer{
+		ClientFormat:   "anthropic",
+		ProviderFormat: "openai-chat",
+	}
+
+	reader := st.TransformSSEStream(strings.NewReader(openaiStream))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("failed to read stream: %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Should have text content block first
+	if !strings.Contains(outputStr, "\"type\":\"text\"") {
+		t.Error("expected text content block")
+	}
+
+	if !strings.Contains(outputStr, "\"text\":\"Let me check\"") {
+		t.Error("expected text content")
+	}
+
+	// Then tool_use block
+	if !strings.Contains(outputStr, "\"type\":\"tool_use\"") {
+		t.Error("expected tool_use content block")
+	}
+
+	// Should have two content_block_stop events (one for text, one for tool)
+	stopCount := strings.Count(outputStr, "event: content_block_stop")
+	if stopCount < 2 {
+		t.Errorf("expected at least 2 content_block_stop events, got %d", stopCount)
+	}
+}

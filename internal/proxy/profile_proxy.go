@@ -321,18 +321,18 @@ func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, m
 // detectClientFormat determines the client API format based on request path and client type.
 // Returns fine-grained format identifiers: anthropic-messages, openai-chat, openai-responses.
 func detectClientFormat(path, clientType string) string {
-	// If client type is explicitly set, use it
-	if clientType == "codex" {
-		return transform.FormatOpenAIChat
-	}
-
-	// Auto-detect from path
+	// Auto-detect from path first (works for all clients including Codex)
 	// OpenAI Responses API: /responses
 	if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
 		return transform.FormatOpenAIResponses
 	}
 	// OpenAI Chat Completions API: /v1/chat/completions
 	if strings.HasSuffix(path, "/chat/completions") {
+		return transform.FormatOpenAIChat
+	}
+
+	// If client type is explicitly set to codex and no path match, default to chat
+	if clientType == "codex" {
 		return transform.FormatOpenAIChat
 	}
 

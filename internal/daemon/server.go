@@ -2,14 +2,17 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -65,10 +68,12 @@ type Daemon struct {
 	tmpProfiles map[string]*TempProfile
 
 	// Sync
-	syncMgr    *gosync.SyncManager
-	syncCancel context.CancelFunc // cancels auto-pull ticker
-	pushTimer  *time.Timer        // debounced auto-push
-	pushMu     sync.Mutex          // protects pushTimer
+	syncMgr       *gosync.SyncManager
+	syncCancel    context.CancelFunc // cancels auto-pull ticker
+	pushTimer     *time.Timer        // debounced auto-push
+	pushMu        sync.Mutex          // protects pushTimer
+	pushCtx       context.Context    // controls pushTimer callback lifecycle
+	pushCtxCancel context.CancelFunc // cancels pushTimer callbacks
 
 	startTime time.Time
 	proxyPort int
@@ -271,6 +276,9 @@ func (d *Daemon) Start() error {
 			d.syncCancel()
 		}
 		d.pushMu.Lock()
+		if d.pushCtxCancel != nil {
+			d.pushCtxCancel() // Cancel any pending push callbacks
+		}
 		if d.pushTimer != nil {
 			d.pushTimer.Stop()
 		}
@@ -450,49 +458,96 @@ func (d *Daemon) startProxy() error {
 // canTakeoverProcess performs multi-layer verification to determine if it's safe
 // to kill a process occupying the proxy port. Returns (canTakeover, reason).
 //
+// Philosophy: Only refuse takeover if we can CONFIRM the process is a healthy daemon.
+// In all other cases (unresponsive, stale, orphaned), allow takeover for self-healing.
+//
 // Verification layers:
-// 1. Try to probe daemon status API - if responsive, it's a healthy daemon (don't kill)
-// 2. Check PID file - if exists and matches, verify it's our daemon instance
-// 3. If unresponsive and no valid PID file, it's likely stale (safe to takeover)
+// 1. Probe daemon status API - if responsive with valid JSON, it's healthy (don't kill)
+// 2. Check if process is actually listening on the port (lsof/netstat verification)
+// 3. Check PID file for additional context (but don't block on missing PID file)
+// 4. Default: allow takeover (prefer self-healing over false protection)
 func (d *Daemon) canTakeoverProcess(pid int, procName string) (bool, string) {
-	// Layer 1: Probe daemon status API
-	// If the daemon responds to status API, it's healthy and should not be killed
+	// Layer 1: Probe daemon status API with strict validation
+	// Only refuse takeover if we get a valid, healthy response
 	statusURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/status", d.proxyPort)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(statusURL)
 	if err == nil {
-		resp.Body.Close()
+		defer resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
-			// Daemon is healthy and responsive - do not kill
-			return false, "daemon is healthy and responsive"
+			// Verify it's actually a valid daemon response (not just any HTTP server)
+			var statusResp map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&statusResp) == nil {
+				// Check for daemon-specific fields
+				if _, hasVersion := statusResp["version"]; hasVersion {
+					if _, hasUptime := statusResp["uptime"]; hasUptime {
+						// Confirmed: healthy daemon with valid status response
+						return false, "daemon is healthy and responsive (verified status API)"
+					}
+				}
+			}
 		}
 	}
 
-	// Layer 2: Check PID file
+	// Layer 2: Verify process is actually listening on the port
+	// If the process isn't listening, it's definitely safe to takeover
+	listening, checkErr := isProcessListeningOnPort(pid, d.proxyPort)
+	if checkErr == nil && !listening {
+		return true, "process not listening on port (stale/zombie)"
+	}
+
+	// Layer 3: Check PID file for additional context (non-blocking)
 	pidPath := DaemonPidPath()
 	pidData, err := os.ReadFile(pidPath)
 	if err == nil {
-		// PID file exists, parse it
 		var storedPID int
 		if _, scanErr := fmt.Sscanf(string(pidData), "%d", &storedPID); scanErr == nil {
 			if storedPID == pid {
-				// PID matches but daemon is unresponsive
-				// This could be a crashed/hung daemon - safe to takeover
-				return true, "PID file matches but daemon unresponsive (likely crashed/hung)"
+				// PID matches but daemon is unresponsive - likely crashed/hung
+				return true, "PID file matches but daemon unresponsive (crashed/hung)"
 			}
-			// PID file exists but doesn't match - stale PID file
-			return true, "PID file exists but doesn't match (stale PID file)"
+			if storedPID != pid {
+				// PID file points to different process - stale PID file
+				return true, "PID file points to different process (stale PID file)"
+			}
 		}
 	}
 
-	// Layer 3: No PID file or couldn't read it
-	// Process is occupying the port but we can't verify it's a legitimate daemon
-	// This could be:
-	// - A daemon started without writing PID file (old version?)
-	// - A stale process
-	// - Another program with similar name
-	// Be conservative: if we can't verify, assume it's legitimate
-	return false, "cannot verify daemon identity (no valid PID file, unresponsive API)"
+	// Layer 4: Default to allowing takeover for self-healing
+	// We couldn't confirm it's a healthy daemon, so prefer self-healing:
+	// - No PID file: could be orphaned process
+	// - Unresponsive API: could be hung/crashed
+	// - Invalid response: could be wrong service on this port
+	// In all these cases, allowing takeover enables recovery
+	return true, "daemon unresponsive and cannot verify health (allowing takeover for self-healing)"
+}
+
+// isProcessListeningOnPort checks if a process is actually listening on the specified port.
+// This helps distinguish between:
+// - Active daemon listening on the port (don't kill)
+// - Zombie/orphaned process not listening (safe to kill)
+func isProcessListeningOnPort(pid int, port int) (bool, error) {
+	// Use lsof to check if the process has the port open
+	// lsof -nP -iTCP:<port> -sTCP:LISTEN -t returns PIDs listening on the port
+	cmd := fmt.Sprintf("lsof -nP -iTCP:%d -sTCP:LISTEN -t 2>/dev/null", port)
+	output, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		// lsof not available or command failed - can't verify
+		return false, fmt.Errorf("lsof check failed: %w", err)
+	}
+
+	// Parse PIDs from output
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		var foundPID int
+		if _, err := fmt.Sscanf(line, "%d", &foundPID); err == nil {
+			if foundPID == pid {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // Shutdown gracefully stops the daemon.
@@ -512,6 +567,9 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 		d.syncCancel()
 	}
 	d.pushMu.Lock()
+	if d.pushCtxCancel != nil {
+		d.pushCtxCancel() // Cancel any pending push callbacks
+	}
 	if d.pushTimer != nil {
 		d.pushTimer.Stop()
 	}
@@ -724,6 +782,18 @@ func (d *Daemon) initSync() {
 		d.syncCancel = nil
 	}
 
+	// Cancel any pending push timer callbacks
+	d.pushMu.Lock()
+	if d.pushCtxCancel != nil {
+		d.pushCtxCancel()
+		d.pushCtxCancel = nil
+	}
+	if d.pushTimer != nil {
+		d.pushTimer.Stop()
+		d.pushTimer = nil
+	}
+	d.pushMu.Unlock()
+
 	cfg := config.GetSyncConfig()
 	if cfg == nil || cfg.Backend == "" {
 		d.syncMgr = nil
@@ -745,6 +815,12 @@ func (d *Daemon) initSync() {
 		d.webServer.SetSyncManager(mgr)
 	}
 
+	// Create new context for push timer callbacks
+	d.pushMu.Lock()
+	d.pushCtx, d.pushCtxCancel = context.WithCancel(context.Background())
+	pushCtx := d.pushCtx // capture for closure
+	d.pushMu.Unlock()
+
 	// Register auto-push hook (debounced)
 	store := config.DefaultStore()
 	store.SetOnSave(func() {
@@ -756,6 +832,14 @@ func (d *Daemon) initSync() {
 			d.pushTimer.Stop()
 		}
 		d.pushTimer = time.AfterFunc(2*time.Second, func() {
+			// Check if context is still valid (not cancelled)
+			select {
+			case <-pushCtx.Done():
+				// Context cancelled, don't execute push
+				return
+			default:
+			}
+
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := mgr.Push(ctx); err != nil {

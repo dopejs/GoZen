@@ -19,9 +19,9 @@
 
 **Purpose**: Establish protocol format constants — the foundation all other phases depend on.
 
-- [ ] T001 Add `FormatAnthropicMessages`, `FormatOpenAIChat`, `FormatOpenAIResponses` constants to `internal/proxy/transform/transform.go`
-- [ ] T002 Update `NeedsTransform` in `internal/proxy/transform/transform.go` to handle new format strings
-- [ ] T003 Update `detectClientFormat` in `internal/proxy/profile_proxy.go` to return new format constants instead of `"openai"`/`"anthropic"`
+- [X] T001 Add `FormatAnthropicMessages`, `FormatOpenAIChat`, `FormatOpenAIResponses` constants to `internal/proxy/transform/transform.go`
+- [X] T002 Update `NeedsTransform` in `internal/proxy/transform/transform.go` to handle new format strings
+- [X] T003 Update `detectClientFormat` in `internal/proxy/profile_proxy.go` to return new format constants instead of `"openai"`/`"anthropic"`
 
 **Checkpoint**: Format constants defined and detection updated — all downstream phases can now use the new identifiers.
 
@@ -33,8 +33,8 @@
 
 **⚠️ CRITICAL**: Complete before any streaming or transform work begins.
 
-- [ ] T004 Delete `init()` function, `debugLogger` var, and all `debugLogger.Printf(...)` call sites from `internal/proxy/transform/anthropic.go`
-- [ ] T005 Verify `go build ./...` passes after logging removal
+- [X] T004 Delete `init()` function, `debugLogger` var, and all `debugLogger.Printf(...)` call sites from `internal/proxy/transform/anthropic.go`
+- [X] T005 Verify `go build ./...` passes after logging removal
 
 **Checkpoint**: No file I/O in transform hot path — clean build confirmed.
 

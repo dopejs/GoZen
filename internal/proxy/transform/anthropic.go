@@ -1,29 +1,12 @@
 package transform
 
 import (
-	"log"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
 // AnthropicTransformer handles Anthropic Messages API format.
 // This is the default format used by Claude Code.
 type AnthropicTransformer struct{}
-
-var debugLogger *log.Logger
-
-func init() {
-	// Write debug logs to a file
-	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".zen-dev", "transform.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		debugLogger = log.New(os.Stderr, "[transform] ", log.LstdFlags)
-	} else {
-		debugLogger = log.New(f, "[transform] ", log.LstdFlags)
-	}
-}
 
 func (t *AnthropicTransformer) Name() string {
 	return "anthropic"
@@ -37,9 +20,6 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 		// No transformation needed
 		return body, nil
 	}
-
-	// Debug: log incoming request
-	debugLogger.Printf("OpenAI request body: %s", string(body))
 
 	// OpenAI → Anthropic transformation
 	data, err := parseJSON(body)
@@ -143,9 +123,6 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 	if err != nil {
 		return body, err
 	}
-
-	// Debug: log transformed request
-	debugLogger.Printf("Anthropic request body: %s", string(result))
 
 	return result, nil
 }

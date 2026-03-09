@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// Protocol format identifiers for client-side format detection.
+const (
+	FormatAnthropicMessages = "anthropic-messages"
+	FormatOpenAIChat        = "openai-chat"
+	FormatOpenAIResponses   = "openai-responses"
+)
+
 // Transformer defines the interface for API format transformation.
 type Transformer interface {
 	// Name returns the transformer name (e.g., "anthropic", "openai")
@@ -41,7 +48,27 @@ func NeedsTransform(clientFormat, providerFormat string) bool {
 	if providerFormat == "" {
 		providerFormat = "anthropic"
 	}
-	return clientFormat != providerFormat
+
+	// Normalize new format constants to legacy provider types for comparison
+	normalizedClient := normalizeFormat(clientFormat)
+	normalizedProvider := normalizeFormat(providerFormat)
+
+	return normalizedClient != normalizedProvider
+}
+
+// normalizeFormat converts fine-grained format identifiers to provider types.
+// anthropic-messages → anthropic
+// openai-chat → openai
+// openai-responses → openai
+func normalizeFormat(format string) string {
+	switch format {
+	case FormatAnthropicMessages:
+		return "anthropic"
+	case FormatOpenAIChat, FormatOpenAIResponses:
+		return "openai"
+	default:
+		return format // legacy "openai" or "anthropic"
+	}
 }
 
 // TransformPath converts API endpoint paths between OpenAI and Anthropic formats.

@@ -140,6 +140,8 @@ type ProxyServer struct {
 	Client           *http.Client
 	Limiter          *Limiter        // optional; nil means unlimited
 	MetricsRecorder  MetricsRecorder // optional; for recording request metrics
+	Strategy         config.LoadBalanceStrategy // load balancing strategy
+	LoadBalancer     *LoadBalancer              // for strategy-based provider selection
 }
 
 func (s *ProxyServer) Close() {
@@ -176,23 +178,27 @@ func (s *ProxyServer) allProviders() []*Provider {
 	return providers
 }
 
-func NewProxyServer(providers []*Provider, logger *log.Logger) *ProxyServer {
+func NewProxyServer(providers []*Provider, logger *log.Logger, strategy config.LoadBalanceStrategy, lb *LoadBalancer) *ProxyServer {
 	return &ProxyServer{
 		Providers:        providers,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
 		Client:           newHTTPClient(10 * time.Minute),
+		Strategy:         strategy,
+		LoadBalancer:     lb,
 	}
 }
 
 // NewProxyServerWithRouting creates a proxy server with scenario-based routing.
-func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger) *ProxyServer {
+func NewProxyServerWithRouting(routing *RoutingConfig, logger *log.Logger, strategy config.LoadBalanceStrategy, lb *LoadBalancer) *ProxyServer {
 	return &ProxyServer{
 		Providers:        routing.DefaultProviders,
 		Routing:          routing,
 		Logger:           logger,
 		StructuredLogger: GetGlobalLogger(),
 		Client:           newHTTPClient(10 * time.Minute),
+		Strategy:         strategy,
+		LoadBalancer:     lb,
 	}
 }
 
@@ -362,6 +368,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply load balancing strategy to reorder providers
+	if s.LoadBalancer != nil && len(providers) > 1 {
+		// Extract model from request body for strategy decisions
+		var model string
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			if m, ok := bodyMap["model"].(string); ok {
+				model = m
+			}
+		}
+		providers = s.LoadBalancer.Select(providers, s.Strategy, model)
+	}
+
 	// Track provider failure details for error reporting
 	var failures []providerFailure
 
@@ -411,7 +430,20 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Clear model overrides for default providers
-		success = s.tryProviders(w, r, s.Providers, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
+		defaultProviders := s.Providers
+		// Apply load balancing strategy to default providers
+		if s.LoadBalancer != nil && len(defaultProviders) > 1 {
+			// Extract model from request body for strategy decisions
+			var model string
+			var bodyMap map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+				if m, ok := bodyMap["model"].(string); ok {
+					model = m
+				}
+			}
+			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model)
+		}
+		success = s.tryProviders(w, r, defaultProviders, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {
 			// Log request_received only if duration >1s (selective logging per T067)
 			duration := time.Since(requestStart)
@@ -1455,7 +1487,7 @@ func (s *ProxyServer) applyEnvVarsHeaders(req *http.Request, envVars map[string]
 // Note: clientFormat parameter is kept for backward compatibility but is now ignored.
 // Request format is detected per-request from the X-Zen-Request-Format header.
 func StartProxy(providers []*Provider, clientFormat string, listenAddr string, logger *log.Logger) (int, error) {
-	srv := NewProxyServer(providers, logger)
+	srv := NewProxyServer(providers, logger, config.LoadBalanceFailover, GetGlobalLoadBalancer())
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -1473,7 +1505,7 @@ func StartProxy(providers []*Provider, clientFormat string, listenAddr string, l
 // Note: clientFormat parameter is kept for backward compatibility but is now ignored.
 // Request format is detected per-request from the X-Zen-Request-Format header.
 func StartProxyWithRouting(routing *RoutingConfig, clientFormat string, listenAddr string, logger *log.Logger) (int, error) {
-	srv := NewProxyServerWithRouting(routing, logger)
+	srv := NewProxyServerWithRouting(routing, logger, config.LoadBalanceFailover, GetGlobalLoadBalancer())
 
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {

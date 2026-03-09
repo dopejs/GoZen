@@ -180,8 +180,19 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - JSON config at ~/.zen/zen.json (existing), in-memory metrics (no persistence) (017-proxy-stability)
 - Go 1.21+ + `bufio`, `encoding/json`, `io`, `net/http` (stdlib only) (018-proxy-transform-correctness)
 - N/A (no config schema changes) (018-proxy-transform-correctness)
+- Go 1.21+ + `net/http`, `sync`, `time`, `encoding/json` (stdlib only); existing `internal/config`, `internal/proxy` packages (019-profile-strategy-routing)
+- SQLite (existing LogDB at `~/.zen/logs.db`) for latency metrics persistence; in-memory ring buffer for round-robin state (019-profile-strategy-routing)
 
 ## Recent Changes
+- 019-profile-strategy-routing: Profile strategy-aware provider routing with 5 strategies
+  - Least-latency: Routes to provider with lowest average response time (100-request rolling window, min 10 samples from SQLite LogDB)
+  - Least-cost: Routes to provider with lowest model pricing (uses built-in Anthropic pricing table)
+  - Round-robin: Even distribution across healthy providers using atomic counter
+  - Weighted: Configurable weight-based random distribution (recalculates on health change, falls back to equal weights)
+  - Failover: Default strategy, first healthy provider in configured order
+  - Strategy decision logging for all strategies (provider, reason, candidates)
+  - LoadBalancer integration in ProxyServer.ServeHTTP() with per-request provider reordering
+  - New fields: Provider.Weight, ProviderConfig.Weight, ProfileConfig.Strategy/ProviderWeights
 - 017-proxy-stability: Daemon proxy stability improvements for 24-hour uptime and 100 concurrent request handling
   - Auto-restart with exponential backoff (max 5 restarts, 1s→30s backoff)
   - Goroutine leak detection with baseline comparison and stack dumps (1-minute ticker, 20% growth tolerance)

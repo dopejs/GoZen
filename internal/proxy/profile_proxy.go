@@ -112,7 +112,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create a proxy server for this profile
-	srv := pp.getOrCreateProxy(route.Profile, providers, routing)
+	srv := pp.getOrCreateProxy(route.Profile, providers, routing, profileCfg.strategy)
 
 	// Rewrite the request URL to strip profile/session prefix
 	r.URL.Path = route.Remainder
@@ -145,6 +145,7 @@ type profileInfo struct {
 	providers            []string
 	routing              map[config.Scenario]*config.ScenarioRoute
 	longContextThreshold int
+	strategy             config.LoadBalanceStrategy
 }
 
 // resolveProfileConfig looks up provider names and routing config for a profile.
@@ -173,6 +174,7 @@ func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, er
 		providers:            pc.Providers,
 		routing:              pc.Routing,
 		longContextThreshold: pc.LongContextThreshold,
+		strategy:             pc.Strategy,
 	}, nil
 }
 
@@ -237,6 +239,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			CodexEnvVars:    pc.CodexEnvVars,
 			OpenCodeEnvVars: pc.OpenCodeEnvVars,
 			ProxyURL:        pc.ProxyURL,
+			Weight:          pc.Weight,
 			Healthy:         true,
 		}
 
@@ -260,7 +263,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 }
 
 // getOrCreateProxy returns a cached ProxyServer for the profile, or creates one.
-func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig) *ProxyServer {
+func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig, strategy config.LoadBalanceStrategy) *ProxyServer {
 	pp.mu.RLock()
 	if srv, ok := pp.cache[profile]; ok {
 		pp.mu.RUnlock()
@@ -276,11 +279,14 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 		return srv
 	}
 
+	// Get global load balancer
+	lb := GetGlobalLoadBalancer()
+
 	var srv *ProxyServer
 	if routing != nil {
-		srv = NewProxyServerWithRouting(routing, pp.Logger)
+		srv = NewProxyServerWithRouting(routing, pp.Logger, strategy, lb)
 	} else {
-		srv = NewProxyServer(providers, pp.Logger)
+		srv = NewProxyServer(providers, pp.Logger, strategy, lb)
 	}
 	// Set concurrency limiter (100 concurrent requests as per spec)
 	srv.Limiter = NewLimiter(100)

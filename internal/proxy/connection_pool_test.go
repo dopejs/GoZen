@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/dopejs/gozen/internal/config"
 )
 
 // testLogger returns a logger for tests
@@ -46,7 +48,7 @@ func TestConnectionPoolCleanup(t *testing.T) {
 
 	// Create a provider and make a request to establish connection
 	provider := createTestProvider(mockProvider.URL)
-	srv := NewProxyServer([]*Provider{provider}, testLogger())
+	srv := NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 
 	// Cache the proxy server
 	pp.cache["test-profile"] = srv
@@ -65,7 +67,7 @@ func TestConnectionPoolCleanup(t *testing.T) {
 	}
 
 	// Verify we can still create new connections after invalidation
-	pp.cache["test-profile-2"] = NewProxyServer([]*Provider{provider}, testLogger())
+	pp.cache["test-profile-2"] = NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 	if len(pp.cache) != 1 {
 		t.Errorf("expected 1 cached proxy after re-creation, got %d", len(pp.cache))
 	}
@@ -85,7 +87,7 @@ func TestConnectionPoolMultipleInvalidations(t *testing.T) {
 
 	// Create and cache multiple proxy servers
 	for i := 0; i < 5; i++ {
-		srv := NewProxyServer([]*Provider{provider}, testLogger())
+		srv := NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 		pp.cache[string(rune('a'+i))] = srv
 	}
 
@@ -121,7 +123,7 @@ func TestConnectionPoolConcurrentAccess(t *testing.T) {
 	// Goroutine 1: Create cache entries
 	go func() {
 		for i := 0; i < 10; i++ {
-			srv := NewProxyServer([]*Provider{provider}, testLogger())
+			srv := NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 			pp.mu.Lock()
 			pp.cache["test-profile"] = srv
 			pp.mu.Unlock()
@@ -160,7 +162,7 @@ func TestProxyServerClose(t *testing.T) {
 	defer mockProvider.Close()
 
 	provider := createTestProvider(mockProvider.URL)
-	srv := NewProxyServer([]*Provider{provider}, testLogger())
+	srv := NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 
 	// Close should not panic
 	srv.Close()
@@ -184,7 +186,7 @@ func TestProfileProxyClose(t *testing.T) {
 
 	// Create multiple cached proxy servers
 	for i := 0; i < 3; i++ {
-		srv := NewProxyServer([]*Provider{provider}, testLogger())
+		srv := NewProxyServer([]*Provider{provider}, testLogger(), config.LoadBalanceFailover, nil)
 		pp.cache[string(rune('a'+i))] = srv
 	}
 

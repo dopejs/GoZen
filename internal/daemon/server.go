@@ -840,9 +840,14 @@ func (d *Daemon) initSync() {
 			default:
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			// Use pushCtx as parent so cancellation propagates to mgr.Push()
+			ctx, cancel := context.WithTimeout(pushCtx, 30*time.Second)
 			defer cancel()
 			if err := mgr.Push(ctx); err != nil {
+				// Ignore context cancelled errors (expected during shutdown)
+				if ctx.Err() == context.Canceled {
+					return
+				}
 				d.logger.Printf("sync auto-push failed: %v", err)
 			} else {
 				d.logger.Println("sync auto-push completed")

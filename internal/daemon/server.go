@@ -68,6 +68,7 @@ type Daemon struct {
 	syncMgr    *gosync.SyncManager
 	syncCancel context.CancelFunc // cancels auto-pull ticker
 	pushTimer  *time.Timer        // debounced auto-push
+	pushMu     sync.Mutex          // protects pushTimer
 
 	startTime time.Time
 	proxyPort int
@@ -269,9 +270,11 @@ func (d *Daemon) Start() error {
 		if d.syncCancel != nil {
 			d.syncCancel()
 		}
+		d.pushMu.Lock()
 		if d.pushTimer != nil {
 			d.pushTimer.Stop()
 		}
+		d.pushMu.Unlock()
 
 		// Stop config watcher
 		if d.watcher != nil {
@@ -366,21 +369,29 @@ func (d *Daemon) startProxy() error {
 	addr := fmt.Sprintf("127.0.0.1:%d", d.proxyPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		// Port is busy — identify who's using it
+		// Port is busy — use multi-layer detection to identify the process
 		pid, procName, identErr := GetProcessOnPort(d.proxyPort)
 		if identErr != nil {
 			return &FatalError{Err: fmt.Errorf("port %d is already in use (cannot identify process): %w", d.proxyPort, err)}
 		}
 
 		if IsZenProcess(procName) {
-			// Stale zen daemon — kill it and retry
-			d.logger.Printf("Port %d occupied by stale zen process (PID %d: %s), killing...", d.proxyPort, pid, procName)
+			// Process name looks like zen/gozen, but verify it's actually a daemon instance
+			// Try to probe daemon status API to confirm it's a real daemon
+			canTakeover, reason := d.canTakeoverProcess(pid, procName)
+
+			if !canTakeover {
+				return &FatalError{Err: fmt.Errorf("port %d is occupied by %s (PID %d): %s", d.proxyPort, procName, pid, reason)}
+			}
+
+			// Safe to takeover - terminate the old instance
+			d.logger.Printf("Port %d occupied by takeover-eligible process (PID %d: %s), reason: %s", d.proxyPort, pid, procName, reason)
 			proc, findErr := os.FindProcess(pid)
 			if findErr != nil {
-				return &FatalError{Err: fmt.Errorf("port %d occupied by stale zen process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)}
+				return &FatalError{Err: fmt.Errorf("port %d occupied by process (PID %d) but cannot find process: %w", d.proxyPort, pid, err)}
 			}
 			if killErr := proc.Signal(syscall.SIGTERM); killErr != nil {
-				return &FatalError{Err: fmt.Errorf("port %d occupied by zen process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)}
+				return &FatalError{Err: fmt.Errorf("port %d occupied by process (PID %d) but cannot kill (permission denied). Try: sudo kill %d", d.proxyPort, pid, pid)}
 			}
 			// Wait briefly for process to die
 			for i := 0; i < 10; i++ {
@@ -389,12 +400,12 @@ func (d *Daemon) startProxy() error {
 					break // process is dead
 				}
 			}
-			d.logger.Printf("Daemon restarted (replaced stale process %d)", pid)
+			d.logger.Printf("Daemon restarted (replaced process %d)", pid)
 
 			// Retry bind
 			ln, err = net.Listen("tcp", addr)
 			if err != nil {
-				return &FatalError{Err: fmt.Errorf("port %d still in use after killing stale process: %w", d.proxyPort, err)}
+				return &FatalError{Err: fmt.Errorf("port %d still in use after killing process: %w", d.proxyPort, err)}
 			}
 		} else {
 			return &FatalError{Err: fmt.Errorf("port %d is occupied by %s (PID %d) — not a zen process. Use 'zen config set proxy_port <port>' to change the proxy port", d.proxyPort, procName, pid)}
@@ -436,6 +447,54 @@ func (d *Daemon) startProxy() error {
 	return nil
 }
 
+// canTakeoverProcess performs multi-layer verification to determine if it's safe
+// to kill a process occupying the proxy port. Returns (canTakeover, reason).
+//
+// Verification layers:
+// 1. Try to probe daemon status API - if responsive, it's a healthy daemon (don't kill)
+// 2. Check PID file - if exists and matches, verify it's our daemon instance
+// 3. If unresponsive and no valid PID file, it's likely stale (safe to takeover)
+func (d *Daemon) canTakeoverProcess(pid int, procName string) (bool, string) {
+	// Layer 1: Probe daemon status API
+	// If the daemon responds to status API, it's healthy and should not be killed
+	statusURL := fmt.Sprintf("http://127.0.0.1:%d/api/v1/daemon/status", d.proxyPort)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(statusURL)
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			// Daemon is healthy and responsive - do not kill
+			return false, "daemon is healthy and responsive"
+		}
+	}
+
+	// Layer 2: Check PID file
+	pidPath := DaemonPidPath()
+	pidData, err := os.ReadFile(pidPath)
+	if err == nil {
+		// PID file exists, parse it
+		var storedPID int
+		if _, scanErr := fmt.Sscanf(string(pidData), "%d", &storedPID); scanErr == nil {
+			if storedPID == pid {
+				// PID matches but daemon is unresponsive
+				// This could be a crashed/hung daemon - safe to takeover
+				return true, "PID file matches but daemon unresponsive (likely crashed/hung)"
+			}
+			// PID file exists but doesn't match - stale PID file
+			return true, "PID file exists but doesn't match (stale PID file)"
+		}
+	}
+
+	// Layer 3: No PID file or couldn't read it
+	// Process is occupying the port but we can't verify it's a legitimate daemon
+	// This could be:
+	// - A daemon started without writing PID file (old version?)
+	// - A stale process
+	// - Another program with similar name
+	// Be conservative: if we can't verify, assume it's legitimate
+	return false, "cannot verify daemon identity (no valid PID file, unresponsive API)"
+}
+
 // Shutdown gracefully stops the daemon.
 func (d *Daemon) Shutdown(ctx context.Context) error {
 	d.logger.Println("shutting down zend...")
@@ -452,9 +511,11 @@ func (d *Daemon) Shutdown(ctx context.Context) error {
 	if d.syncCancel != nil {
 		d.syncCancel()
 	}
+	d.pushMu.Lock()
 	if d.pushTimer != nil {
 		d.pushTimer.Stop()
 	}
+	d.pushMu.Unlock()
 	if d.leakCheckTicker != nil {
 		d.leakCheckTicker.Stop()
 	}
@@ -690,6 +751,7 @@ func (d *Daemon) initSync() {
 		if mgr.IsPulling() {
 			return
 		}
+		d.pushMu.Lock()
 		if d.pushTimer != nil {
 			d.pushTimer.Stop()
 		}
@@ -702,6 +764,7 @@ func (d *Daemon) initSync() {
 				d.logger.Println("sync auto-push completed")
 			}
 		})
+		d.pushMu.Unlock()
 	})
 
 	// Start auto-pull ticker if enabled

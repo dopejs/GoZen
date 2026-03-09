@@ -3,6 +3,7 @@ package daemon
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -85,17 +86,55 @@ func (m *Metrics) RecordRequest(provider string, latency time.Duration, err erro
 
 	if err != nil {
 		m.errorCount++
-		// Try to extract error details if it's a RequestError
-		if reqErr, ok := err.(*RequestError); ok {
-			m.errorsByProvider[reqErr.Provider]++
-			m.errorsByType[reqErr.Type]++
-		} else {
-			// Generic error
-			m.errorsByProvider[provider]++
-			m.errorsByType["unknown"]++
-		}
+		m.errorsByProvider[provider]++
+
+		// Try to extract error type from error message
+		errType := classifyError(err)
+		m.errorsByType[errType]++
 	} else {
 		m.successCount++
+	}
+}
+
+// classifyError attempts to classify an error by type
+func classifyError(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+
+	// Check if it's a RequestError (for backward compatibility)
+	if reqErr, ok := err.(*RequestError); ok {
+		return reqErr.Type
+	}
+
+	// Check if error has a Type field (duck typing for ProxyError)
+	type typedError interface {
+		Error() string
+		Type() string
+	}
+	if te, ok := err.(interface{ Type() string }); ok {
+		return te.Type()
+	}
+
+	// Fallback: classify by error message content
+	errMsg := err.Error()
+	switch {
+	case strings.Contains(errMsg, "auth"):
+		return "auth"
+	case strings.Contains(errMsg, "rate limit"):
+		return "rate_limit"
+	case strings.Contains(errMsg, "request error"):
+		return "request"
+	case strings.Contains(errMsg, "server error"):
+		return "server"
+	case strings.Contains(errMsg, "timeout"):
+		return "timeout"
+	case strings.Contains(errMsg, "concurrency limit"):
+		return "concurrency"
+	case strings.Contains(errMsg, "network") || strings.Contains(errMsg, "connection"):
+		return "network"
+	default:
+		return "unknown"
 	}
 }
 

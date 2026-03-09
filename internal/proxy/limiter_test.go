@@ -141,3 +141,126 @@ func TestLimiterZeroLimit(t *testing.T) {
 		limiter.Release()
 	}
 }
+
+// TestLimiterTimeout verifies that Acquire times out when limit is reached
+func TestLimiterTimeout(t *testing.T) {
+	limiter := NewLimiter(2)
+	limiter.SetTimeout(100 * time.Millisecond)
+
+	// Acquire both slots
+	if err := limiter.Acquire(); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+	if err := limiter.Acquire(); err != nil {
+		t.Fatalf("second acquire failed: %v", err)
+	}
+
+	// Third acquire should timeout
+	start := time.Now()
+	err := limiter.Acquire()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+
+	if elapsed < 90*time.Millisecond || elapsed > 200*time.Millisecond {
+		t.Errorf("timeout took %v, expected ~100ms", elapsed)
+	}
+
+	// Cleanup
+	limiter.Release()
+	limiter.Release()
+}
+
+// TestLimiterNoTimeout verifies that SetTimeout(0) disables timeout
+func TestLimiterNoTimeout(t *testing.T) {
+	limiter := NewLimiter(1)
+	limiter.SetTimeout(0) // Disable timeout
+
+	// Acquire the only slot
+	if err := limiter.Acquire(); err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+
+	// Second acquire should block indefinitely (we'll release after a delay)
+	done := make(chan error, 1)
+	go func() {
+		done <- limiter.Acquire()
+	}()
+
+	// Wait a bit to ensure it's blocking
+	time.Sleep(50 * time.Millisecond)
+
+	// Should still be blocked
+	select {
+	case err := <-done:
+		t.Fatalf("acquire should have blocked, but got: %v", err)
+	default:
+		// Good, still blocked
+	}
+
+	// Release the slot
+	limiter.Release()
+
+	// Now it should unblock
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("acquire failed after release: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("acquire didn't unblock after release")
+	}
+
+	// Cleanup
+	limiter.Release()
+}
+
+// TestLimiterTimeoutConcurrent verifies timeout behavior under concurrent load
+func TestLimiterTimeoutConcurrent(t *testing.T) {
+	const limit = 5
+	const workers = 20
+	limiter := NewLimiter(limit)
+	limiter.SetTimeout(50 * time.Millisecond)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	successCount := 0
+	timeoutCount := 0
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			err := limiter.Acquire()
+			if err != nil {
+				mu.Lock()
+				timeoutCount++
+				mu.Unlock()
+				return
+			}
+			defer limiter.Release()
+
+			mu.Lock()
+			successCount++
+			mu.Unlock()
+
+			// Simulate work
+			time.Sleep(100 * time.Millisecond)
+		}()
+	}
+
+	wg.Wait()
+
+	if successCount+timeoutCount != workers {
+		t.Errorf("success(%d) + timeout(%d) = %d, want %d", successCount, timeoutCount, successCount+timeoutCount, workers)
+	}
+
+	if timeoutCount == 0 {
+		t.Error("expected some timeouts, got none")
+	}
+
+	t.Logf("success: %d, timeout: %d", successCount, timeoutCount)
+}

@@ -613,10 +613,19 @@ func (d *Daemon) onConfigReload() {
 	if d.profileProxy != nil {
 		d.profileProxy.InvalidateCache()
 	}
+
+	// Reload health checker: stop if disabled, start if enabled
 	if checker := proxy.GetGlobalHealthChecker(); checker != nil {
 		checker.ReloadConfig()
-		proxy.StartGlobalHealthChecker()
+		cfg := config.GetHealthCheck()
+		if cfg != nil && cfg.Enabled {
+			proxy.StartGlobalHealthChecker()
+		} else {
+			// Health check disabled, stop the checker
+			proxy.StopGlobalHealthChecker()
+		}
 	}
+
 	// Reinitialize sync if config changed
 	d.initSync()
 	// Reinitialize bot gateway if config changed

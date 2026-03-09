@@ -19,6 +19,40 @@ import (
 	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
+// ProxyError represents a categorized error from the proxy
+type ProxyError struct {
+	Provider string
+	ErrType  string
+	Err      error
+}
+
+func (e *ProxyError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s [%s]: %v", e.Provider, e.ErrType, e.Err)
+	}
+	return fmt.Sprintf("%s [%s]", e.Provider, e.ErrType)
+}
+
+func (e *ProxyError) Unwrap() error {
+	return e.Err
+}
+
+// Type returns the error type for metrics classification
+func (e *ProxyError) Type() string {
+	return e.ErrType
+}
+
+// Error type constants for metrics classification
+const (
+	ErrorTypeAuth       = "auth"
+	ErrorTypeRateLimit  = "rate_limit"
+	ErrorTypeRequest    = "request"
+	ErrorTypeServer     = "server"
+	ErrorTypeNetwork    = "network"
+	ErrorTypeTimeout    = "timeout"
+	ErrorTypeConcurrency = "concurrency"
+)
+
 var (
 	globalLogger     *StructuredLogger
 	globalLogDB      *LogDB
@@ -189,7 +223,15 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Acquire concurrency slot if limiter is configured
 	if s.Limiter != nil {
 		if err := s.Limiter.Acquire(); err != nil {
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			// Record concurrency limit error in metrics
+			if s.MetricsRecorder != nil {
+				s.MetricsRecorder.RecordRequest("limiter", time.Since(requestStart), &ProxyError{
+					Provider: "limiter",
+					ErrType:  ErrorTypeConcurrency,
+					Err:      err,
+				})
+			}
+			http.Error(w, "service unavailable: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		defer s.Limiter.Release()
@@ -445,7 +487,16 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: 0, Body: err.Error(), Elapsed: elapsed})
 			// Record daemon-level metrics for error
 			if s.MetricsRecorder != nil {
-				s.MetricsRecorder.RecordRequest(p.Name, elapsed, err)
+				// Classify network/timeout errors
+				errType := ErrorTypeNetwork
+				if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout") {
+					errType = ErrorTypeTimeout
+				}
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  errType,
+					Err:      err,
+				})
 			}
 			p.MarkFailed()
 			continue
@@ -463,7 +514,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			// Record daemon-level metrics for error
 			if s.MetricsRecorder != nil {
-				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("auth error: %d", resp.StatusCode))
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeAuth,
+					Err:      fmt.Errorf("status %d", resp.StatusCode),
+				})
 			}
 			p.MarkAuthFailed()
 			continue
@@ -481,7 +536,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			// Record daemon-level metrics for error
 			if s.MetricsRecorder != nil {
-				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("rate limited"))
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeRateLimit,
+					Err:      fmt.Errorf("status 429"),
+				})
 			}
 			p.MarkFailed()
 			continue
@@ -539,7 +598,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 				*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 				// Record daemon-level metrics for error (request-related, not provider issue)
 				if s.MetricsRecorder != nil {
-					s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("request error: %d", resp.StatusCode))
+					s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+						Provider: p.Name,
+						ErrType:  ErrorTypeRequest,
+						Err:      fmt.Errorf("status %d", resp.StatusCode),
+					})
 				}
 				continue
 			}
@@ -553,7 +616,11 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 			*failures = append(*failures, providerFailure{Name: p.Name, StatusCode: resp.StatusCode, Body: string(errBody), Elapsed: elapsed})
 			// Record daemon-level metrics for error
 			if s.MetricsRecorder != nil {
-				s.MetricsRecorder.RecordRequest(p.Name, elapsed, fmt.Errorf("server error: %d", resp.StatusCode))
+				s.MetricsRecorder.RecordRequest(p.Name, elapsed, &ProxyError{
+					Provider: p.Name,
+					ErrType:  ErrorTypeServer,
+					Err:      fmt.Errorf("status %d", resp.StatusCode),
+				})
 			}
 			p.MarkFailed()
 			continue

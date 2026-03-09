@@ -86,9 +86,14 @@ func (m *Metrics) RecordRequest(provider string, latency time.Duration, err erro
 
 	if err != nil {
 		m.errorCount++
-		m.errorsByProvider[provider]++
 
-		// Try to extract error type from error message
+		// Only record to errors_by_provider if provider is specified
+		// Empty provider means system-level error (e.g., concurrency limit)
+		if provider != "" {
+			m.errorsByProvider[provider]++
+		}
+
+		// Always record error type for classification
 		errType := classifyError(err)
 		m.errorsByType[errType]++
 	} else {

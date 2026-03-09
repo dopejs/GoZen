@@ -14,7 +14,7 @@ type Limiter struct {
 
 // NewLimiter creates a new concurrency limiter with the specified limit.
 // A limit of 0 means unlimited (no blocking).
-// Default timeout is 30 seconds - requests exceeding this will be rejected.
+// Default timeout is 5 seconds - requests exceeding this will be rejected.
 func NewLimiter(limit int) *Limiter {
 	if limit <= 0 {
 		// Unlimited: use nil channel (never blocks)
@@ -22,7 +22,7 @@ func NewLimiter(limit int) *Limiter {
 	}
 	return &Limiter{
 		sem:     make(chan struct{}, limit),
-		timeout: 30 * time.Second,
+		timeout: 5 * time.Second, // Conservative default for fast failure
 	}
 }
 

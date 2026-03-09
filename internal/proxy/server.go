@@ -224,9 +224,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.Limiter != nil {
 		if err := s.Limiter.Acquire(); err != nil {
 			// Record concurrency limit error in metrics
+			// Use empty provider to indicate system-level error (not provider-specific)
 			if s.MetricsRecorder != nil {
-				s.MetricsRecorder.RecordRequest("limiter", time.Since(requestStart), &ProxyError{
-					Provider: "limiter",
+				s.MetricsRecorder.RecordRequest("", time.Since(requestStart), &ProxyError{
+					Provider: "",
 					ErrType:  ErrorTypeConcurrency,
 					Err:      err,
 				})

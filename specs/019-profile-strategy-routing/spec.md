@@ -77,7 +77,7 @@ As a user with a profile configured for weighted strategy, when I make requests,
 
 1. **Given** a profile with strategy "weighted" and weights (A:70, B:20, C:10), **When** 100 requests are made, **Then** provider A receives ~70 requests, B receives ~20, C receives ~10
 2. **Given** a profile with weighted strategy and the highest-weighted provider is unhealthy, **When** requests are made, **Then** weights are recalculated among healthy providers proportionally
-3. **Given** a profile with weighted strategy and no weights configured, **When** a request is made, **Then** system falls back to equal weights (round-robin behavior)
+3. **Given** a profile with weighted strategy and no weights configured, **When** a request is made, **Then** system falls back to equal weights (uniform random distribution across healthy providers)
 
 ---
 

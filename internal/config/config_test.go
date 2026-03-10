@@ -151,8 +151,8 @@ func TestConfigMigrationV11ToV12(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Version != 14 {
-		t.Errorf("version after migration = %d, want 14", cfg.Version)
+	if cfg.Version != 15 {
+		t.Errorf("version after migration = %d, want 15", cfg.Version)
 	}
 
 	// Verify new fields exist with default values (nil/empty)
@@ -966,8 +966,15 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 	data := []byte(`{
 		"providers": ["a", "b"],
 		"routing": {
-			"think": {"providers": ["b", "a"], "model": "claude-opus-4-5"},
-			"image": {"providers": ["a"]}
+			"think": {
+				"providers": [
+					{"name": "b", "model": "claude-opus-4-5"},
+					{"name": "a"}
+				]
+			},
+			"image": {
+				"providers": [{"name": "a"}]
+			}
 		}
 	}`)
 	var pc ProfileConfig
@@ -984,7 +991,7 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 		t.Fatalf("expected 2 routing entries, got %d", len(pc.Routing))
 	}
 
-	thinkRoute := pc.Routing[ScenarioThink]
+	thinkRoute := pc.Routing[string(ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -995,7 +1002,7 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
-	imageRoute := pc.Routing[ScenarioImage]
+	imageRoute := pc.Routing[string(ScenarioImage)]
 	if imageRoute == nil {
 		t.Fatal("image route should exist")
 	}
@@ -1024,14 +1031,14 @@ func TestProfileConfigUnmarshalNewFormatNoRouting(t *testing.T) {
 func TestProfileConfigRoundTrip(t *testing.T) {
 	original := ProfileConfig{
 		Providers: []string{"a", "b", "c"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {
 				Providers: []*ProviderRoute{
 					{Name: "c", Model: "claude-opus-4-5"},
 					{Name: "a"},
 				},
 			},
-			ScenarioLongContext: {
+			string(ScenarioLongContext): {
 				Providers: []*ProviderRoute{
 					{Name: "b"},
 				},
@@ -1062,7 +1069,7 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 		t.Fatalf("routing count: got %d, want 2", len(restored.Routing))
 	}
 
-	thinkRoute := restored.Routing[ScenarioThink]
+	thinkRoute := restored.Routing[string(ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -1073,7 +1080,7 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
-	lcRoute := restored.Routing[ScenarioLongContext]
+	lcRoute := restored.Routing[string(ScenarioLongContext)]
 	if lcRoute == nil || len(lcRoute.Providers) != 1 || lcRoute.Providers[0].Name != "b" {
 		t.Errorf("longContext route not properly round-tripped")
 	}
@@ -1111,8 +1118,8 @@ func TestFullConfigRoundTrip(t *testing.T) {
 	// Write config with routing
 	pc := &ProfileConfig{
 		Providers: []string{"p1", "p2"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []*ProviderRoute{{Name: "p2", Model: "model-x"}}},
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {Providers: []*ProviderRoute{{Name: "p2", Model: "model-x"}}},
 		},
 	}
 	if err := SetProfileConfig("myprofile", pc); err != nil {
@@ -1127,11 +1134,11 @@ func TestFullConfigRoundTrip(t *testing.T) {
 	if len(got.Providers) != 2 {
 		t.Errorf("providers count = %d", len(got.Providers))
 	}
-	if got.Routing == nil || got.Routing[ScenarioThink] == nil {
+	if got.Routing == nil || got.Routing[string(ScenarioThink)] == nil {
 		t.Fatal("routing not preserved")
 	}
-	if got.Routing[ScenarioThink].Providers[0].Model != "model-x" {
-		t.Errorf("model = %q", got.Routing[ScenarioThink].Providers[0].Model)
+	if got.Routing[string(ScenarioThink)].Providers[0].Model != "model-x" {
+		t.Errorf("model = %q", got.Routing[string(ScenarioThink)].Providers[0].Model)
 	}
 }
 
@@ -1145,9 +1152,9 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 
 	pc := &ProfileConfig{
 		Providers: []string{"a", "b"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []*ProviderRoute{{Name: "a", Model: "m1"}, {Name: "b", Model: "m1"}}},
-			ScenarioImage: {Providers: []*ProviderRoute{{Name: "a"}}},
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {Providers: []*ProviderRoute{{Name: "a", Model: "m1"}, {Name: "b", Model: "m1"}}},
+			string(ScenarioImage): {Providers: []*ProviderRoute{{Name: "a"}}},
 		},
 	}
 	SetProfileConfig("default", pc)
@@ -1170,7 +1177,7 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 
 	// Check routing
 	if got.Routing != nil {
-		if think := got.Routing[ScenarioThink]; think != nil {
+		if think := got.Routing[string(ScenarioThink)]; think != nil {
 			for _, p := range think.Providers {
 				if p.Name == "a" {
 					t.Error("provider 'a' should have been removed from think route")
@@ -1181,7 +1188,7 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 			}
 		}
 		// image route had only "a" — should be removed entirely
-		if image := got.Routing[ScenarioImage]; image != nil {
+		if image := got.Routing[string(ScenarioImage)]; image != nil {
 			t.Error("image route should have been removed (no providers left)")
 		}
 	}

@@ -674,23 +674,17 @@ func TestLoadBalancer_SelectRoundRobinUnhealthy(t *testing.T) {
 		counts[name]++
 	}
 
-	// Verify that only healthy providers (p1, p3) are selected first
+	// Verify unhealthy provider is never selected first
 	if counts["p2"] != 0 {
 		t.Errorf("p2 (unhealthy) selected %d times, want 0", counts["p2"])
 	}
 
-	// Both p1 and p3 should be selected at least once
-	if counts["p1"] == 0 {
-		t.Errorf("p1 never selected, want at least 1")
+	// 6 requests across 2 healthy providers must be exactly 3/3
+	if counts["p1"] != 3 {
+		t.Errorf("p1 selected %d times, want 3 (even split across 2 healthy providers); selections: %v", counts["p1"], selections)
 	}
-	if counts["p3"] == 0 {
-		t.Errorf("p3 never selected, want at least 1")
-	}
-
-	// Total selections should equal number of requests
-	totalSelections := counts["p1"] + counts["p3"]
-	if totalSelections != 6 {
-		t.Errorf("total selections = %d, want 6", totalSelections)
+	if counts["p3"] != 3 {
+		t.Errorf("p3 selected %d times, want 3 (even split across 2 healthy providers); selections: %v", counts["p3"], selections)
 	}
 }
 

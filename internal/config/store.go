@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -444,6 +445,96 @@ func (s *Store) reloadIfModified() {
 			s.loadLocked()
 		}
 	}
+}
+
+// ValidateRoutingConfig validates the routing configuration for a profile.
+// Returns an error if any routing policy references non-existent providers,
+// has invalid weights, invalid strategies, or malformed scenario keys.
+func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+
+	profile, exists := cfg.Profiles[profileName]
+	if !exists {
+		return fmt.Errorf("profile %q does not exist", profileName)
+	}
+
+	if profile.Routing == nil || len(profile.Routing) == 0 {
+		return nil // No routing config to validate
+	}
+
+	// Build set of valid provider names
+	validProviders := make(map[string]bool)
+	for name := range cfg.Providers {
+		validProviders[name] = true
+	}
+
+	// Validate each route policy
+	for scenarioKey, policy := range profile.Routing {
+		if policy == nil {
+			return fmt.Errorf("profile %q: scenario %q has nil policy", profileName, scenarioKey)
+		}
+
+		// Validate scenario key format (non-empty, no spaces)
+		if scenarioKey == "" {
+			return fmt.Errorf("profile %q: empty scenario key", profileName)
+		}
+		if strings.Contains(scenarioKey, " ") {
+			return fmt.Errorf("profile %q: scenario key %q contains spaces", profileName, scenarioKey)
+		}
+
+		// Validate providers list is non-empty
+		if len(policy.Providers) == 0 {
+			return fmt.Errorf("profile %q: scenario %q has empty providers list", profileName, scenarioKey)
+		}
+
+		// Validate each provider exists
+		for _, pr := range policy.Providers {
+			if pr == nil {
+				return fmt.Errorf("profile %q: scenario %q has nil provider entry", profileName, scenarioKey)
+			}
+			if pr.Name == "" {
+				return fmt.Errorf("profile %q: scenario %q has provider with empty name", profileName, scenarioKey)
+			}
+			if !validProviders[pr.Name] {
+				return fmt.Errorf("profile %q: scenario %q references non-existent provider %q", profileName, scenarioKey, pr.Name)
+			}
+		}
+
+		// Validate strategy if specified
+		if policy.Strategy != "" {
+			validStrategies := map[LoadBalanceStrategy]bool{
+				LoadBalanceFailover:     true,
+				LoadBalanceRoundRobin:   true,
+				LoadBalanceLeastLatency: true,
+				LoadBalanceLeastCost:    true,
+				LoadBalanceWeighted:     true,
+			}
+			if !validStrategies[policy.Strategy] {
+				return fmt.Errorf("profile %q: scenario %q has invalid strategy %q", profileName, scenarioKey, policy.Strategy)
+			}
+		}
+
+		// Validate weights if specified
+		if len(policy.ProviderWeights) > 0 {
+			for providerName, weight := range policy.ProviderWeights {
+				if !validProviders[providerName] {
+					return fmt.Errorf("profile %q: scenario %q has weight for non-existent provider %q", profileName, scenarioKey, providerName)
+				}
+				if weight < 0 {
+					return fmt.Errorf("profile %q: scenario %q has negative weight %d for provider %q", profileName, scenarioKey, weight, providerName)
+				}
+			}
+		}
+
+		// Validate threshold if specified
+		if policy.LongContextThreshold != nil && *policy.LongContextThreshold < 0 {
+			return fmt.Errorf("profile %q: scenario %q has negative long_context_threshold %d", profileName, scenarioKey, *policy.LongContextThreshold)
+		}
+	}
+
+	return nil
 }
 
 // loadLocked is the internal load implementation. Must be called with s.mu held.

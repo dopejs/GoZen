@@ -5,6 +5,16 @@
 **Status**: Draft
 **Input**: User description: "Scenario routing architecture redesign for protocol-agnostic, middleware-extensible routing"
 
+## Clarifications
+
+### Session 2026-03-10
+
+- Q: When receiving malformed or non-standard API requests, how should the system handle protocol normalization errors? → A: Route malformed requests to the default route and let downstream providers handle them
+- Q: When multiple middleware set conflicting routing hints or decisions, how should the system resolve conflicts? → A: Use the last executed middleware's decision (pipeline order determines priority)
+- Q: When a scenario route's providers all fail and fallback is disabled, how should the system respond? → A: Ignore the disabled fallback configuration and force attempt the default route
+- Q: When session history is unavailable for long-context detection, how should the system determine if a request is long-context? → A: Base detection only on current request tokens using a more conservative threshold (80% of configured threshold)
+- Q: When a request matches multiple scenario patterns simultaneously, how should the builtin classifier choose the scenario? → A: Use predefined scenario priority order (configurable in routing config)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Protocol-Agnostic Scenario Detection (Priority: P1)
@@ -17,10 +27,10 @@ As a GoZen user, I want scenario routing to work consistently regardless of whic
 
 **Acceptance Scenarios**:
 
-1. **Given** a request with reasoning features sent via Anthropic Messages API, **When** the proxy processes it, **Then** it routes to the `reasoning` scenario
-2. **Given** an equivalent request with reasoning features sent via OpenAI Chat API, **When** the proxy processes it, **Then** it routes to the same `reasoning` scenario
+1. **Given** a request with reasoning features sent via Anthropic Messages API, **When** the proxy processes it, **Then** it routes to the `think` scenario
+2. **Given** an equivalent request with reasoning features sent via OpenAI Chat API, **When** the proxy processes it, **Then** it routes to the same `think` scenario
 3. **Given** a request with image content sent via OpenAI Responses API, **When** the proxy processes it, **Then** it routes to the `image` scenario
-4. **Given** a long-context request (>32K tokens) sent via any supported protocol, **When** the proxy processes it, **Then** it routes to the `long_context` scenario
+4. **Given** a long-context request (>32K tokens) sent via any supported protocol, **When** the proxy processes it, **Then** it routes to the `longContext` scenario
 
 ---
 
@@ -52,7 +62,7 @@ As a GoZen administrator, I want to define custom scenario routes in my config (
 
 **Acceptance Scenarios**:
 
-1. **Given** a config with a custom route key "specify", **When** a request is classified as "specify", **Then** the proxy uses the providers and settings from that route
+1. **Given** a config with a custom scenario key "specify", **When** a request is classified as "specify", **Then** the proxy uses the providers and settings from that route
 2. **Given** a config with multiple custom routes ("plan", "tasks", "implement"), **When** requests are classified with those scenarios, **Then** each routes to its configured providers
 3. **Given** a custom route that doesn't exist in the builtin classifier, **When** middleware emits that scenario, **Then** the routing system accepts and uses it
 4. **Given** a request classified with an unknown scenario (no route defined), **When** routing is resolved, **Then** the system falls back to the default route
@@ -70,9 +80,9 @@ As a GoZen administrator, I want each scenario route to have its own strategy, w
 **Acceptance Scenarios**:
 
 1. **Given** a "plan" route with strategy "weighted" and custom weights, **When** a planning request is processed, **Then** providers are selected using weighted random distribution
-2. **Given** a "coding" route with strategy "least-cost", **When** a coding request is processed, **Then** the cheapest provider is selected
-3. **Given** a "reasoning" route with per-provider model overrides, **When** a reasoning request is processed, **Then** the specified models are used for each provider
-4. **Given** a "long_context" route with a custom threshold override, **When** token counting is performed, **Then** the route-specific threshold is used instead of the profile default
+2. **Given** a "code" route with strategy "least-cost", **When** a coding request is processed, **Then** the cheapest provider is selected
+3. **Given** a "think" route with per-provider model overrides, **When** a reasoning request is processed, **Then** the specified models are used for each provider
+4. **Given** a "longContext" route with a custom threshold override, **When** token counting is performed, **Then** the route-specific threshold is used instead of the profile default
 
 ---
 
@@ -112,28 +122,24 @@ As a GoZen administrator, I want structured logs that explain why each request w
 
 ### Edge Cases
 
-- What happens when middleware sets an invalid scenario name that has no configured route?
-- How does the system handle requests that match multiple scenario patterns simultaneously?
-- What happens when a scenario route's providers are all disabled or unhealthy?
-- How does long-context detection work when session history is unavailable?
-- What happens when a middleware sets conflicting routing hints?
-- How does the system handle protocol normalization for malformed or non-standard requests?
-- What happens when a scenario route has fallback disabled and all providers fail?
+- What happens when middleware sets an invalid scenario key that has no configured route? → System falls back to default route
+- What happens when a scenario route's providers are all disabled or unhealthy? → System attempts default route providers
+- Other edge cases are documented in the Clarifications section above
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST normalize Anthropic Messages, OpenAI Chat, and OpenAI Responses requests into a common semantic representation
-- **FR-002**: System MUST extract request features (reasoning, image, search, tool loop, long context) from normalized requests regardless of protocol
+- **FR-001**: System MUST normalize Anthropic Messages, OpenAI Chat, and OpenAI Responses requests into a common semantic representation; when normalization fails due to malformed requests, system MUST route to default route
+- **FR-002**: System MUST extract request features (reasoning, image, search, tool loop, long context) from normalized requests regardless of protocol; for long-context detection without session history, system MUST use 80% of configured threshold (0.8 × threshold) applied to current request only
 - **FR-003**: System MUST allow middleware to set explicit routing decisions via `RoutingDecision` field in `RequestContext`
-- **FR-004**: System MUST prioritize middleware routing decisions over builtin classifier results
-- **FR-005**: System MUST run builtin classifier only when middleware does not provide a routing decision
-- **FR-006**: System MUST support custom scenario route keys defined in configuration without code changes
-- **FR-007**: System MUST support builtin scenario aliases for backward compatibility (think→reasoning, webSearch→search, etc.)
+- **FR-004**: System MUST prioritize middleware routing decisions over builtin classifier results; when multiple middleware set decisions, the last executed middleware's decision takes precedence
+- **FR-005**: System MUST run builtin classifier only when middleware does not provide a routing decision; when multiple scenarios match, classifier MUST use configurable scenario priority order to select one
+- **FR-006**: System MUST support custom scenario keys defined in configuration without code changes
+- **FR-007**: System MUST support scenario key normalization for backward compatibility (web-search→webSearch, long_context→longContext, etc.)
 - **FR-008**: System MUST allow each scenario route to define its own provider list, strategy, weights, and model overrides
 - **FR-009**: System MUST allow each scenario route to define its own long-context threshold override
-- **FR-010**: System MUST allow each scenario route to define whether it falls back to default route on failure
+- **FR-010**: System MUST allow each scenario route to define whether it falls back to default route on failure; if fallback is disabled but all scenario providers fail, system MUST override the setting and attempt default route to ensure request completion
 - **FR-011**: System MUST validate routing configuration at load time and fail fast on invalid config
 - **FR-012**: System MUST reject routes that reference non-existent providers
 - **FR-013**: System MUST reject routes with empty provider lists
@@ -141,7 +147,7 @@ As a GoZen administrator, I want structured logs that explain why each request w
 - **FR-015**: System MUST emit structured logs for routing normalization, decision, policy selection, and provider selection
 - **FR-016**: System MUST log decision source (middleware vs builtin), scenario, reason, and confidence for each routed request
 - **FR-017**: System MUST preserve existing failover behavior when scenario routes are not configured
-- **FR-018**: System MUST migrate legacy routing config (top-level providers, old scenario names) to new route-policy model
+- **FR-018**: System MUST migrate legacy routing config (top-level providers, old scenario keys) to new route-policy model
 - **FR-019**: System MUST populate `RequestContext` with profile, request format, normalized request, and routing fields for middleware
 - **FR-020**: System MUST allow middleware to provide routing hints (scenario candidates, tags, cost class, capability needs) even without explicit decision
 
@@ -150,8 +156,10 @@ As a GoZen administrator, I want structured logs that explain why each request w
 - **NormalizedRequest**: Represents a protocol-agnostic view of an API request with extracted semantic features (model, messages, tools, reasoning, image, search, long-context indicators)
 - **RoutingDecision**: Represents an explicit routing choice with scenario, source, reason, confidence, and optional overrides (model hint, strategy, threshold, provider filters)
 - **RoutingHints**: Represents non-binding routing suggestions from middleware (scenario candidates, tags, cost class, capability needs)
-- **RoutePolicy**: Represents the routing configuration for a specific scenario (providers, strategy, weights, threshold, fallback behavior)
-- **ProfileRoutingConfig**: Represents the complete routing configuration for a profile (default route, scenario-specific routes)
+- **RoutePolicy**: Represents the routing configuration for a specific scenario (providers, strategy, weights, threshold, fallback behavior). Replaces legacy `ScenarioRoute` from v14.
+- **ProfileConfig.Routing**: Represents the complete routing configuration for a profile (map of scenario keys to RoutePolicy, stored in ProfileConfig)
+
+**Note**: In v14 config, routing used `ScenarioRoute` type (only `providers` field). In v15, this is replaced by `RoutePolicy` which adds per-scenario strategy, weights, threshold, and fallback fields.
 
 ## Success Criteria *(mandatory)*
 

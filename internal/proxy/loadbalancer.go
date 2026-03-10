@@ -162,26 +162,41 @@ func (lb *LoadBalancer) selectFailover(providers []*Provider) []*Provider {
 	return append(result, unhealthy...)
 }
 
-// selectRoundRobin rotates through providers evenly.
+// selectRoundRobin rotates evenly across healthy providers only.
+// Unhealthy providers are appended at the end as fallbacks.
 // Uses a per-profile counter so different profiles have independent rotation.
 func (lb *LoadBalancer) selectRoundRobin(providers []*Provider, profile string) []*Provider {
-	n := len(providers)
-	if n == 0 {
+	if len(providers) == 0 {
 		return providers
 	}
 
-	// Get per-profile counter (or global fallback)
-	counter := lb.getProfileRRCounter(profile)
-	idx := atomic.AddUint64(counter, 1) % uint64(n)
-
-	// Rotate the slice starting from idx
-	result := make([]*Provider, n)
-	for i := 0; i < n; i++ {
-		result[i] = providers[(int(idx)+i)%n]
+	// Separate healthy and unhealthy first so counter only rotates among healthy
+	healthy := make([]*Provider, 0, len(providers))
+	unhealthy := make([]*Provider, 0)
+	for _, p := range providers {
+		if p.IsHealthy() {
+			healthy = append(healthy, p)
+		} else {
+			unhealthy = append(unhealthy, p)
+		}
 	}
 
-	// Move unhealthy to end while preserving rotation order
-	return lb.moveUnhealthyToEnd(result)
+	if len(healthy) == 0 {
+		// All unhealthy — rotate through all as last resort
+		return providers
+	}
+
+	// Rotate only among healthy providers
+	counter := lb.getProfileRRCounter(profile)
+	idx := atomic.AddUint64(counter, 1) % uint64(len(healthy))
+
+	result := make([]*Provider, 0, len(providers))
+	for i := 0; i < len(healthy); i++ {
+		result = append(result, healthy[(int(idx)+i)%len(healthy)])
+	}
+
+	// Append unhealthy as fallbacks
+	return append(result, unhealthy...)
 }
 
 // selectLeastLatency orders providers by average latency (lowest first).

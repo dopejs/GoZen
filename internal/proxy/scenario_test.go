@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -679,10 +680,15 @@ func TestUpdateSessionUsageEdgeCases(t *testing.T) {
 }
 
 func TestSessionCacheEviction(t *testing.T) {
-	// Store more sessions than maxSize to trigger eviction
-	oldMax := globalSessionCache.maxSize
+	// Store more sessions than maxSize to trigger eviction.
+	// Reset cache state first to avoid interference from other tests
+	// that may have inserted sessions via ServeHTTP → UpdateSessionUsage.
 	globalSessionCache.mu.Lock()
+	oldMax := globalSessionCache.maxSize
 	globalSessionCache.maxSize = 3
+	// Clear all existing entries so eviction is deterministic
+	globalSessionCache.data = sync.Map{}
+	globalSessionCache.keyOrder = nil
 	globalSessionCache.mu.Unlock()
 	defer func() {
 		globalSessionCache.mu.Lock()

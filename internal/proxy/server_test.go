@@ -2250,7 +2250,7 @@ func TestBuildProviders_TypeAwareDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			providers, err := pp.buildProviders([]string{tt.providerName})
+			providers, err := pp.buildProviders([]string{tt.providerName}, nil)
 			if err != nil {
 				t.Fatalf("buildProviders error: %v", err)
 			}

@@ -74,8 +74,8 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build default providers from config
-	providers, err := pp.buildProviders(profileCfg.providers)
+	// Build default providers from config (apply profile-level weights)
+	providers, err := pp.buildProviders(profileCfg.providers, profileCfg.providerWeights)
 	if err != nil {
 		pp.writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		return
@@ -86,7 +86,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
 		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
 		for scenario, sr := range profileCfg.routing {
-			scenarioProviders, err := pp.buildProviders(sr.ProviderNames())
+			scenarioProviders, err := pp.buildProviders(sr.ProviderNames(), profileCfg.providerWeights)
 			if err != nil {
 				pp.Logger.Printf("[routing] warning: failed to build providers for scenario %s: %v", scenario, err)
 				continue
@@ -146,6 +146,7 @@ type profileInfo struct {
 	routing              map[config.Scenario]*config.ScenarioRoute
 	longContextThreshold int
 	strategy             config.LoadBalanceStrategy
+	providerWeights      map[string]int
 }
 
 // resolveProfileConfig looks up provider names and routing config for a profile.
@@ -175,11 +176,14 @@ func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, er
 		routing:              pc.Routing,
 		longContextThreshold: pc.LongContextThreshold,
 		strategy:             pc.Strategy,
+		providerWeights:      pc.ProviderWeights,
 	}, nil
 }
 
 // buildProviders converts provider names to Provider objects.
-func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
+// profileWeights overrides per-provider Weight when present (profile-level weights
+// take precedence over global provider-level weights).
+func (pp *ProfileProxy) buildProviders(names []string, profileWeights map[string]int) ([]*Provider, error) {
 	store := config.DefaultStore()
 	var providers []*Provider
 
@@ -224,6 +228,14 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			pp.Logger.Printf("[%s] openai provider: using model=%q, skipping Anthropic tier defaults", name, model)
 		}
 
+		// Determine weight: profile-level weights take precedence over provider-level
+		weight := pc.Weight
+		if profileWeights != nil {
+			if pw, ok := profileWeights[name]; ok {
+				weight = pw
+			}
+		}
+
 		p := &Provider{
 			Name:            name,
 			Type:            pc.GetType(),
@@ -239,7 +251,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			CodexEnvVars:    pc.CodexEnvVars,
 			OpenCodeEnvVars: pc.OpenCodeEnvVars,
 			ProxyURL:        pc.ProxyURL,
-			Weight:          pc.Weight,
+			Weight:          weight,
 			Healthy:         true,
 		}
 
@@ -288,6 +300,7 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 	} else {
 		srv = NewProxyServer(providers, pp.Logger, strategy, lb)
 	}
+	srv.Profile = profile
 	// Set concurrency limiter (100 concurrent requests as per spec)
 	srv.Limiter = NewLimiter(100)
 	// Pass through metrics recorder from ProfileProxy to ProxyServer

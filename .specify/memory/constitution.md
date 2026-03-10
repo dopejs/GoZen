@@ -1,17 +1,17 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.3.0 → 1.4.0 (MINOR — added Principle VIII: Daemon Proxy Stability Priority)
+Version change: 1.4.0 → 1.5.0 (MINOR — added Principle IX: Code Quality Checks)
 
 Modified principles: none
 
 Modified sections:
-  - Added Principle VIII: Daemon Proxy Stability Priority — establishes daemon proxy
-    as P0 (highest priority) component where all issues are blocking and must be
-    resolved. No non-blocking issues exist for daemon proxy work.
+  - Added Principle IX: Code Quality Checks — requires staticcheck for Go and
+    eslint for TypeScript to be run during testing phase to catch code quality
+    issues early.
 
 Added sections:
-  - Principle VIII: Daemon Proxy Stability Priority
+  - Principle IX: Code Quality Checks
 
 Removed sections: none
 
@@ -162,6 +162,27 @@ Follow-up TODOs: none
   cascades to all downstream features, making it the single most
   critical piece of infrastructure in GoZen.
 
+### IX. Code Quality Checks (NON-NEGOTIABLE)
+
+- After completing code modifications and before considering a feature
+  complete, code quality checks MUST be run and all issues MUST be
+  resolved.
+- For Go code: `staticcheck ./...` MUST be run and all warnings MUST
+  be addressed. Unused code warnings (U1000) MAY be deferred if the
+  code is intentionally kept for future use, but this MUST be
+  documented.
+- For TypeScript/JavaScript code: `eslint` MUST be run (via
+  `pnpm run lint` in `web/`) and all errors MUST be fixed. Warnings
+  SHOULD be addressed unless explicitly justified.
+- Code quality checks MUST be integrated into the testing workflow:
+  run them after `go test ./...` for Go or after `pnpm test` for
+  TypeScript.
+- Rationale: Static analysis catches bugs, code smells, and
+  maintainability issues that tests might miss. Running these checks
+  during development (not just in CI) ensures issues are caught and
+  fixed immediately while context is fresh, reducing technical debt
+  and improving code quality across the entire codebase.
+
 ## Technology & Architecture Constraints
 
 - **Language**: Go. All production code MUST be in Go.
@@ -185,11 +206,16 @@ Follow-up TODOs: none
   and restart the dev daemon.
 - `go build ./...` and `go test ./...` MUST succeed before opening a
   pull request.
+- Code quality checks MUST be run after tests:
+  - For Go: `staticcheck ./...` (all warnings must be addressed)
+  - For TypeScript: `pnpm run lint` in `web/` (all errors must be
+    fixed)
 - Release checklist (see CLAUDE.md) MUST be completed before tagging:
   1. All tests pass.
-  2. `Version` in `cmd/root.go` matches the tag.
-  3. All four README translations are updated.
-  4. Website documentation is current.
+  2. All code quality checks pass.
+  3. `Version` in `cmd/root.go` matches the tag.
+  4. All four README translations are updated.
+  5. Website documentation is current.
 - PR reviews MUST verify compliance with this constitution's
   principles. Non-compliant changes require explicit justification
   in the PR description.
@@ -209,4 +235,4 @@ Follow-up TODOs: none
 - Compliance review: at the start of each feature branch, verify the
   plan's Constitution Check section against current principles.
 
-**Version**: 1.4.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-09
+**Version**: 1.5.0 | **Ratified**: 2026-02-27 | **Last Amended**: 2026-03-10

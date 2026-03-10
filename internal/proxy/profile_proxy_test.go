@@ -210,8 +210,8 @@ func TestProfileProxyGetOrCreateProxyWithRouting(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: defaultProviders,
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: thinkProviders,
 			},
 		},
@@ -227,7 +227,7 @@ func TestProfileProxyGetOrCreateProxyWithRouting(t *testing.T) {
 	if len(srv.Routing.ScenarioRoutes) != 1 {
 		t.Errorf("expected 1 scenario route, got %d", len(srv.Routing.ScenarioRoutes))
 	}
-	if sp, ok := srv.Routing.ScenarioRoutes[config.ScenarioThink]; !ok {
+	if sp, ok := srv.Routing.ScenarioRoutes["think"]; !ok {
 		t.Error("expected think scenario route")
 	} else if len(sp.Providers) != 1 || sp.Providers[0].Name != "thinker" {
 		t.Error("think scenario should route to thinker provider")
@@ -260,8 +260,8 @@ func TestResolveProfileConfigWithRouting(t *testing.T) {
 	// Set up profile with routing
 	config.SetProfileConfig("routed", &config.ProfileConfig{
 		Providers: []string{"standard"},
-		Routing: map[config.Scenario]*config.ScenarioRoute{
-			config.ScenarioThink: {
+		Routing: map[string]*config.RoutePolicy{
+			"think": {
 				Providers: []*config.ProviderRoute{
 					{Name: "thinker", Model: "custom-think-model"},
 				},
@@ -284,7 +284,7 @@ func TestResolveProfileConfigWithRouting(t *testing.T) {
 	if info.routing == nil {
 		t.Fatal("expected routing config")
 	}
-	thinkRoute, ok := info.routing[config.ScenarioThink]
+	thinkRoute, ok := info.routing["think"]
 	if !ok {
 		t.Fatal("expected think scenario route")
 	}

@@ -77,13 +77,13 @@ GoZen uses Go project structure:
 
 ### Implementation for User Story 1
 
-- [ ] T015 [P] [US1] Create NormalizedRequest type in internal/proxy/routing_normalize.go
-- [ ] T016 [P] [US1] Create RequestFeatures type in internal/proxy/routing_normalize.go
+- [X] T015 [P] [US1] Create NormalizedRequest type in internal/proxy/routing_normalize.go
+- [X] T016 [P] [US1] Create RequestFeatures type in internal/proxy/routing_normalize.go
 - [ ] T017 [US1] Implement DetectProtocol function (URL path → header → body → default) in internal/proxy/routing_normalize.go
-- [ ] T018 [US1] Implement Normalize function for Anthropic Messages in internal/proxy/routing_normalize.go
-- [ ] T019 [US1] Implement Normalize function for OpenAI Chat in internal/proxy/routing_normalize.go
-- [ ] T020 [US1] Implement Normalize function for OpenAI Responses in internal/proxy/routing_normalize.go
-- [ ] T021 [US1] Implement ExtractFeatures function in internal/proxy/routing_normalize.go
+- [X] T018 [US1] Implement Normalize function for Anthropic Messages in internal/proxy/routing_normalize.go
+- [X] T019 [US1] Implement Normalize function for OpenAI Chat in internal/proxy/routing_normalize.go
+- [X] T020 [US1] Implement Normalize function for OpenAI Responses in internal/proxy/routing_normalize.go
+- [X] T021 [US1] Implement ExtractFeatures function in internal/proxy/routing_normalize.go
 - [ ] T022 [US1] Implement token counting for long-context detection in internal/proxy/routing_normalize.go
 - [ ] T023 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.RequestFormat in internal/proxy/server.go
 - [ ] T024 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.NormalizedRequest in internal/proxy/server.go

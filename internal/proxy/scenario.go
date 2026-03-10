@@ -19,33 +19,33 @@ const (
 
 // DetectScenario examines a parsed request body and returns the matching scenario.
 // Priority: webSearch > think > image > longContext > code > background > default.
-func DetectScenario(body map[string]interface{}, threshold int, sessionID string) config.Scenario {
+func DetectScenario(body map[string]interface{}, threshold int, sessionID string) string {
 	if hasWebSearchTool(body) {
-		return config.ScenarioWebSearch
+		return string(config.ScenarioWebSearch)
 	}
 	if hasThinkingEnabled(body) {
-		return config.ScenarioThink
+		return string(config.ScenarioThink)
 	}
 	if hasImageContent(body) {
-		return config.ScenarioImage
+		return string(config.ScenarioImage)
 	}
 	if isLongContext(body, threshold, sessionID) {
-		return config.ScenarioLongContext
+		return string(config.ScenarioLongContext)
 	}
 	if !isBackgroundRequest(body) {
-		return config.ScenarioCode
+		return string(config.ScenarioCode)
 	}
 	if isBackgroundRequest(body) {
-		return config.ScenarioBackground
+		return string(config.ScenarioBackground)
 	}
-	return config.ScenarioDefault
+	return string(config.ScenarioDefault)
 }
 
 // DetectScenarioFromJSON parses raw JSON and detects the scenario.
-func DetectScenarioFromJSON(data []byte, threshold int, sessionID string) (config.Scenario, map[string]interface{}) {
+func DetectScenarioFromJSON(data []byte, threshold int, sessionID string) (string, map[string]interface{}) {
 	var body map[string]interface{}
 	if err := json.Unmarshal(data, &body); err != nil {
-		return config.ScenarioDefault, nil
+		return string(config.ScenarioDefault), nil
 	}
 	return DetectScenario(body, threshold, sessionID), body
 }

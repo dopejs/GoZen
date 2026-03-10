@@ -84,7 +84,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Build routing config if scenario routing is configured
 	var routing *RoutingConfig
 	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
-		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
+		scenarioRoutes := make(map[string]*ScenarioProviders)
 		for scenario, sr := range profileCfg.routing {
 			scenarioProviders, err := pp.buildProviders(sr.ProviderNames(), profileCfg.providerWeights)
 			if err != nil {
@@ -143,7 +143,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // profileInfo holds resolved profile data for proxy construction.
 type profileInfo struct {
 	providers            []string
-	routing              map[config.Scenario]*config.ScenarioRoute
+	routing              map[string]*config.RoutePolicy
 	longContextThreshold int
 	strategy             config.LoadBalanceStrategy
 	providerWeights      map[string]int

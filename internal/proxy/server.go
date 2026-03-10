@@ -114,7 +114,7 @@ func GetGlobalLogDB() *LogDB {
 // RoutingConfig holds the default provider chain and optional scenario routes.
 type RoutingConfig struct {
 	DefaultProviders     []*Provider
-	ScenarioRoutes       map[config.Scenario]*ScenarioProviders
+	ScenarioRoutes       map[string]*ScenarioProviders
 	LongContextThreshold int // threshold for longContext scenario detection
 }
 
@@ -349,7 +349,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Determine provider chain and per-provider model overrides from routing
 	providers := s.Providers
 	var modelOverrides map[string]string
-	var detectedScenario config.Scenario
+	var detectedScenario string
 	var usingScenarioRoute bool
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
@@ -364,7 +364,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			usingScenarioRoute = true
 			s.Logger.Printf("[routing] scenario=%s, providers=%d, model_overrides=%d",
 				detectedScenario, len(providers), len(modelOverrides))
-		} else if detectedScenario != config.ScenarioDefault {
+		} else if detectedScenario != string(config.ScenarioDefault) {
 			s.Logger.Printf("[routing] scenario=%s (no route configured, using default)", detectedScenario)
 		}
 	}

@@ -1126,8 +1126,8 @@ func TestRoutingThinkScenarioUsesThinkProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{thinkProvider},
 				Models:    map[string]string{"think-p": "think-model"},
 			},
@@ -1166,8 +1166,8 @@ func TestRoutingDefaultScenarioUsesDefaultProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{{Name: "think-p", BaseURL: u1, Token: "t2", Healthy: true}},
 				Models:    map[string]string{"think-p": "think-model"},
 			},
@@ -1210,8 +1210,8 @@ func TestRoutingModelOverrideSkipsMapping(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{provider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{provider},
 				Models:    map[string]string{"p1": "override-model"},
 			},
@@ -1281,8 +1281,8 @@ func TestRoutingSharedProviderHealth(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{sharedProvider, backupProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{sharedProvider},
 			},
 		},
@@ -1328,8 +1328,8 @@ func TestRoutingScenarioFallbackAllFail(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{scenarioProvider},
 			},
 		},
@@ -1364,8 +1364,8 @@ func TestRoutingImageScenario(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {Providers: []*Provider{imageProvider}},
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {Providers: []*Provider{imageProvider}},
 		},
 	}
 
@@ -1414,8 +1414,8 @@ func TestRoutingLongContextScenario(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioLongContext: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"longContext": {
 				Providers: []*Provider{longCtxProvider},
 				Models:    map[string]string{"cheap-p": "cheap-model"},
 			},
@@ -1476,8 +1476,8 @@ func TestRoutingScenarioFailover(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{provider1, provider2},
 				Models:    map[string]string{"think-p1": "think-override", "think-p2": "think-override"},
 			},
@@ -1529,8 +1529,8 @@ func TestRoutingScenarioFailoverWithoutModelOverride(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {
 				Providers: []*Provider{provider1, provider2},
 				// No Model → normal mapping per provider
 			},
@@ -1569,8 +1569,8 @@ func TestRoutingScenarioWithoutModelOverrideUsesNormalMapping(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{provider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {
 				Providers: []*Provider{provider},
 				// No Model override → normal mapping should apply
 			},
@@ -3151,8 +3151,8 @@ func TestScenarioFallbackWithDisabledProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: defaultProviders,
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioDefault: {Providers: scenarioProviders},
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			string(config.ScenarioDefault): {Providers: scenarioProviders},
 		},
 	}
 

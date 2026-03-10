@@ -116,9 +116,9 @@ Present options:
 
 ```
 Which groups would you like to analyze?
-- [ ] Group 1: Daemon & Proxy Stability (7 specs)
-- [ ] Group 2: CLI & Config Management (5 specs)
-- [ ] Group 3: Web UI & Monitoring (4 specs)
+- [ ] Group 1: Backend & API (7 specs)
+- [ ] Group 2: Frontend & UI (5 specs)
+- [ ] Group 3: Infrastructure & Deployment (4 specs)
 - [ ] Group 4: Testing & Quality (4 specs)
 - [ ] All groups (analyze each separately, generate per-group proposals)
 - [ ] Skip clustering (analyze all specs together)
@@ -230,65 +230,65 @@ For each proposed amendment:
 
 **Format** (for multi-group analysis):
 ```markdown
-## Group 1: Daemon & Proxy Stability - Improvement Proposals
+## Group 1: Backend & API - Improvement Proposals
 
 ### Constitution Amendments
 
-#### Amendment 1.1: Concurrency Limits for Proxy
+#### Amendment 1.1: API Response Time Limits
 
 **Type**: New constraint (add to "Technology & Architecture Constraints")
 
-**Rationale**: Specs 017, 019 both implemented concurrency limiting (semaphore pattern with 100 concurrent requests). This pattern should be codified to prevent resource exhaustion.
+**Rationale**: Specs 017, 019 both implemented timeout mechanisms (10-second API response limit). This pattern should be codified to ensure consistent user experience.
 
 **Proposed Text**:
-> - **Proxy Concurrency**: The daemon proxy MUST enforce a configurable concurrency limit (default 100 concurrent requests) using semaphore pattern to prevent resource exhaustion under load.
+> - **API Response Time**: All API endpoints MUST respond within 10 seconds or return a timeout error. Long-running operations MUST use async patterns with status polling.
 
-**Impact**: Future proxy-related specs will include concurrency control from the planning phase.
+**Impact**: Future API-related specs will include timeout handling from the planning phase.
 
 **Version Bump**: MINOR (new constraint)
 
 ### Template Updates
 
-#### Template Update 1.1: Add Stability Testing to plan-template.md
+#### Template Update 1.1: Add Error Handling Strategy to plan-template.md
 
 **Template**: `.specify/templates/plan-template.md`
 
 **Change Type**: Add section
 
-**Rationale**: Specs 017, 019, 020 all added "Stability Testing" sections manually for daemon-related features.
+**Rationale**: Specs 017, 019, 020 all added "Error Handling Strategy" sections manually for backend features.
 
 **Proposed Diff**:
 ```diff
-+ ## Stability Testing (for daemon/proxy features)
++ ## Error Handling Strategy (for backend/API features)
 +
-+ - Load testing strategy (concurrent requests, duration)
-+ - Failure injection scenarios (panic, timeout, connection loss)
-+ - Resource leak detection (goroutines, connections, memory)
-+ - Recovery validation (auto-restart, graceful degradation)
++ - Error classification (client errors, server errors, transient failures)
++ - Retry logic and backoff strategy
++ - Error response format and status codes
++ - Logging and monitoring for errors
 ```
 
 ### Checklist Additions
 
-#### Checklist Addition 1.1: Daemon Stability Checklist
+#### Checklist Addition 1.1: API Design Checklist
 
-**Checklist**: Create `.specify/templates/daemon-stability-checklist-template.md`
+**Checklist**: Create `.specify/templates/api-design-checklist-template.md`
 
 **Items**:
-- [ ] CHK-DAEMON-001: Panic recovery middleware implemented
-- [ ] CHK-DAEMON-002: Goroutine leak detection with baseline comparison
-- [ ] CHK-DAEMON-003: Connection pool cleanup on cache invalidation
-- [ ] CHK-DAEMON-004: Load test with 100 concurrent requests passes
-- [ ] CHK-DAEMON-005: Auto-restart with exponential backoff tested
+- [ ] CHK-API-001: All endpoints have timeout handling
+- [ ] CHK-API-002: Error responses follow consistent format
+- [ ] CHK-API-003: Rate limiting implemented for resource-intensive endpoints
+- [ ] CHK-API-004: Input validation covers all required fields
+- [ ] CHK-API-005: API documentation includes error codes and examples
 
-**Rationale**: Specs 017, 019 both needed these checks. Creating a dedicated daemon stability checklist catches these requirements during planning.
+**Rationale**: Specs 017, 019 both needed these checks. Creating a dedicated API design checklist catches these requirements during planning.
 
 ---
 
-## Group 2: CLI & Config Management - Improvement Proposals
+## Group 2: Frontend & UI - Improvement Proposals
 
 ### Constitution Amendments
 
-#### Amendment 2.1: Config Migration Safety
+#### Amendment 2.1: Accessibility Standards
 
 ...
 ```
@@ -431,8 +431,8 @@ Output a concise summary:
 - Checklists: [count] additions
 
 **Per-Group Breakdown** (if multi-group analysis):
-- Group 1 (Daemon & Proxy): [X] amendments, [Y] template updates, [Z] checklist items
-- Group 2 (CLI & Config): [X] amendments, [Y] template updates, [Z] checklist items
+- Group 1 (Backend & API): [X] amendments, [Y] template updates, [Z] checklist items
+- Group 2 (Frontend & UI): [X] amendments, [Y] template updates, [Z] checklist items
 - ...
 
 **Next Steps**:

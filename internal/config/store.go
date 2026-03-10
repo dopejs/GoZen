@@ -460,7 +460,7 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 		return fmt.Errorf("profile %q does not exist", profileName)
 	}
 
-	if profile.Routing == nil || len(profile.Routing) == 0 {
+	if len(profile.Routing) == 0 {
 		return nil // No routing config to validate
 	}
 

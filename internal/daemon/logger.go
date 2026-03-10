@@ -44,10 +44,8 @@ func (l *StructuredLogger) log(level, event string, fields map[string]interface{
 	data["event"] = entry.Event
 
 	// Add custom fields
-	if fields != nil {
-		for k, v := range fields {
-			data[k] = v
-		}
+	for k, v := range fields {
+		data[k] = v
 	}
 
 	l.mu.Lock()

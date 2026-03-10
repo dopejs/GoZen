@@ -83,7 +83,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build routing config if scenario routing is configured
 	var routing *RoutingConfig
-	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
+	if len(profileCfg.routing) > 0 {
 		scenarioRoutes := make(map[string]*ScenarioProviders)
 		for scenario, sr := range profileCfg.routing {
 			scenarioProviders, err := pp.buildProviders(sr.ProviderNames(), profileCfg.providerWeights)

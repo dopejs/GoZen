@@ -139,11 +139,7 @@ func (s *Server) createBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, bindingResponse{
-		Path:    req.Path,
-		Profile: req.Profile,
-		Client:  req.Client,
-	})
+	writeJSON(w, http.StatusCreated, bindingResponse(req))
 }
 
 func (s *Server) updateBinding(w http.ResponseWriter, r *http.Request, path string) {

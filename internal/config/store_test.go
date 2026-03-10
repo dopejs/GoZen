@@ -386,7 +386,7 @@ func TestStoreGetProfileOrderReturnsCopy(t *testing.T) {
 
 	order := s.GetProfileOrder("work")
 	// Mutating the returned slice should not affect internal state
-	order = append(order, "c")
+	_ = append(order, "c")
 
 	order2 := s.GetProfileOrder("work")
 	if len(order2) != 2 {

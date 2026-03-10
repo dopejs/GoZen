@@ -318,7 +318,7 @@ func (m FormModel) save() tea.Cmd {
 				val = m.inputs[i].Value()
 			}
 			if strings.TrimSpace(val) == "" {
-				m.err = f.Label + " is required"
+				// Field is required but empty - validation failed
 				return nil
 			}
 		}

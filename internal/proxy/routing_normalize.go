@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 )
 
 // NormalizedRequest represents a protocol-agnostic request structure.
@@ -140,9 +142,10 @@ func NormalizeAnthropicMessages(body map[string]interface{}) (*NormalizedRequest
 		}
 
 		normalized.Messages = append(normalized.Messages, NormalizedMessage{
-			Role:     role,
-			Content:  content,
-			HasImage: hasImage,
+			Role:       role,
+			Content:    content,
+			HasImage:   hasImage,
+			TokenCount: estimateTokens(content),
 		})
 	}
 
@@ -239,9 +242,10 @@ func NormalizeOpenAIChat(body map[string]interface{}) (*NormalizedRequest, error
 		}
 
 		normalized.Messages = append(normalized.Messages, NormalizedMessage{
-			Role:     role,
-			Content:  content,
-			HasImage: hasImage,
+			Role:       role,
+			Content:    content,
+			HasImage:   hasImage,
+			TokenCount: estimateTokens(content),
 		})
 	}
 
@@ -290,15 +294,17 @@ func NormalizeOpenAIResponses(body map[string]interface{}) (*NormalizedRequest, 
 	switch input := inputRaw.(type) {
 	case string:
 		normalized.Messages = append(normalized.Messages, NormalizedMessage{
-			Role:    "user",
-			Content: input,
+			Role:       "user",
+			Content:    input,
+			TokenCount: estimateTokens(input),
 		})
 	case []interface{}:
 		for _, item := range input {
 			if str, ok := item.(string); ok {
 				normalized.Messages = append(normalized.Messages, NormalizedMessage{
-					Role:    "user",
-					Content: str,
+					Role:       "user",
+					Content:    str,
+					TokenCount: estimateTokens(str),
 				})
 			}
 		}
@@ -338,4 +344,70 @@ func ExtractFeatures(normalized *NormalizedRequest) *RequestFeatures {
 	features.IsLongContext = features.TotalTokens > 32000
 
 	return features
+}
+
+// estimateTokens estimates token count for a text string.
+// Uses tiktoken if available, falls back to character-based estimation.
+func estimateTokens(text string) int {
+	enc, err := getTokenEncoder()
+	if err != nil {
+		// Fallback: ~4 characters per token
+		return len(text) / 4
+	}
+	return len(enc.Encode(text, nil, nil))
+}
+
+// DetectProtocol detects the API protocol from request context.
+// Priority: URL path → X-Zen-Client header → body structure → default openai_chat
+func DetectProtocol(path string, headers http.Header, body map[string]interface{}) string {
+	// Priority 1: URL path detection
+	if strings.Contains(path, "/v1/messages") || strings.Contains(path, "/messages") {
+		return "anthropic"
+	}
+	if strings.Contains(path, "/v1/chat/completions") || strings.Contains(path, "/chat/completions") {
+		return "openai_chat"
+	}
+	if strings.Contains(path, "/v1/completions") || strings.Contains(path, "/completions") {
+		// Check if it's the Responses API (has "input" field) or legacy Completions API
+		if body != nil {
+			if _, hasInput := body["input"]; hasInput {
+				return "openai_responses"
+			}
+		}
+		return "openai_chat" // Default to chat for ambiguous /completions
+	}
+
+	// Priority 2: X-Zen-Client header
+	if clientHeader := headers.Get("X-Zen-Client"); clientHeader != "" {
+		switch strings.ToLower(clientHeader) {
+		case "anthropic", "claude":
+			return "anthropic"
+		case "openai", "openai_chat":
+			return "openai_chat"
+		case "openai_responses":
+			return "openai_responses"
+		}
+	}
+
+	// Priority 3: Body structure detection
+	if body != nil {
+		// Anthropic Messages API has "messages" array and typically "model" starting with "claude"
+		if _, hasMessages := body["messages"]; hasMessages {
+			if model, hasModel := body["model"].(string); hasModel {
+				if strings.HasPrefix(model, "claude") {
+					return "anthropic"
+				}
+			}
+			// Has messages but not Claude model - likely OpenAI Chat
+			return "openai_chat"
+		}
+
+		// OpenAI Responses API has "input" field
+		if _, hasInput := body["input"]; hasInput {
+			return "openai_responses"
+		}
+	}
+
+	// Priority 4: Default to openai_chat (most common)
+	return "openai_chat"
 }

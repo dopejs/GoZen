@@ -295,6 +295,33 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		requestFormat = config.ProviderTypeAnthropic // Default
 	}
 
+	// Detect protocol and normalize request for routing (T023-T024)
+	var bodyMap map[string]interface{}
+	var normalized *NormalizedRequest
+	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+		// Detect protocol using priority: URL path → header → body structure
+		detectedProtocol := DetectProtocol(r.URL.Path, r.Header, bodyMap)
+
+		// Normalize request based on detected protocol
+		var normErr error
+		switch detectedProtocol {
+		case "anthropic":
+			normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+		case "openai_chat":
+			normalized, normErr = NormalizeOpenAIChat(bodyMap)
+		case "openai_responses":
+			normalized, normErr = NormalizeOpenAIResponses(bodyMap)
+		default:
+			// Unknown protocol, try anthropic as fallback
+			normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+		}
+
+		// Log normalization error but continue (T025: route to default on failure)
+		if normErr != nil {
+			s.Logger.Printf("[routing] normalization error for protocol %s: %v", detectedProtocol, normErr)
+		}
+	}
+
 	// [BETA] Apply context compression if enabled
 	if compressor := GetGlobalCompressor(); compressor != nil && compressor.IsEnabled() {
 		compressedBody, compressed, err := compressor.CompressRequestBody(bodyBytes)
@@ -309,13 +336,15 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// [BETA] Apply middleware pipeline if enabled
 	if pipeline := middleware.GetGlobalPipeline(); pipeline != nil && pipeline.IsEnabled() {
 		reqCtx := &middleware.RequestContext{
-			SessionID:  sessionID,
-			ClientType: clientType,
-			Method:     r.Method,
-			Path:       r.URL.Path,
-			Headers:    r.Header.Clone(),
-			Body:       bodyBytes,
-			Metadata:   make(map[string]interface{}),
+			SessionID:         sessionID,
+			ClientType:        clientType,
+			Method:            r.Method,
+			Path:              r.URL.Path,
+			Headers:           r.Header.Clone(),
+			Body:              bodyBytes,
+			Metadata:          make(map[string]interface{}),
+			RequestFormat:     requestFormat,
+			NormalizedRequest: normalized,
 		}
 
 		// Parse model and messages for middleware

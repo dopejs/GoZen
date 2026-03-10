@@ -21,20 +21,20 @@ type scenarioRouteResponse struct {
 
 // profileResponse is the JSON shape returned for a single profile.
 type profileResponse struct {
-	Name      string                                    `json:"name"`
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name      string                             `json:"name"`
+	Providers []string                           `json:"providers"`
+	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
 }
 
 type createProfileRequest struct {
-	Name      string                                    `json:"name"`
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name      string                             `json:"name"`
+	Providers []string                           `json:"providers"`
+	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
 }
 
 type updateProfileRequest struct {
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Providers []string                           `json:"providers"`
+	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
 }
 
 // profileConfigToResponse converts a ProfileConfig to a profileResponse.
@@ -48,7 +48,7 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 		Providers: providers,
 	}
 	if len(pc.Routing) > 0 {
-		resp.Routing = make(map[config.Scenario]*scenarioRouteResponse)
+		resp.Routing = make(map[string]*scenarioRouteResponse)
 		for scenario, route := range pc.Routing {
 			var providerRoutes []*providerRouteResponse
 			for _, pr := range route.Providers {
@@ -65,12 +65,12 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 	return resp
 }
 
-// routingResponseToConfig converts routing response data to config ScenarioRoutes.
-func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse) map[config.Scenario]*config.ScenarioRoute {
+// routingResponseToConfig converts routing response data to config RoutePolicy map.
+func routingResponseToConfig(routing map[string]*scenarioRouteResponse) map[string]*config.RoutePolicy {
 	if len(routing) == 0 {
 		return nil
 	}
-	result := make(map[config.Scenario]*config.ScenarioRoute)
+	result := make(map[string]*config.RoutePolicy)
 	for scenario, route := range routing {
 		if len(route.Providers) > 0 {
 			var providerRoutes []*config.ProviderRoute
@@ -80,7 +80,7 @@ func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse)
 					Model: pr.Model,
 				})
 			}
-			result[scenario] = &config.ScenarioRoute{
+			result[scenario] = &config.RoutePolicy{
 				Providers: providerRoutes,
 			}
 		}

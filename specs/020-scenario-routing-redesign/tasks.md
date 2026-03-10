@@ -73,21 +73,21 @@ GoZen uses Go project structure:
 - [X] T011 [P] [US1] Write test for OpenAI Responses normalization in internal/proxy/routing_normalize_test.go
 - [X] T012 [P] [US1] Write test for malformed request handling in internal/proxy/routing_normalize_test.go
 - [X] T013 [P] [US1] Write test for feature extraction in internal/proxy/routing_normalize_test.go
-- [ ] T014 [P] [US1] Write integration test for protocol-agnostic routing in tests/integration/routing_protocol_test.go
+- [X] T014 [P] [US1] Write integration test for protocol-agnostic routing in tests/integration/routing_protocol_test.go
 
 ### Implementation for User Story 1
 
 - [X] T015 [P] [US1] Create NormalizedRequest type in internal/proxy/routing_normalize.go
 - [X] T016 [P] [US1] Create RequestFeatures type in internal/proxy/routing_normalize.go
-- [ ] T017 [US1] Implement DetectProtocol function (URL path → header → body → default) in internal/proxy/routing_normalize.go
+- [X] T017 [US1] Implement DetectProtocol function (URL path → header → body → default) in internal/proxy/routing_normalize.go
 - [X] T018 [US1] Implement Normalize function for Anthropic Messages in internal/proxy/routing_normalize.go
 - [X] T019 [US1] Implement Normalize function for OpenAI Chat in internal/proxy/routing_normalize.go
 - [X] T020 [US1] Implement Normalize function for OpenAI Responses in internal/proxy/routing_normalize.go
 - [X] T021 [US1] Implement ExtractFeatures function in internal/proxy/routing_normalize.go
-- [ ] T022 [US1] Implement token counting for long-context detection in internal/proxy/routing_normalize.go
-- [ ] T023 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.RequestFormat in internal/proxy/server.go
-- [ ] T024 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.NormalizedRequest in internal/proxy/server.go
-- [ ] T025 [US1] Add error handling for normalization failures (route to default) in internal/proxy/server.go
+- [X] T022 [US1] Implement token counting for long-context detection in internal/proxy/routing_normalize.go
+- [X] T023 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.RequestFormat in internal/proxy/server.go
+- [X] T024 [US1] Update ProxyServer.ServeHTTP to populate RequestContext.NormalizedRequest in internal/proxy/server.go
+- [X] T025 [US1] Add error handling for normalization failures (route to default) in internal/proxy/server.go
 
 **Checkpoint**: At this point, User Story 1 should be fully functional - requests normalize correctly across all three protocols
 

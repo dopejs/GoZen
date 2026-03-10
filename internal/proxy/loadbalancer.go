@@ -16,7 +16,8 @@ type LoadBalancer struct {
 	db           *LogDB
 	pricing      map[string]*config.ModelPricing
 	mu           sync.RWMutex
-	rrCounter    uint64 // for round-robin
+	rrCounter    uint64 // global fallback for round-robin
+	rrCounters   map[string]*uint64 // per-profile round-robin counters
 	metricsCache map[string]*ProviderMetrics
 	cacheTime    time.Time
 	cacheTTL     time.Duration
@@ -27,6 +28,7 @@ func NewLoadBalancer(db *LogDB) *LoadBalancer {
 	return &LoadBalancer{
 		db:           db,
 		pricing:      config.GetPricing(),
+		rrCounters:   make(map[string]*uint64),
 		metricsCache: make(map[string]*ProviderMetrics),
 		cacheTTL:     30 * time.Second,
 	}
@@ -41,7 +43,9 @@ func (lb *LoadBalancer) ReloadPricing() {
 
 // Select chooses providers in order based on the strategy.
 // Returns a reordered slice of providers (does not modify original).
-func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanceStrategy, model string) []*Provider {
+// profile is used for per-profile state isolation (e.g. round-robin counters).
+// modelOverrides maps provider name → override model for scenario routes (used by least-cost).
+func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanceStrategy, model string, profile string, modelOverrides map[string]string) []*Provider {
 	if len(providers) <= 1 {
 		return providers
 	}
@@ -53,7 +57,7 @@ func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanc
 	switch strategy {
 	case config.LoadBalanceRoundRobin:
 		strategyName = "round-robin"
-		result = lb.selectRoundRobin(providers)
+		result = lb.selectRoundRobin(providers, profile)
 		if len(result) > 0 {
 			reason = "round-robin rotation"
 		}
@@ -70,7 +74,7 @@ func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanc
 		}
 	case config.LoadBalanceLeastCost:
 		strategyName = "least-cost"
-		result = lb.selectLeastCost(providers, model)
+		result = lb.selectLeastCost(providers, model, modelOverrides)
 		if len(result) > 0 {
 			// Get pricing info for the selected provider
 			lb.mu.RLock()
@@ -80,6 +84,11 @@ func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanc
 			providerModel := model
 			if result[0].Model != "" {
 				providerModel = result[0].Model
+			}
+			if modelOverrides != nil {
+				if override, ok := modelOverrides[result[0].Name]; ok && override != "" {
+					providerModel = override
+				}
 			}
 
 			if price := findModelPricing(providerModel, pricing); price != nil {
@@ -154,14 +163,16 @@ func (lb *LoadBalancer) selectFailover(providers []*Provider) []*Provider {
 }
 
 // selectRoundRobin rotates through providers evenly.
-func (lb *LoadBalancer) selectRoundRobin(providers []*Provider) []*Provider {
+// Uses a per-profile counter so different profiles have independent rotation.
+func (lb *LoadBalancer) selectRoundRobin(providers []*Provider, profile string) []*Provider {
 	n := len(providers)
 	if n == 0 {
 		return providers
 	}
 
-	// Get next index atomically
-	idx := atomic.AddUint64(&lb.rrCounter, 1) % uint64(n)
+	// Get per-profile counter (or global fallback)
+	counter := lb.getProfileRRCounter(profile)
+	idx := atomic.AddUint64(counter, 1) % uint64(n)
 
 	// Rotate the slice starting from idx
 	result := make([]*Provider, n)
@@ -229,7 +240,8 @@ func (lb *LoadBalancer) selectLeastLatency(providers []*Provider) []*Provider {
 }
 
 // selectLeastCost orders providers by cost for the given model (lowest first).
-func (lb *LoadBalancer) selectLeastCost(providers []*Provider, model string) []*Provider {
+// modelOverrides maps provider name → override model (from scenario routes).
+func (lb *LoadBalancer) selectLeastCost(providers []*Provider, model string, modelOverrides map[string]string) []*Provider {
 	lb.mu.RLock()
 	pricing := lb.pricing
 	lb.mu.RUnlock()
@@ -249,10 +261,18 @@ func (lb *LoadBalancer) selectLeastCost(providers []*Provider, model string) []*
 			healthy:  p.IsHealthy(),
 		}
 
-		// Determine which model this provider would use
+		// Determine which model this provider would actually use:
+		// 1. Scenario model override (highest precedence)
+		// 2. Provider's own model
+		// 3. Request body model (fallback)
 		providerModel := model
 		if p.Model != "" {
 			providerModel = p.Model
+		}
+		if modelOverrides != nil {
+			if override, ok := modelOverrides[p.Name]; ok && override != "" {
+				providerModel = override
+			}
 		}
 
 		// Look up pricing
@@ -301,6 +321,31 @@ func (lb *LoadBalancer) moveUnhealthyToEnd(providers []*Provider) []*Provider {
 	}
 
 	return append(healthy, unhealthy...)
+}
+
+// getProfileRRCounter returns the round-robin counter for a given profile.
+// Creates a new counter if one doesn't exist. Falls back to global counter if profile is empty.
+func (lb *LoadBalancer) getProfileRRCounter(profile string) *uint64 {
+	if profile == "" {
+		return &lb.rrCounter
+	}
+
+	lb.mu.RLock()
+	if c, ok := lb.rrCounters[profile]; ok {
+		lb.mu.RUnlock()
+		return c
+	}
+	lb.mu.RUnlock()
+
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	// Double-check
+	if c, ok := lb.rrCounters[profile]; ok {
+		return c
+	}
+	c := new(uint64)
+	lb.rrCounters[profile] = c
+	return c
 }
 
 // getMetricsCache returns cached metrics or fetches fresh ones.

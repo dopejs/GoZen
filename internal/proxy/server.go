@@ -142,6 +142,7 @@ type ProxyServer struct {
 	MetricsRecorder  MetricsRecorder // optional; for recording request metrics
 	Strategy         config.LoadBalanceStrategy // load balancing strategy
 	LoadBalancer     *LoadBalancer              // for strategy-based provider selection
+	Profile          string                     // profile name for per-profile strategy state
 }
 
 func (s *ProxyServer) Close() {
@@ -368,23 +369,8 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Apply load balancing strategy to reorder providers
-	if s.LoadBalancer != nil && len(providers) > 1 {
-		// Extract model from request body for strategy decisions
-		var model string
-		var bodyMap map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
-			if m, ok := bodyMap["model"].(string); ok {
-				model = m
-			}
-		}
-		providers = s.LoadBalancer.Select(providers, s.Strategy, model)
-	}
-
-	// Track provider failure details for error reporting
-	var failures []providerFailure
-
-	// Pre-check: if all providers in the current chain are disabled, return 503 immediately
+	// Filter disabled providers BEFORE strategy selection to avoid polluting
+	// round-robin counters, weighted distribution, and least-* rankings.
 	availableProviders, disabledNames := s.filterDisabledProviders(providers)
 	if len(availableProviders) == 0 && len(disabledNames) > 0 {
 		// If using scenario route, try falling back to default providers first
@@ -403,6 +389,24 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Use only non-disabled providers for strategy selection and routing
+	providers = availableProviders
+
+	// Apply load balancing strategy to reorder providers
+	if s.LoadBalancer != nil && len(providers) > 1 {
+		// Extract model from request body for strategy decisions
+		var model string
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			if m, ok := bodyMap["model"].(string); ok {
+				model = m
+			}
+		}
+		providers = s.LoadBalancer.Select(providers, s.Strategy, model, s.Profile, modelOverrides)
+	}
+
+	// Track provider failure details for error reporting
+	var failures []providerFailure
 
 	// Try scenario providers first, then fallback to default if all fail
 	success := s.tryProviders(w, r, providers, modelOverrides, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
@@ -429,11 +433,9 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all providers unavailable"))
 			return
 		}
-		// Clear model overrides for default providers
-		defaultProviders := s.Providers
-		// Apply load balancing strategy to default providers
+		// Filter disabled, then apply strategy to defaults (no model overrides for defaults)
+		defaultProviders := defaultAvailable
 		if s.LoadBalancer != nil && len(defaultProviders) > 1 {
-			// Extract model from request body for strategy decisions
 			var model string
 			var bodyMap map[string]interface{}
 			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
@@ -441,7 +443,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					model = m
 				}
 			}
-			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model)
+			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model, s.Profile, nil)
 		}
 		success = s.tryProviders(w, r, defaultProviders, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {

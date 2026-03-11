@@ -2852,6 +2852,69 @@ func TestResponsesAPIRetry(t *testing.T) {
 	})
 }
 
+func TestResponsesAPIRetryOpenAIChat(t *testing.T) {
+	// Regression test for: OpenAI Chat client receives wrong Responses API payload after retry.
+	// When the client is openai-chat and the provider returns "input is required", the proxy
+	// should retry via /responses AND transform the Responses API response back to
+	// Chat Completions format before returning it to the client.
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"message":"input is required (request id: abc)","type":"new_api_error"}}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/responses") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello from Responses!"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "openai-provider",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-5",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
+	// Client sends an OpenAI Chat Completions request
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}],"max_tokens":1024}`))
+	req.Header.Set("X-Zen-Request-Format", "openai-chat")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// Response MUST be Chat Completions format, NOT Responses API format
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if resp["object"] != "chat.completion" {
+		t.Errorf("response object = %v, want chat.completion (got Responses API payload?)", resp["object"])
+	}
+	choices, ok := resp["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		t.Fatal("response should have choices")
+	}
+	choice := choices[0].(map[string]interface{})
+	msg := choice["message"].(map[string]interface{})
+	if msg["content"] != "Hello from Responses!" {
+		t.Errorf("content = %v, want Hello from Responses!", msg["content"])
+	}
+}
+
 func TestResponsesAPIRetryStreaming(t *testing.T) {
 	// Mock server: 500 "input is required" on /chat/completions,
 	// SSE Responses API stream on /responses

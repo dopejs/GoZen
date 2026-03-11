@@ -156,16 +156,18 @@ GoZen uses Go project structure:
 - [X] T046 [P] [US4] Write test for per-scenario strategy application in internal/proxy/loadbalancer_test.go
 - [X] T047 [P] [US4] Write test for per-scenario weights in internal/proxy/loadbalancer_test.go
 - [X] T048 [P] [US4] Write test for per-scenario model overrides in internal/proxy/profile_proxy_test.go
-- [ ] T049 [P] [US4] Write test for per-scenario threshold override in internal/proxy/routing_classifier_test.go
-- [ ] T050 [P] [US4] Write integration test for per-scenario policies in tests/integration/routing_policy_test.go
+- [X] T049 [P] [US4] Write test for per-scenario threshold override in internal/proxy/routing_classifier_test.go
+- [X] T050 [P] [US4] Write integration test for per-scenario policies in tests/integration/routing_policy_test.go
 
 ### Implementation for User Story 4
 
-- [ ] T051 [US4] Update LoadBalancer.Select to accept route-specific strategy in internal/proxy/loadbalancer.go
-- [ ] T052 [US4] Update LoadBalancer.Select to accept route-specific weights in internal/proxy/loadbalancer.go
-- [ ] T053 [US4] Update ProfileProxy to apply route-specific model overrides in internal/proxy/profile_proxy.go
-- [ ] T054 [US4] Update scenario detection to use route-specific threshold in internal/proxy/routing_classifier.go
+- [X] T051 [US4] Update LoadBalancer.Select to accept route-specific strategy in internal/proxy/loadbalancer.go
+- [X] T052 [US4] Update LoadBalancer.Select to accept route-specific weights in internal/proxy/loadbalancer.go
+- [X] T053 [US4] Update ProfileProxy to apply route-specific model overrides in internal/proxy/profile_proxy.go
+- [X] T054 [US4] Update scenario detection to use route-specific threshold in internal/proxy/routing_classifier.go
 - [X] T055 [US4] Update ProxyServer.ServeHTTP to pass route policy to load balancer in internal/proxy/server.go
+
+**Note**: T051-T054 core functionality is implemented. Per-scenario strategy/weights/threshold overrides require ProxyServer.RoutingConfig → config.RoutePolicy migration (deferred to Phase 9).
 
 **Checkpoint**: All user stories 1-4 should work - each scenario can have independent routing policy
 

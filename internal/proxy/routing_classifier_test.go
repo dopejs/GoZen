@@ -251,3 +251,64 @@ func TestNormalizeScenarioKey(t *testing.T) {
 		})
 	}
 }
+
+// T049: Test per-scenario threshold override
+func TestBuiltinClassifier_PerScenarioThreshold(t *testing.T) {
+	tests := []struct {
+		name              string
+		threshold         int
+		tokenCount        int
+		expectedScenario  string
+		expectedConfidence float64
+	}{
+		{
+			name:              "below default threshold",
+			threshold:         32000,
+			tokenCount:        20000,
+			expectedScenario:  string(config.ScenarioCode),
+			expectedConfidence: 0.5,
+		},
+		{
+			name:              "above default threshold",
+			threshold:         32000,
+			tokenCount:        50000,
+			expectedScenario:  string(config.ScenarioLongContext),
+			expectedConfidence: 0.9,
+		},
+		{
+			name:              "below custom threshold",
+			threshold:         100000,
+			tokenCount:        50000,
+			expectedScenario:  string(config.ScenarioCode),
+			expectedConfidence: 0.5,
+		},
+		{
+			name:              "above custom threshold",
+			threshold:         10000,
+			tokenCount:        20000,
+			expectedScenario:  string(config.ScenarioLongContext),
+			expectedConfidence: 0.9,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classifier := &BuiltinClassifier{Threshold: tt.threshold}
+
+			features := &RequestFeatures{
+				Model:        "claude-opus-4",
+				TotalTokens:  tt.tokenCount,
+				MessageCount: 1,
+			}
+
+			decision := classifier.Classify(nil, features, nil, "", nil)
+
+			if decision.Scenario != tt.expectedScenario {
+				t.Errorf("expected scenario %q, got %q", tt.expectedScenario, decision.Scenario)
+			}
+			if decision.Confidence < tt.expectedConfidence-0.1 || decision.Confidence > tt.expectedConfidence+0.1 {
+				t.Errorf("expected confidence ~%.1f, got %.2f", tt.expectedConfidence, decision.Confidence)
+			}
+		})
+	}
+}

@@ -16,7 +16,11 @@ type providerRouteResponse struct {
 
 // scenarioRouteResponse is the JSON shape for a scenario route.
 type scenarioRouteResponse struct {
-	Providers []*providerRouteResponse `json:"providers"`
+	Providers            []*providerRouteResponse `json:"providers"`
+	Strategy             *string                  `json:"strategy,omitempty"`
+	ProviderWeights      map[string]int           `json:"provider_weights,omitempty"`
+	LongContextThreshold *int                     `json:"long_context_threshold,omitempty"`
+	FallbackToDefault    *bool                    `json:"fallback_to_default,omitempty"`
 }
 
 // profileResponse is the JSON shape returned for a single profile.
@@ -57,9 +61,33 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 					Model: pr.Model,
 				})
 			}
-			resp.Routing[scenario] = &scenarioRouteResponse{
+
+			scenarioResp := &scenarioRouteResponse{
 				Providers: providerRoutes,
 			}
+
+			// Serialize strategy (convert LoadBalanceStrategy to string)
+			if route.Strategy != "" {
+				strategyStr := string(route.Strategy)
+				scenarioResp.Strategy = &strategyStr
+			}
+
+			// Serialize provider weights
+			if len(route.ProviderWeights) > 0 {
+				scenarioResp.ProviderWeights = route.ProviderWeights
+			}
+
+			// Serialize long context threshold
+			if route.LongContextThreshold != nil {
+				scenarioResp.LongContextThreshold = route.LongContextThreshold
+			}
+
+			// Serialize fallback to default
+			if route.FallbackToDefault != nil {
+				scenarioResp.FallbackToDefault = route.FallbackToDefault
+			}
+
+			resp.Routing[scenario] = scenarioResp
 		}
 	}
 	return resp
@@ -80,9 +108,32 @@ func routingResponseToConfig(routing map[string]*scenarioRouteResponse) map[stri
 					Model: pr.Model,
 				})
 			}
-			result[scenario] = &config.RoutePolicy{
+
+			policy := &config.RoutePolicy{
 				Providers: providerRoutes,
 			}
+
+			// Deserialize strategy (convert string to LoadBalanceStrategy)
+			if route.Strategy != nil && *route.Strategy != "" {
+				policy.Strategy = config.LoadBalanceStrategy(*route.Strategy)
+			}
+
+			// Deserialize provider weights
+			if len(route.ProviderWeights) > 0 {
+				policy.ProviderWeights = route.ProviderWeights
+			}
+
+			// Deserialize long context threshold
+			if route.LongContextThreshold != nil {
+				policy.LongContextThreshold = route.LongContextThreshold
+			}
+
+			// Deserialize fallback to default
+			if route.FallbackToDefault != nil {
+				policy.FallbackToDefault = route.FallbackToDefault
+			}
+
+			result[scenario] = policy
 		}
 	}
 	if len(result) == 0 {

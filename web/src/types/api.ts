@@ -77,6 +77,10 @@ export interface ProviderRoute {
 // Scenario route
 export interface ScenarioRoute {
   providers: ProviderRoute[]
+  strategy?: LoadBalanceStrategy
+  provider_weights?: Record<string, number>
+  long_context_threshold?: number
+  fallback_to_default?: boolean
 }
 
 // Load balance strategy

@@ -1,11 +1,7 @@
 ---
-description: Perform retrospective analysis on completed specs to extract shared constraints
-  and improve constitution, templates, and checklists through self-improvement.
+description: Perform retrospective analysis on completed specs to extract shared constraints and improve constitution, templates, and checklists through self-improvement.
 ---
 
-
-<!-- Extension: retro -->
-<!-- Config: .specify/extensions/retro/ -->
 ## User Input
 
 ```text

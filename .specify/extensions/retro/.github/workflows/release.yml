@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create release archive
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          zip -r speckit-retro-extension-${VERSION}.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x "*.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: speckit-retro-extension-*.zip
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            ```bash
+            specify extension add retro --from https://github.com/dopejs/speckit-retro-extension/archive/refs/tags/${{ github.ref_name }}.zip
+            ```
+
+            ## Usage
+
+            ```bash
+            /speckit.retro 015-019
+            ```
+
+            See [README](https://github.com/dopejs/speckit-retro-extension#readme) for full documentation.

@@ -104,7 +104,7 @@ GoZen uses Go project structure:
 - [X] T026 [P] [US2] Write test for middleware decision precedence in internal/proxy/routing_resolver_test.go
 - [X] T027 [P] [US2] Write test for builtin classifier fallback in internal/proxy/routing_classifier_test.go
 - [X] T028 [P] [US2] Write test for routing hints integration in internal/proxy/routing_classifier_test.go
-- [ ] T029 [P] [US2] Write integration test for middleware-driven routing in tests/integration/routing_middleware_test.go
+- [X] T029 [P] [US2] Write integration test for middleware-driven routing in tests/integration/routing_middleware_test.go
 
 ### Implementation for User Story 2
 
@@ -131,13 +131,13 @@ GoZen uses Go project structure:
 - [X] T037 [P] [US3] Write test for custom scenario route lookup in internal/proxy/routing_resolver_test.go
 - [X] T038 [P] [US3] Write test for scenario key normalization in internal/proxy/routing_classifier_test.go
 - [X] T039 [P] [US3] Write test for unknown scenario fallback in internal/proxy/routing_resolver_test.go
-- [ ] T040 [P] [US3] Write test for config validation with custom routes in internal/config/config_test.go
+- [X] T040 [P] [US3] Write test for config validation with custom routes in internal/config/config_test.go
 
 ### Implementation for User Story 3
 
 - [X] T041 [P] [US3] Implement NormalizeScenarioKey function in internal/proxy/routing_classifier.go
 - [X] T042 [US3] Implement ResolveRoutePolicy function in internal/proxy/routing_resolver.go
-- [ ] T043 [US3] Update config validation to accept custom scenario keys in internal/config/store.go
+- [X] T043 [US3] Update config validation to accept custom scenario keys in internal/config/store.go
 - [X] T044 [US3] Update ProxyServer.ServeHTTP to use ResolveRoutePolicy in internal/proxy/server.go
 - [X] T045 [US3] Add fallback to default route for unknown scenarios in internal/proxy/server.go
 

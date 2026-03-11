@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -2700,5 +2701,237 @@ func TestConfigMigrationV13ToV14(t *testing.T) {
 	}
 	if m, ok := cfg.DisabledProviders["test"]; !ok || m.Type != MarkingTypePermanent {
 		t.Errorf("round-trip disabled_providers[test] = %+v, want permanent marking", m)
+	}
+}
+
+// T040: Test config validation with custom scenario routes
+func TestValidateRoutingConfig_CustomScenarios(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       *OpenCCConfig
+		profile   string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name: "valid custom scenario with camelCase",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "valid custom scenario with kebab-case",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom-plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "valid custom scenario with snake_case",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom_plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "invalid scenario key with spaces",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "contains spaces",
+		},
+		{
+			name: "invalid empty scenario key",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "empty scenario key",
+		},
+		{
+			name: "invalid non-existent provider",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "nonexistent"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "non-existent provider",
+		},
+		{
+			name: "invalid empty providers list",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "empty providers list",
+		},
+		{
+			name: "valid with strategy override",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								Strategy: LoadBalanceRoundRobin,
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "invalid strategy",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								Strategy: "invalid-strategy",
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "invalid strategy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRoutingConfig(tt.cfg, tt.profile)
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errorMsg)
+				} else if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, got %v", err)
+				}
+			}
+		})
 	}
 }

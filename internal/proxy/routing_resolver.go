@@ -64,7 +64,7 @@ func ResolveRoutePolicy(scenario string, routing map[string]*config.RoutePolicy)
 	}
 
 	// Direct lookup with normalized key
-	normalized := NormalizeScenarioKey(scenario)
+	normalized := config.NormalizeScenarioKey(scenario)
 	if route, ok := routing[normalized]; ok {
 		return route
 	}

@@ -246,7 +246,7 @@ func TestNormalizeScenarioKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result := NormalizeScenarioKey(tt.input)
+			result := config.NormalizeScenarioKey(tt.input)
 			if result != tt.expected {
 				t.Errorf("NormalizeScenarioKey(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
@@ -530,5 +530,85 @@ func TestBuiltinClassifier_PrioritySingleMatch(t *testing.T) {
 
 	if decision.Scenario != string(config.ScenarioThink) {
 		t.Errorf("expected think scenario (higher priority), got %s", decision.Scenario)
+	}
+}
+
+// Test scenario priority with key normalization (kebab-case, snake_case aliases)
+func TestBuiltinClassifier_PriorityKeyNormalization(t *testing.T) {
+	tests := []struct {
+		name             string
+		priority         []string
+		features         *RequestFeatures
+		expectedScenario string
+		reason           string
+	}{
+		{
+			name:     "kebab-case alias: long-context",
+			priority: []string{"long-context", "image", "code"},
+			features: &RequestFeatures{
+				Model:        "claude-sonnet-4",
+				TotalTokens:  50000,
+				MessageCount: 1,
+			},
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "long-context should normalize to longContext",
+		},
+		{
+			name:     "snake_case alias: long_context",
+			priority: []string{"long_context", "image", "code"},
+			features: &RequestFeatures{
+				Model:        "claude-sonnet-4",
+				TotalTokens:  50000,
+				MessageCount: 1,
+			},
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "long_context should normalize to longContext",
+		},
+		{
+			name:     "kebab-case alias: web-search",
+			priority: []string{"web-search", "think", "code"},
+			features: &RequestFeatures{
+				Model:       "claude-sonnet-4",
+				HasWebSearch: true,
+			},
+			expectedScenario: string(config.ScenarioWebSearch),
+			reason:           "web-search should normalize to webSearch",
+		},
+		{
+			name:     "snake_case alias: web_search",
+			priority: []string{"web_search", "think", "code"},
+			features: &RequestFeatures{
+				Model:       "claude-sonnet-4",
+				HasWebSearch: true,
+			},
+			expectedScenario: string(config.ScenarioWebSearch),
+			reason:           "web_search should normalize to webSearch",
+		},
+		{
+			name:     "mixed aliases in priority",
+			priority: []string{"web-search", "long_context", "image", "code"},
+			features: &RequestFeatures{
+				Model:        "claude-sonnet-4",
+				TotalTokens:  50000,
+				HasWebSearch: true, // matches both webSearch and longContext
+			},
+			expectedScenario: string(config.ScenarioWebSearch),
+			reason:           "web-search has higher priority than long_context",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classifier := &BuiltinClassifier{
+				Threshold:        32000,
+				ScenarioPriority: tt.priority,
+			}
+
+			decision := classifier.Classify(nil, tt.features, nil, "", nil)
+
+			if decision.Scenario != tt.expectedScenario {
+				t.Errorf("%s: got scenario %s, want %s", tt.reason, decision.Scenario, tt.expectedScenario)
+			}
+		})
 	}
 }

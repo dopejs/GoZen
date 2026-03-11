@@ -453,7 +453,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check if longContext route has a custom threshold (with key normalization)
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
 		// Try normalized key first, then original key
-		normalizedKey := NormalizeScenarioKey("longContext")
+		normalizedKey := config.NormalizeScenarioKey("longContext")
 		var longContextRoute *ScenarioProviders
 		if route, ok := s.Routing.ScenarioRoutes[normalizedKey]; ok {
 			longContextRoute = route
@@ -500,7 +500,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
 		// Try to find route for the detected scenario
-		normalizedScenario := NormalizeScenarioKey(decision.Scenario)
+		normalizedScenario := config.NormalizeScenarioKey(decision.Scenario)
 
 		// Try normalized key first, then original key
 		if sp, ok := s.Routing.ScenarioRoutes[normalizedScenario]; ok {

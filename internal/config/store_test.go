@@ -476,6 +476,28 @@ func TestValidateRoutingConfig_ScenarioPriority(t *testing.T) {
 			errContains: "duplicate",
 		},
 		{
+			name:        "duplicate scenario with alias (kebab-case)",
+			priority:    []string{"long-context", "longContext"},
+			wantErr:     true,
+			errContains: "duplicate",
+		},
+		{
+			name:        "duplicate scenario with alias (snake_case)",
+			priority:    []string{"long_context", "longContext"},
+			wantErr:     true,
+			errContains: "duplicate",
+		},
+		{
+			name:     "valid priority with kebab-case alias",
+			priority: []string{"long-context", "image", "code"},
+			wantErr:  false,
+		},
+		{
+			name:     "valid priority with snake_case alias",
+			priority: []string{"long_context", "web_search", "code"},
+			wantErr:  false,
+		},
+		{
 			name:     "unknown scenario (allowed for forward compatibility)",
 			priority: []string{"think", "future-scenario", "code"},
 			wantErr:  false,

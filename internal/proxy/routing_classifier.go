@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"strings"
-	"unicode"
 
 	"github.com/dopejs/gozen/internal/config"
 )
@@ -42,7 +41,7 @@ func (c *BuiltinClassifier) Classify(
 		// Check hints first: if hints strongly suggest a scenario and
 		// the features don't contradict it, prefer hints
 		if hints != nil && len(hints.ScenarioCandidates) > 0 {
-			topCandidate := NormalizeScenarioKey(hints.ScenarioCandidates[0])
+			topCandidate := config.NormalizeScenarioKey(hints.ScenarioCandidates[0])
 			hintConfidence := 0.5
 			if c, ok := hints.Confidence[topCandidate]; ok {
 				hintConfidence = c
@@ -209,8 +208,10 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 	}
 
 	// Find first matching scenario in priority order
+	// Normalize scenario keys to support aliases (web-search → webSearch, long_context → longContext)
 	for _, scenario := range priority {
-		if decision, ok := candidates[scenario]; ok {
+		normalizedScenario := config.NormalizeScenarioKey(scenario)
+		if decision, ok := candidates[normalizedScenario]; ok {
 			return decision
 		}
 	}
@@ -241,76 +242,4 @@ func confidenceForScenario(scenario string) float64 {
 	default:
 		return 0.3
 	}
-}
-
-// NormalizeScenarioKey converts scenario keys to canonical camelCase format.
-// Supports kebab-case, snake_case, and camelCase inputs.
-// Examples:
-//   - "web-search" → "webSearch"
-//   - "long_context" → "longContext"
-//   - "webSearch" → "webSearch" (unchanged)
-//   - "think" → "think" (unchanged)
-func NormalizeScenarioKey(key string) string {
-	if key == "" {
-		return ""
-	}
-
-	// Check if key contains delimiters (hyphens or underscores)
-	hasDelimiters := strings.ContainsAny(key, "-_")
-	if !hasDelimiters {
-		// No delimiters - return as-is (already camelCase or single word)
-		return key
-	}
-
-	// Split on hyphens and underscores
-	parts := splitOnDelimiters(key)
-	if len(parts) == 0 {
-		return key
-	}
-
-	// First part stays lowercase, rest are title-cased
-	result := strings.ToLower(parts[0])
-	for i := 1; i < len(parts); i++ {
-		if parts[i] != "" {
-			result += titleCase(parts[i])
-		}
-	}
-
-	return result
-}
-
-// splitOnDelimiters splits a string on hyphens and underscores
-func splitOnDelimiters(s string) []string {
-	var parts []string
-	var current strings.Builder
-
-	for _, r := range s {
-		if r == '-' || r == '_' {
-			if current.Len() > 0 {
-				parts = append(parts, current.String())
-				current.Reset()
-			}
-		} else {
-			current.WriteRune(r)
-		}
-	}
-
-	if current.Len() > 0 {
-		parts = append(parts, current.String())
-	}
-
-	return parts
-}
-
-// titleCase converts the first character to uppercase, rest to lowercase
-func titleCase(s string) string {
-	if s == "" {
-		return ""
-	}
-	runes := []rune(s)
-	runes[0] = unicode.ToUpper(runes[0])
-	for i := 1; i < len(runes); i++ {
-		runes[i] = unicode.ToLower(runes[i])
-	}
-	return string(runes)
 }

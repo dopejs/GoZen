@@ -537,8 +537,9 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 	// Validate scenario_priority if specified (FR-005)
 	if len(profile.ScenarioPriority) > 0 {
 		// Build set of known scenarios (builtin + custom from routing)
+		// Use normalized keys to support aliases (web-search → webSearch, long_context → longContext)
 		knownScenarios := make(map[string]bool)
-		// Add builtin scenarios
+		// Add builtin scenarios (normalized)
 		builtinScenarios := []string{
 			string(ScenarioWebSearch),
 			string(ScenarioThink),
@@ -551,24 +552,28 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 		for _, s := range builtinScenarios {
 			knownScenarios[s] = true
 		}
-		// Add custom scenarios from routing config
+		// Add custom scenarios from routing config (normalized)
 		for scenarioKey := range profile.Routing {
-			knownScenarios[scenarioKey] = true
+			normalized := NormalizeScenarioKey(scenarioKey)
+			knownScenarios[normalized] = true
 		}
 
 		// Validate each scenario in priority list
+		// Use normalized keys for duplicate detection to catch aliases
 		seen := make(map[string]bool)
 		for i, scenario := range profile.ScenarioPriority {
 			if scenario == "" {
 				return fmt.Errorf("profile %q: scenario_priority[%d] is empty", profileName, i)
 			}
-			if seen[scenario] {
-				return fmt.Errorf("profile %q: scenario_priority contains duplicate %q", profileName, scenario)
+			// Normalize for duplicate detection (web-search and webSearch are the same)
+			normalized := NormalizeScenarioKey(scenario)
+			if seen[normalized] {
+				return fmt.Errorf("profile %q: scenario_priority contains duplicate %q (normalized: %q)", profileName, scenario, normalized)
 			}
-			seen[scenario] = true
+			seen[normalized] = true
 
 			// Warn if scenario is not known (not a hard error, allows forward compatibility)
-			if !knownScenarios[scenario] {
+			if !knownScenarios[normalized] {
 				// This is a soft warning - we don't fail validation for unknown scenarios
 				// to allow forward compatibility with new scenario types
 			}

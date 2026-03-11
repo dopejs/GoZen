@@ -1321,6 +1321,9 @@ func TestConfigVersionV3Bindings(t *testing.T) {
   "profiles": {
     "default": {
       "providers": ["main"]
+    },
+    "work": {
+      "providers": ["main"]
     }
   },
   "project_bindings": {

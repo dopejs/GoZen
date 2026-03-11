@@ -447,6 +447,86 @@ func (s *Store) reloadIfModified() {
 	}
 }
 
+// ValidateConfig performs comprehensive validation of the entire configuration.
+// This should be called at startup and after config reload to catch configuration errors early.
+// Returns a list of validation errors (hard errors that prevent operation) and warnings (soft issues).
+func ValidateConfig(cfg *OpenCCConfig) (errors []error, warnings []string) {
+	if cfg == nil {
+		return []error{fmt.Errorf("config is nil")}, nil
+	}
+
+	// Validate providers
+	if len(cfg.Providers) == 0 {
+		warnings = append(warnings, "no providers configured")
+	}
+
+	for name, provider := range cfg.Providers {
+		if provider == nil {
+			errors = append(errors, fmt.Errorf("provider %q is nil", name))
+			continue
+		}
+		if provider.BaseURL == "" {
+			errors = append(errors, fmt.Errorf("provider %q: base_url is required", name))
+		}
+		if provider.AuthToken == "" {
+			warnings = append(warnings, fmt.Sprintf("provider %q: auth_token is empty", name))
+		}
+	}
+
+	// Validate profiles
+	if len(cfg.Profiles) == 0 {
+		warnings = append(warnings, "no profiles configured")
+	}
+
+	for profileName, profile := range cfg.Profiles {
+		if profile == nil {
+			errors = append(errors, fmt.Errorf("profile %q is nil", profileName))
+			continue
+		}
+
+		// Validate profile providers exist
+		for _, providerName := range profile.Providers {
+			if _, exists := cfg.Providers[providerName]; !exists {
+				errors = append(errors, fmt.Errorf("profile %q references non-existent provider %q", profileName, providerName))
+			}
+		}
+
+		// Validate routing configuration
+		if len(profile.Routing) > 0 {
+			if err := ValidateRoutingConfig(cfg, profileName); err != nil {
+				errors = append(errors, err)
+			}
+		}
+	}
+
+	// Validate default profile exists
+	defaultProfile := cfg.DefaultProfile
+	if defaultProfile == "" {
+		defaultProfile = DefaultProfileName
+	}
+	if _, exists := cfg.Profiles[defaultProfile]; !exists && len(cfg.Profiles) > 0 {
+		errors = append(errors, fmt.Errorf("default profile %q does not exist", defaultProfile))
+	}
+
+	// Validate project bindings
+	for path, binding := range cfg.ProjectBindings {
+		if binding == nil {
+			errors = append(errors, fmt.Errorf("project binding for %q is nil", path))
+			continue
+		}
+		if binding.Profile != "" {
+			if _, exists := cfg.Profiles[binding.Profile]; !exists {
+				errors = append(errors, fmt.Errorf("project binding %q references non-existent profile %q", path, binding.Profile))
+			}
+		}
+		if binding.Client != "" && !IsValidClient(binding.Client) {
+			errors = append(errors, fmt.Errorf("project binding %q has invalid client %q", path, binding.Client))
+		}
+	}
+
+	return errors, warnings
+}
+
 // ValidateRoutingConfig validates the routing configuration for a profile.
 // Returns an error if any routing policy references non-existent providers,
 // has invalid weights, invalid strategies, or malformed scenario keys.
@@ -561,6 +641,7 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 		// Validate each scenario in priority list
 		// Use normalized keys for duplicate detection to catch aliases
 		seen := make(map[string]bool)
+		matchedBuiltin := false
 		for i, scenario := range profile.ScenarioPriority {
 			if scenario == "" {
 				return fmt.Errorf("profile %q: scenario_priority[%d] is empty", profileName, i)
@@ -572,11 +653,16 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 			}
 			seen[normalized] = true
 
-			// Warn if scenario is not known (not a hard error, allows forward compatibility)
-			if !knownScenarios[normalized] {
-				// This is a soft warning - we don't fail validation for unknown scenarios
-				// to allow forward compatibility with new scenario types
+			// Track if any builtin scenario is matched
+			if knownScenarios[normalized] {
+				matchedBuiltin = true
 			}
+		}
+
+		// Warn if priority list doesn't match any builtin scenarios
+		// This is not a hard error but indicates potential misconfiguration
+		if !matchedBuiltin && len(profile.ScenarioPriority) > 0 {
+			log.Printf("Warning: profile %q: scenario_priority does not include any builtin scenarios. Routing may fall back to unpredictable behavior.", profileName)
 		}
 	}
 
@@ -618,13 +704,17 @@ func (s *Store) loadLocked() error {
 			cfg.Profiles = make(map[string]*ProfileConfig)
 		}
 
-		// T066: Validate routing configuration for all profiles
-		for profileName, profile := range cfg.Profiles {
-			if profile.Routing != nil && len(profile.Routing) > 0 {
-				if err := ValidateRoutingConfig(&cfg, profileName); err != nil {
-					return fmt.Errorf("invalid routing config: %w", err)
-				}
-			}
+		// Comprehensive config validation
+		validationErrors, validationWarnings := ValidateConfig(&cfg)
+
+		// Log warnings
+		for _, warning := range validationWarnings {
+			log.Printf("Config warning: %s", warning)
+		}
+
+		// Return first validation error if any
+		if len(validationErrors) > 0 {
+			return fmt.Errorf("config validation failed: %w", validationErrors[0])
 		}
 
 		s.config = &cfg

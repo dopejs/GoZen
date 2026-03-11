@@ -502,6 +502,11 @@ func TestValidateRoutingConfig_ScenarioPriority(t *testing.T) {
 			priority: []string{"think", "future-scenario", "code"},
 			wantErr:  false,
 		},
+		{
+			name:     "priority with no builtin scenarios (warning only)",
+			priority: []string{"custom-scenario-1", "custom-scenario-2"},
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {

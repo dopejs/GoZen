@@ -137,8 +137,25 @@ func TestUnbindNonexistentPath(t *testing.T) {
 func TestProjectBindingPersistence(t *testing.T) {
 	home := setTestHome(t)
 
+	// Create a test provider first
+	err := SetProvider("test-provider", &ProviderConfig{
+		BaseURL:   "https://api.example.com",
+		AuthToken: "test-token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create default profile (required by validation)
+	err = SetProfileConfig("default", &ProfileConfig{
+		Providers: []string{"test-provider"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Create a test profile
-	err := SetProfileConfig("persist-profile", &ProfileConfig{
+	err = SetProfileConfig("persist-profile", &ProfileConfig{
 		Providers: []string{"test-provider"},
 	})
 	if err != nil {

@@ -403,18 +403,18 @@ function ScenarioCard({ scenario, route, providers, expanded, onToggle, onUpdate
 
   const addScenarioProvider = () => {
     const newProviders: ProviderRoute[] = [...(route?.providers || []), { name: '' }]
-    onUpdate({ providers: newProviders })
+    onUpdate({ ...route, providers: newProviders })
   }
 
   const updateScenarioProvider = (index: number, providerRoute: ProviderRoute) => {
     const newProviders = [...(route?.providers || [])]
     newProviders[index] = providerRoute
-    onUpdate({ providers: newProviders })
+    onUpdate({ ...route, providers: newProviders })
   }
 
   const removeScenarioProvider = (index: number) => {
     const newProviders = (route?.providers || []).filter((_, i) => i !== index)
-    onUpdate(newProviders.length > 0 ? { providers: newProviders } : undefined)
+    onUpdate(newProviders.length > 0 ? { ...route, providers: newProviders } : undefined)
   }
 
   // T088: Get scenario label (builtin or custom)

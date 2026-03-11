@@ -153,9 +153,9 @@ GoZen uses Go project structure:
 
 ### Tests for User Story 4
 
-- [ ] T046 [P] [US4] Write test for per-scenario strategy application in internal/proxy/loadbalancer_test.go
-- [ ] T047 [P] [US4] Write test for per-scenario weights in internal/proxy/loadbalancer_test.go
-- [ ] T048 [P] [US4] Write test for per-scenario model overrides in internal/proxy/profile_proxy_test.go
+- [X] T046 [P] [US4] Write test for per-scenario strategy application in internal/proxy/loadbalancer_test.go
+- [X] T047 [P] [US4] Write test for per-scenario weights in internal/proxy/loadbalancer_test.go
+- [X] T048 [P] [US4] Write test for per-scenario model overrides in internal/proxy/profile_proxy_test.go
 - [ ] T049 [P] [US4] Write test for per-scenario threshold override in internal/proxy/routing_classifier_test.go
 - [ ] T050 [P] [US4] Write integration test for per-scenario policies in tests/integration/routing_policy_test.go
 

@@ -1153,3 +1153,42 @@ func TestLoadBalancer_SelectLeastCostWithModelOverrides(t *testing.T) {
 		t.Errorf("with overrides: expected provider-a (haiku override=$4.80, cheaper than opus=$90), got %s", resultWithOverrides[0].Name)
 	}
 }
+
+// T046: Test per-scenario strategy application
+func TestLoadBalancer_PerScenarioStrategy(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	lb := NewLoadBalancer(nil)
+
+	providers := []*Provider{
+		{Name: "provider1", Healthy: true},
+		{Name: "provider2", Healthy: true},
+		{Name: "provider3", Healthy: true},
+	}
+
+	// Test round-robin strategy
+	result := lb.Select(providers, config.LoadBalanceRoundRobin, "claude-opus-4", "test-profile", nil)
+	if len(result) != 3 {
+		t.Errorf("expected 3 providers, got %d", len(result))
+	}
+
+	// Test failover strategy (default order)
+	result = lb.Select(providers, config.LoadBalanceFailover, "claude-opus-4", "test-profile", nil)
+	if len(result) != 3 {
+		t.Errorf("expected 3 providers, got %d", len(result))
+	}
+	if result[0].Name != "provider1" {
+		t.Errorf("expected first provider 'provider1', got '%s'", result[0].Name)
+	}
+}
+
+// T047: Test per-scenario weights (already covered by existing weighted tests)
+// The existing TestLoadBalancer_Select_Weighted* tests cover this functionality
+

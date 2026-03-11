@@ -449,13 +449,24 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		threshold = s.Routing.LongContextThreshold
 	}
 
-	// Check if longContext route has a custom threshold
+	// Check if longContext route has a custom threshold (with key normalization)
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
-		if longContextRoute, ok := s.Routing.ScenarioRoutes["longContext"]; ok {
-			if longContextRoute != nil && longContextRoute.LongContextThreshold != nil {
-				threshold = *longContextRoute.LongContextThreshold
-				s.Logger.Printf("[routing] using longContext route threshold: %d", threshold)
-			}
+		// Try normalized key first, then original key
+		normalizedKey := NormalizeScenarioKey("longContext")
+		var longContextRoute *ScenarioProviders
+		if route, ok := s.Routing.ScenarioRoutes[normalizedKey]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["longContext"]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["long-context"]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["long_context"]; ok {
+			longContextRoute = route
+		}
+
+		if longContextRoute != nil && longContextRoute.LongContextThreshold != nil {
+			threshold = *longContextRoute.LongContextThreshold
+			s.Logger.Printf("[routing] using longContext route threshold: %d", threshold)
 		}
 	}
 

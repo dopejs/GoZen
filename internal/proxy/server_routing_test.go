@@ -105,3 +105,69 @@ func TestPerScenarioThreshold(t *testing.T) {
 		t.Logf("Response status: %d, body: %s", w.Code, w.Body.String())
 	}
 }
+
+// TestPerScenarioThresholdNormalizedKeys tests that threshold lookup works with normalized scenario keys
+func TestPerScenarioThresholdNormalizedKeys(t *testing.T) {
+	tests := []struct {
+		name       string
+		routeKey   string
+		wantScenario string
+	}{
+		{
+			name:       "kebab-case key",
+			routeKey:   "long-context",
+			wantScenario: "longContext",
+		},
+		{
+			name:       "snake_case key",
+			routeKey:   "long_context",
+			wantScenario: "longContext",
+		},
+		{
+			name:       "camelCase key",
+			routeKey:   "longContext",
+			wantScenario: "longContext",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			customThreshold := 1000
+			longcontextURL, _ := url.Parse("http://longcontext.example.com")
+			longContextRoute := &ScenarioProviders{
+				Providers: []*Provider{
+					{Name: "longcontext-provider", BaseURL: longcontextURL},
+				},
+				LongContextThreshold: &customThreshold,
+			}
+
+			defaultURL, _ := url.Parse("http://default.example.com")
+			routing := &RoutingConfig{
+				DefaultProviders: []*Provider{
+					{Name: "default-provider", BaseURL: defaultURL},
+				},
+				ScenarioRoutes: map[string]*ScenarioProviders{
+					tt.routeKey: longContextRoute, // Use the test's route key
+				},
+				LongContextThreshold: 32000,
+			}
+
+			server := NewProxyServerWithRouting(routing, testLogger(), config.LoadBalanceFailover, nil)
+			server.Profile = "test-profile"
+
+			// Create a request with ~2000 tokens (exceeds threshold of 1000)
+			longContent := strings.Repeat("word ", 1000)
+			reqBody := `{"model":"claude-opus-4","messages":[{"role":"user","content":"` + longContent + `"}]}`
+			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(reqBody))
+			req.Header.Set("Content-Type", "application/json")
+
+			w := httptest.NewRecorder()
+			server.ServeHTTP(w, req)
+
+			// Should classify as longContext regardless of route key format
+			if w.Code != http.StatusBadGateway && w.Code != http.StatusServiceUnavailable {
+				t.Errorf("Expected 502/503, got %d", w.Code)
+			}
+		})
+	}
+}

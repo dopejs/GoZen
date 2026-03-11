@@ -3382,6 +3382,69 @@ func TestSSEUsageExtractor(t *testing.T) {
 		io.ReadAll(extractor)
 	})
 
+	t.Run("extracts_usage_from_responses_api_sse", func(t *testing.T) {
+		sse := strings.Join([]string{
+			`data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
+			``,
+			`data: {"type":"response.output_text.delta","delta":"Hi"}`,
+			``,
+			`data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":30,"output_tokens":15}}}`,
+			``,
+		}, "\n")
+
+		sessionID := "test-sse-responses-api"
+		ClearSessionUsage(sessionID)
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+		got := GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 30 {
+			t.Errorf("InputTokens = %d, want 30", got.InputTokens)
+		}
+		if got.OutputTokens != 15 {
+			t.Errorf("OutputTokens = %d, want 15", got.OutputTokens)
+		}
+	})
+
+	t.Run("extracts_usage_from_openai_chat_sse", func(t *testing.T) {
+		// OpenAI Chat final chunk has no "type" field; usage at top level
+		sse := strings.Join([]string{
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hi"}}]}`,
+			``,
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n")
+
+		sessionID := "test-sse-openai-chat"
+		ClearSessionUsage(sessionID)
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+		got := GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 20 {
+			t.Errorf("InputTokens = %d, want 20", got.InputTokens)
+		}
+		if got.OutputTokens != 8 {
+			t.Errorf("OutputTokens = %d, want 8", got.OutputTokens)
+		}
+	})
+
 	t.Run("close_delegates_to_inner", func(t *testing.T) {
 		extractor := &sseUsageExtractor{
 			r:         io.NopCloser(strings.NewReader("")),

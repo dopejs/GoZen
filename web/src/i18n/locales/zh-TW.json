@@ -133,7 +133,12 @@
     "scenarioProviders": "場景服務商",
     "modelOverride": "模型覆蓋",
     "addScenarioProvider": "新增服務商",
-    "inheritFromProfile": "繼承自設定檔"
+    "inheritFromProfile": "繼承自設定檔",
+    "customScenario": "自訂",
+    "addCustomScenario": "新增自訂場景",
+    "customScenarioName": "場景名稱（例如：plan、research）",
+    "customScenarioHint": "自訂場景可以透過中介軟體或路由提示觸發",
+    "scenarioAlreadyExists": "場景已存在"
   },
   "logs": {
     "title": "日誌",

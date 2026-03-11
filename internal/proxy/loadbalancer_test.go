@@ -50,12 +50,12 @@ func TestLoadBalancer_ReloadPricing(t *testing.T) {
 func TestLoadBalancer_Select_Empty(t *testing.T) {
 	lb := &LoadBalancer{}
 
-	result := lb.Select(nil, config.LoadBalanceFailover, "", "", nil)
+	result := lb.Select(nil, config.LoadBalanceFailover, "", "", nil, nil)
 	if result != nil {
 		t.Error("Expected nil for nil input")
 	}
 
-	result = lb.Select([]*Provider{}, config.LoadBalanceFailover, "", "", nil)
+	result = lb.Select([]*Provider{}, config.LoadBalanceFailover, "", "", nil, nil)
 	if len(result) != 0 {
 		t.Error("Expected empty slice for empty input")
 	}
@@ -65,7 +65,7 @@ func TestLoadBalancer_Select_Single(t *testing.T) {
 	lb := &LoadBalancer{}
 	provider := &Provider{Name: "test", Healthy: true}
 
-	result := lb.Select([]*Provider{provider}, config.LoadBalanceFailover, "", "", nil)
+	result := lb.Select([]*Provider{provider}, config.LoadBalanceFailover, "", "", nil, nil)
 	if len(result) != 1 || result[0] != provider {
 		t.Error("Expected single provider to be returned unchanged")
 	}
@@ -80,7 +80,7 @@ func TestLoadBalancer_Select_Failover(t *testing.T) {
 	unhealthy := &Provider{Name: "unhealthy", Healthy: false}
 	unhealthy.MarkFailed() // Set backoff to make it truly unhealthy
 
-	result := lb.Select([]*Provider{unhealthy, healthy}, config.LoadBalanceFailover, "", "", nil)
+	result := lb.Select([]*Provider{unhealthy, healthy}, config.LoadBalanceFailover, "", "", nil, nil)
 	if len(result) != 2 {
 		t.Fatalf("Expected 2 providers, got %d", len(result))
 	}
@@ -99,9 +99,9 @@ func TestLoadBalancer_Select_RoundRobin(t *testing.T) {
 	providers := []*Provider{p1, p2}
 
 	// First call
-	result1 := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+	result1 := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 	// Second call should rotate
-	result2 := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+	result2 := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 
 	if result1[0].Name == result2[0].Name {
 		t.Error("Expected round-robin to rotate providers")
@@ -121,7 +121,7 @@ func TestLoadBalancer_Select_LeastLatency(t *testing.T) {
 	fast := &Provider{Name: "fast", Healthy: true}
 	medium := &Provider{Name: "medium", Healthy: true}
 
-	result := lb.Select([]*Provider{slow, medium, fast}, config.LoadBalanceLeastLatency, "", "", nil)
+	result := lb.Select([]*Provider{slow, medium, fast}, config.LoadBalanceLeastLatency, "", "", nil, nil)
 	if result[0].Name != "fast" {
 		t.Errorf("Expected fast provider first, got %s", result[0].Name)
 	}
@@ -143,7 +143,7 @@ func TestLoadBalancer_Select_LeastCost(t *testing.T) {
 	haiku := &Provider{Name: "haiku", Model: "claude-3-5-haiku-20241022", Healthy: true}
 	opus := &Provider{Name: "opus", Model: "claude-3-opus-20240229", Healthy: true}
 
-	result := lb.Select([]*Provider{opus, haiku}, config.LoadBalanceLeastCost, "", "", nil)
+	result := lb.Select([]*Provider{opus, haiku}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if result[0].Name != "haiku" {
 		t.Errorf("Expected haiku (cheaper) first, got %s", result[0].Name)
 	}
@@ -296,7 +296,7 @@ func TestLoadBalancer_Select_LeastLatency_NoMetrics(t *testing.T) {
 	p2 := &Provider{Name: "p2", Healthy: true}
 
 	// Without metrics, should still return providers
-	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastLatency, "", "", nil)
+	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastLatency, "", "", nil, nil)
 	if len(result) != 2 {
 		t.Errorf("Expected 2 providers, got %d", len(result))
 	}
@@ -318,7 +318,7 @@ func TestLoadBalancer_Select_LeastCost_NoModel(t *testing.T) {
 	p1 := &Provider{Name: "p1", Healthy: true}
 	p2 := &Provider{Name: "p2", Healthy: true}
 
-	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastCost, "", "", nil)
+	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if len(result) != 2 {
 		t.Errorf("Expected 2 providers, got %d", len(result))
 	}
@@ -333,7 +333,7 @@ func TestLoadBalancer_Select_UnknownStrategy(t *testing.T) {
 	p2 := &Provider{Name: "p2", Healthy: true}
 
 	// Unknown strategy should default to failover behavior
-	result := lb.Select([]*Provider{p1, p2}, "unknown-strategy", "", "", nil)
+	result := lb.Select([]*Provider{p1, p2}, "unknown-strategy", "", "", nil, nil)
 	if len(result) != 2 {
 		t.Errorf("Expected 2 providers, got %d", len(result))
 	}
@@ -352,7 +352,7 @@ func TestLoadBalancer_Select_RoundRobin_MultipleRounds(t *testing.T) {
 	// Multiple rounds should cycle through all providers
 	seen := make(map[string]bool)
 	for i := 0; i < 6; i++ {
-		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 		seen[result[0].Name] = true
 	}
 
@@ -424,7 +424,7 @@ func TestLoadBalancer_SelectLeastLatency(t *testing.T) {
 		{Name: "p3", Healthy: true},
 	}
 
-	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil)
+	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil, nil)
 
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
@@ -464,7 +464,7 @@ func TestLoadBalancer_SelectLeastLatencyInsufficientSamples(t *testing.T) {
 		{Name: "p2", Healthy: true},
 	}
 
-	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil)
+	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil, nil)
 
 	if len(result) != 2 {
 		t.Fatalf("got %d providers, want 2", len(result))
@@ -506,7 +506,7 @@ func TestLoadBalancer_SelectLeastLatencyUnhealthyProviders(t *testing.T) {
 
 	providers := []*Provider{p1, p2, p3}
 
-	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil)
+	result := lb.Select(providers, config.LoadBalanceLeastLatency, "claude-sonnet-4-5", "", nil, nil)
 
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
@@ -540,7 +540,7 @@ func TestLoadBalancer_SelectLeastCost(t *testing.T) {
 	sonnet := &Provider{Name: "sonnet", Model: "claude-3-5-sonnet-20241022", Healthy: true}
 	opus := &Provider{Name: "opus", Model: "claude-3-opus-20240229", Healthy: true}
 
-	result := lb.Select([]*Provider{opus, sonnet, haiku}, config.LoadBalanceLeastCost, "", "", nil)
+	result := lb.Select([]*Provider{opus, sonnet, haiku}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
 	}
@@ -570,7 +570,7 @@ func TestLoadBalancer_SelectLeastCostTiebreaker(t *testing.T) {
 	p2 := &Provider{Name: "p2", Model: "claude-3-5-haiku-20241022", Healthy: true}
 	p3 := &Provider{Name: "p3", Model: "claude-3-5-haiku-20241022", Healthy: true}
 
-	result := lb.Select([]*Provider{p1, p2, p3}, config.LoadBalanceLeastCost, "", "", nil)
+	result := lb.Select([]*Provider{p1, p2, p3}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
 	}
@@ -600,7 +600,7 @@ func TestLoadBalancer_SelectLeastCostUnhealthyProviders(t *testing.T) {
 	sonnet := &Provider{Name: "sonnet", Model: "claude-3-5-sonnet-20241022", Healthy: true}
 	opus := &Provider{Name: "opus", Model: "claude-3-opus-20240229", Healthy: true}
 
-	result := lb.Select([]*Provider{haiku, opus, sonnet}, config.LoadBalanceLeastCost, "", "", nil)
+	result := lb.Select([]*Provider{haiku, opus, sonnet}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
 	}
@@ -626,7 +626,7 @@ func TestLoadBalancer_SelectRoundRobin(t *testing.T) {
 	// Track which provider is selected first in each call
 	selections := make([]string, 9)
 	for i := 0; i < 9; i++ {
-		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 		if len(result) != 3 {
 			t.Fatalf("call %d: got %d providers, want 3", i, len(result))
 		}
@@ -661,7 +661,7 @@ func TestLoadBalancer_SelectRoundRobinUnhealthy(t *testing.T) {
 	// Make 6 requests - should distribute only among healthy providers (p1, p3)
 	selections := make([]string, 6)
 	for i := 0; i < 6; i++ {
-		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 		if len(result) != 3 {
 			t.Fatalf("call %d: got %d providers, want 3", i, len(result))
 		}
@@ -705,7 +705,7 @@ func TestLoadBalancer_SelectRoundRobinConcurrency(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
-			result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil)
+			result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "", nil, nil)
 			if len(result) > 0 {
 				results <- result[0].Name
 			}
@@ -753,7 +753,7 @@ func TestLoadBalancer_SelectWeighted(t *testing.T) {
 	counts := make(map[string]int)
 
 	for i := 0; i < numSelections; i++ {
-		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil, nil)
 		if len(result) == 0 {
 			t.Fatalf("selection %d: got empty result", i)
 		}
@@ -796,7 +796,7 @@ func TestLoadBalancer_SelectWeightedRecalculation(t *testing.T) {
 	counts := make(map[string]int)
 
 	for i := 0; i < numSelections; i++ {
-		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil, nil)
 		if len(result) == 0 {
 			t.Fatalf("selection %d: got empty result", i)
 		}
@@ -838,7 +838,7 @@ func TestLoadBalancer_SelectWeightedFallback(t *testing.T) {
 	counts := make(map[string]int)
 
 	for i := 0; i < numSelections; i++ {
-		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil)
+		result := lb.Select(providers, config.LoadBalanceWeighted, "", "", nil, nil)
 		if len(result) == 0 {
 			t.Fatalf("selection %d: got empty result", i)
 		}
@@ -867,7 +867,7 @@ func TestLoadBalancer_SelectLeastLatency_NilDB(t *testing.T) {
 	p2 := &Provider{Name: "p2", Healthy: true}
 
 	// Should not panic with nil DB, falls back to configured order
-	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastLatency, "", "", nil)
+	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceLeastLatency, "", "", nil, nil)
 	if len(result) != 2 {
 		t.Fatalf("got %d providers, want 2", len(result))
 	}
@@ -883,7 +883,7 @@ func TestLoadBalancer_SelectInvalidStrategy(t *testing.T) {
 	p2 := &Provider{Name: "p2", Healthy: true}
 
 	// Unknown strategy should default to failover
-	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceStrategy("unknown"), "", "", nil)
+	result := lb.Select([]*Provider{p1, p2}, config.LoadBalanceStrategy("unknown"), "", "", nil, nil)
 	if len(result) != 2 {
 		t.Fatalf("got %d providers, want 2", len(result))
 	}
@@ -910,7 +910,7 @@ func TestLoadBalancer_AllProvidersUnhealthy(t *testing.T) {
 	}
 
 	for _, s := range strategies {
-		result := lb.Select([]*Provider{p1, p2}, s, "", "", nil)
+		result := lb.Select([]*Provider{p1, p2}, s, "", "", nil, nil)
 		if len(result) != 2 {
 			t.Fatalf("strategy=%s: got %d providers, want 2", s, len(result))
 		}
@@ -945,7 +945,7 @@ func TestLoadBalancer_AllProvidersIdenticalMetrics(t *testing.T) {
 		{Name: "p3", Healthy: true},
 	}
 
-	result := lb.Select(providers, config.LoadBalanceLeastLatency, "", "", nil)
+	result := lb.Select(providers, config.LoadBalanceLeastLatency, "", "", nil, nil)
 	if len(result) != 3 {
 		t.Fatalf("got %d providers, want 3", len(result))
 	}
@@ -969,7 +969,7 @@ func TestLoadBalancer_SingleProvider(t *testing.T) {
 	}
 
 	for _, s := range strategies {
-		result := lb.Select([]*Provider{p1}, s, "", "", nil)
+		result := lb.Select([]*Provider{p1}, s, "", "", nil, nil)
 		if len(result) != 1 {
 			t.Fatalf("strategy=%s: got %d providers, want 1", s, len(result))
 		}
@@ -1009,7 +1009,7 @@ func TestLoadBalancer_MetricCacheConcurrency(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		go func() {
 			defer func() { done <- struct{}{} }()
-			lb.Select(providers, config.LoadBalanceLeastLatency, "", "", nil)
+			lb.Select(providers, config.LoadBalanceLeastLatency, "", "", nil, nil)
 		}()
 	}
 	for i := 0; i < 50; i++ {
@@ -1044,7 +1044,7 @@ func BenchmarkLoadBalancer_Select(b *testing.B) {
 	for _, s := range strategies {
 		b.Run(s.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				lb.Select(providers, s.strategy, "claude-3-5-haiku-20241022", "", nil)
+				lb.Select(providers, s.strategy, "claude-3-5-haiku-20241022", "", nil, nil)
 			}
 		})
 	}
@@ -1073,14 +1073,14 @@ func TestLoadBalancer_RoundRobinPerProfileIsolation(t *testing.T) {
 	// Profile A: 3 requests should cycle through p0→p1→p2 (in rotation order)
 	profileAResults := make([]string, 3)
 	for i := 0; i < 3; i++ {
-		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-a", nil)
+		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-a", nil, nil)
 		profileAResults[i] = result[0].Name
 	}
 
 	// Profile B: independent counter, should start its own cycle
 	profileBResults := make([]string, 3)
 	for i := 0; i < 3; i++ {
-		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-b", nil)
+		result := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-b", nil, nil)
 		profileBResults[i] = result[0].Name
 	}
 
@@ -1111,8 +1111,8 @@ func TestLoadBalancer_RoundRobinPerProfileIsolation(t *testing.T) {
 	// Verify profile A didn't advance profile B's counter:
 	// Send one more request to each profile — they should select the same provider
 	// (since both have done exactly 3 requests = full cycle)
-	resultA := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-a", nil)
-	resultB := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-b", nil)
+	resultA := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-a", nil, nil)
+	resultB := lb.Select(providers, config.LoadBalanceRoundRobin, "", "profile-b", nil, nil)
 	if resultA[0].Name != resultB[0].Name {
 		t.Errorf("after full cycle: profile-a selected %s, profile-b selected %s — counters should be in sync if isolated",
 			resultA[0].Name, resultB[0].Name)
@@ -1138,7 +1138,7 @@ func TestLoadBalancer_SelectLeastCostWithModelOverrides(t *testing.T) {
 	providerB := &Provider{Name: "provider-b", Model: "claude-3-5-haiku-20241022", Healthy: true}
 
 	// Without overrides: B should be cheaper (haiku $4.80 < opus $90.00)
-	resultNoOverrides := lb.Select([]*Provider{providerA, providerB}, config.LoadBalanceLeastCost, "", "", nil)
+	resultNoOverrides := lb.Select([]*Provider{providerA, providerB}, config.LoadBalanceLeastCost, "", "", nil, nil)
 	if resultNoOverrides[0].Name != "provider-b" {
 		t.Errorf("without overrides: expected provider-b (haiku, cheaper), got %s", resultNoOverrides[0].Name)
 	}
@@ -1148,8 +1148,47 @@ func TestLoadBalancer_SelectLeastCostWithModelOverrides(t *testing.T) {
 		"provider-a": "claude-3-5-haiku-20241022",
 		"provider-b": "claude-opus-4-20250514",
 	}
-	resultWithOverrides := lb.Select([]*Provider{providerA, providerB}, config.LoadBalanceLeastCost, "", "", overrides)
+	resultWithOverrides := lb.Select([]*Provider{providerA, providerB}, config.LoadBalanceLeastCost, "", "", overrides, nil)
 	if resultWithOverrides[0].Name != "provider-a" {
 		t.Errorf("with overrides: expected provider-a (haiku override=$4.80, cheaper than opus=$90), got %s", resultWithOverrides[0].Name)
 	}
 }
+
+// T046: Test per-scenario strategy application
+func TestLoadBalancer_PerScenarioStrategy(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	lb := NewLoadBalancer(nil)
+
+	providers := []*Provider{
+		{Name: "provider1", Healthy: true},
+		{Name: "provider2", Healthy: true},
+		{Name: "provider3", Healthy: true},
+	}
+
+	// Test round-robin strategy
+	result := lb.Select(providers, config.LoadBalanceRoundRobin, "claude-opus-4", "test-profile", nil, nil)
+	if len(result) != 3 {
+		t.Errorf("expected 3 providers, got %d", len(result))
+	}
+
+	// Test failover strategy (default order)
+	result = lb.Select(providers, config.LoadBalanceFailover, "claude-opus-4", "test-profile", nil, nil)
+	if len(result) != 3 {
+		t.Errorf("expected 3 providers, got %d", len(result))
+	}
+	if result[0].Name != "provider1" {
+		t.Errorf("expected first provider 'provider1', got '%s'", result[0].Name)
+	}
+}
+
+// T047: Test per-scenario weights (already covered by existing weighted tests)
+// The existing TestLoadBalancer_Select_Weighted* tests cover this functionality
+

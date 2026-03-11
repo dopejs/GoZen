@@ -535,14 +535,14 @@ func TestCreateProfileWithRouting(t *testing.T) {
 	body := createProfileRequest{
 		Name:      "routed",
 		Providers: []string{"test-provider", "backup"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {
 				Providers: []*providerRouteResponse{
 					{Name: "backup", Model: "claude-opus-4-5"},
 					{Name: "test-provider"},
 				},
 			},
-			config.ScenarioImage: {
+			string(config.ScenarioImage): {
 				Providers: []*providerRouteResponse{
 					{Name: "test-provider"},
 				},
@@ -565,7 +565,7 @@ func TestCreateProfileWithRouting(t *testing.T) {
 		t.Fatalf("expected 2 routes, got %d", len(resp.Routing))
 	}
 
-	thinkRoute := resp.Routing[config.ScenarioThink]
+	thinkRoute := resp.Routing[string(config.ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -594,8 +594,8 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 	// Update work profile to add routing
 	body := updateProfileRequest{
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioLongContext: {
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioLongContext): {
 				Providers: []*providerRouteResponse{
 					{Name: "backup", Model: "claude-haiku-4-5"},
 				},
@@ -613,7 +613,7 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 	if resp.Routing == nil {
 		t.Fatal("routing should not be nil")
 	}
-	lcRoute := resp.Routing[config.ScenarioLongContext]
+	lcRoute := resp.Routing[string(config.ScenarioLongContext)]
 	if lcRoute == nil {
 		t.Fatal("longContext route should exist")
 	}
@@ -631,8 +631,8 @@ func TestUpdateProfileClearRouting(t *testing.T) {
 	// First add routing
 	body1 := updateProfileRequest{
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup"}}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{{Name: "backup"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/work", body1)
@@ -660,8 +660,8 @@ func TestListProfilesWithRouting(t *testing.T) {
 	// Add routing to default
 	body := updateProfileRequest{
 		Providers: []string{"test-provider", "backup"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup", Model: "opus"}}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{{Name: "backup", Model: "opus"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/default", body)
@@ -696,8 +696,8 @@ func TestCreateProfileWithEmptyRouting(t *testing.T) {
 	body := createProfileRequest{
 		Name:      "empty-routes",
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{}},
 		},
 	}
 	w := doRequest(s, "POST", "/api/v1/profiles", body)

@@ -230,14 +230,12 @@ func (a *FBMessengerAdapter) HandleWebhook(w http.ResponseWriter, r *http.Reques
 				payload := messaging.Postback.Payload
 				buttonID := payload
 				data := ""
-				if idx := len(payload) - len(payload); idx > 0 {
-					// Find colon
-					for i, c := range payload {
-						if c == ':' {
-							buttonID = payload[:i]
-							data = payload[i+1:]
-							break
-						}
+				// Find colon to split buttonID and data
+				for i, c := range payload {
+					if c == ':' {
+						buttonID = payload[:i]
+						data = payload[i+1:]
+						break
 					}
 				}
 

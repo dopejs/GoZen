@@ -701,7 +701,7 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	}
 
 	// Build scenario routes
-	scenarioRoutes := make(map[config.Scenario]*proxy.ScenarioProviders)
+	scenarioRoutes := make(map[string]*proxy.ScenarioProviders)
 	for scenario, route := range pc.Routing {
 		var chain []*proxy.Provider
 		models := make(map[string]string)

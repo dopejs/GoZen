@@ -44,10 +44,8 @@ func (l *StructuredLogger) log(level, event string, fields map[string]interface{
 	data["event"] = entry.Event
 
 	// Add custom fields
-	if fields != nil {
-		for k, v := range fields {
-			data[k] = v
-		}
+	for k, v := range fields {
+		data[k] = v
 	}
 
 	l.mu.Lock()
@@ -83,4 +81,59 @@ func (l *StructuredLogger) Error(event string, fields map[string]interface{}) {
 // Debug logs a debug event
 func (l *StructuredLogger) Debug(event string, fields map[string]interface{}) {
 	l.log("debug", event, fields)
+}
+
+// --- Routing-specific logging functions ---
+
+// LogRoutingDecision logs a routing decision with scenario, source, and reason
+func (l *StructuredLogger) LogRoutingDecision(sessionID, scenario, source, reason string, confidence float64, provider string) {
+	l.Info("routing_decision", map[string]interface{}{
+		"session_id": sessionID,
+		"scenario":   scenario,
+		"source":     source,
+		"reason":     reason,
+		"confidence": confidence,
+		"provider":   provider,
+	})
+}
+
+// LogRoutingFallback logs when routing falls back to default behavior
+func (l *StructuredLogger) LogRoutingFallback(sessionID, scenario, reason, fallbackProvider string) {
+	l.Warn("routing_fallback", map[string]interface{}{
+		"session_id":        sessionID,
+		"scenario":          scenario,
+		"reason":            reason,
+		"fallback_provider": fallbackProvider,
+	})
+}
+
+// LogProtocolDetection logs the detected API protocol for a request
+func (l *StructuredLogger) LogProtocolDetection(sessionID, detectedProtocol, detectionMethod string) {
+	l.Debug("protocol_detection", map[string]interface{}{
+		"session_id":        sessionID,
+		"detected_protocol": detectedProtocol,
+		"detection_method":  detectionMethod,
+	})
+}
+
+// LogRequestFeatures logs extracted request features for routing classification
+func (l *StructuredLogger) LogRequestFeatures(sessionID string, features map[string]interface{}) {
+	fields := map[string]interface{}{
+		"session_id": sessionID,
+	}
+	for k, v := range features {
+		fields[k] = v
+	}
+	l.Debug("request_features", fields)
+}
+
+// LogProviderSelection logs the final provider selection with strategy details
+func (l *StructuredLogger) LogProviderSelection(sessionID, provider, strategy, reason string, candidates []string) {
+	l.Info("provider_selection", map[string]interface{}{
+		"session_id": sessionID,
+		"provider":   provider,
+		"strategy":   strategy,
+		"reason":     reason,
+		"candidates": candidates,
+	})
 }

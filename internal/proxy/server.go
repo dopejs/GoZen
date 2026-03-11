@@ -114,14 +114,19 @@ func GetGlobalLogDB() *LogDB {
 // RoutingConfig holds the default provider chain and optional scenario routes.
 type RoutingConfig struct {
 	DefaultProviders     []*Provider
-	ScenarioRoutes       map[config.Scenario]*ScenarioProviders
-	LongContextThreshold int // threshold for longContext scenario detection
+	ScenarioRoutes       map[string]*ScenarioProviders
+	LongContextThreshold int      // threshold for longContext scenario detection
+	ScenarioPriority     []string // scenario priority order for builtin classifier (FR-005)
 }
 
-// ScenarioProviders defines the providers and per-provider model overrides for a scenario.
+// ScenarioProviders defines the providers and routing policy for a scenario.
 type ScenarioProviders struct {
-	Providers []*Provider
-	Models    map[string]string // provider name → model override
+	Providers            []*Provider
+	Models               map[string]string // provider name → model override
+	Strategy             *config.LoadBalanceStrategy
+	ProviderWeights      map[string]int
+	LongContextThreshold *int
+	FallbackToDefault    *bool
 }
 
 // providerFailure tracks details of a failed provider attempt.
@@ -295,6 +300,45 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		requestFormat = config.ProviderTypeAnthropic // Default
 	}
 
+	// Detect protocol and normalize request for routing (T023-T024)
+	var bodyMap map[string]interface{}
+	var normalized *NormalizedRequest
+	var features *RequestFeatures
+	var detectedProtocol string
+	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+		// Detect protocol using priority: URL path → header → body structure
+		detectedProtocol = DetectProtocol(r.URL.Path, r.Header, bodyMap)
+
+		// Normalize request based on detected protocol
+		var normErr error
+		switch detectedProtocol {
+		case "anthropic":
+			normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+		case "openai_chat":
+			normalized, normErr = NormalizeOpenAIChat(bodyMap)
+		case "openai_responses":
+			normalized, normErr = NormalizeOpenAIResponses(bodyMap)
+		default:
+			// Unknown protocol, try anthropic as fallback
+			normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+		}
+
+		// Log normalization error but continue (T025: route to default on failure)
+		if normErr != nil {
+			s.Logger.Printf("[routing] normalization error for protocol %s: %v", detectedProtocol, normErr)
+		}
+
+		// Extract features for routing classification
+		if normalized != nil {
+			features = ExtractFeatures(normalized)
+			// T077: Log request features for observability
+			if features != nil {
+				s.Logger.Printf("[routing] features: has_image=%v, has_tools=%v, is_long_context=%v, total_tokens=%d, message_count=%d",
+					features.HasImage, features.HasTools, features.IsLongContext, features.TotalTokens, features.MessageCount)
+			}
+		}
+	}
+
 	// [BETA] Apply context compression if enabled
 	if compressor := GetGlobalCompressor(); compressor != nil && compressor.IsEnabled() {
 		compressedBody, compressed, err := compressor.CompressRequestBody(bodyBytes)
@@ -307,15 +351,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// [BETA] Apply middleware pipeline if enabled
+	var processedCtx *middleware.RequestContext
 	if pipeline := middleware.GetGlobalPipeline(); pipeline != nil && pipeline.IsEnabled() {
 		reqCtx := &middleware.RequestContext{
-			SessionID:  sessionID,
-			ClientType: clientType,
-			Method:     r.Method,
-			Path:       r.URL.Path,
-			Headers:    r.Header.Clone(),
-			Body:       bodyBytes,
-			Metadata:   make(map[string]interface{}),
+			SessionID:         sessionID,
+			ClientType:        clientType,
+			Method:            r.Method,
+			Path:              r.URL.Path,
+			Headers:           r.Header.Clone(),
+			Body:              bodyBytes,
+			Metadata:          make(map[string]interface{}),
+			RequestFormat:     requestFormat,
+			NormalizedRequest: normalized,
+			Profile:           s.Profile,
 		}
 
 		// Parse model and messages for middleware
@@ -337,35 +385,186 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		processedCtx, err := pipeline.ProcessRequest(reqCtx)
+		var err error
+		processedCtx, err = pipeline.ProcessRequest(reqCtx)
 		if err != nil {
 			s.Logger.Printf("[middleware] request processing error: %v", err)
 			http.Error(w, fmt.Sprintf("middleware error: %v", err), http.StatusBadRequest)
 			return
 		}
-		bodyBytes = processedCtx.Body
+
+		// Check if middleware modified the request body
+		if !bytes.Equal(bodyBytes, processedCtx.Body) {
+			s.Logger.Printf("[middleware] body modified, re-normalizing request")
+			bodyBytes = processedCtx.Body
+
+			// Re-parse bodyMap for downstream use
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+				s.Logger.Printf("[middleware] failed to parse modified body: %v", err)
+			} else {
+				// Re-normalize the modified request
+				var normErr error
+				switch detectedProtocol {
+				case "anthropic":
+					normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+				case "openai_chat":
+					normalized, normErr = NormalizeOpenAIChat(bodyMap)
+				case "openai_responses":
+					normalized, normErr = NormalizeOpenAIResponses(bodyMap)
+				default:
+					normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+				}
+
+				if normErr != nil {
+					s.Logger.Printf("[middleware] re-normalization error: %v", normErr)
+				} else if normalized != nil {
+					// Re-extract features from new normalized request
+					features = ExtractFeatures(normalized)
+					if features != nil {
+						s.Logger.Printf("[middleware] re-extracted features: has_image=%v, has_tools=%v, is_long_context=%v, total_tokens=%d, message_count=%d",
+							features.HasImage, features.HasTools, features.IsLongContext, features.TotalTokens, features.MessageCount)
+					}
+				}
+			}
+		} else {
+			bodyBytes = processedCtx.Body
+		}
 	}
 
-	// Determine provider chain and per-provider model overrides from routing
+	// T034-T036: Extract routing decision and hints from middleware context
+	var middlewareDecision *RoutingDecision
+	var routingHints *RoutingHints
+	if processedCtx != nil {
+		if rd, ok := processedCtx.RoutingDecision.(*RoutingDecision); ok {
+			middlewareDecision = rd
+		}
+		if rh, ok := processedCtx.RoutingHints.(*RoutingHints); ok {
+			routingHints = rh
+		}
+	}
+
+	// T035: Resolve routing decision (middleware > builtin classifier)
+	// Use longContext route's threshold if available, otherwise use profile threshold
+	threshold := defaultLongContextThreshold
+	if s.Routing != nil && s.Routing.LongContextThreshold > 0 {
+		threshold = s.Routing.LongContextThreshold
+	}
+
+	// Check if longContext route has a custom threshold (with key normalization)
+	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
+		// Try normalized key first, then original key
+		normalizedKey := config.NormalizeScenarioKey("longContext")
+		var longContextRoute *ScenarioProviders
+		if route, ok := s.Routing.ScenarioRoutes[normalizedKey]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["longContext"]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["long-context"]; ok {
+			longContextRoute = route
+		} else if route, ok := s.Routing.ScenarioRoutes["long_context"]; ok {
+			longContextRoute = route
+		}
+
+		if longContextRoute != nil && longContextRoute.LongContextThreshold != nil {
+			threshold = *longContextRoute.LongContextThreshold
+			s.Logger.Printf("[routing] using longContext route threshold: %d", threshold)
+		}
+	}
+
+	// Get scenario priority from routing config (if available)
+	var scenarioPriority []string
+	if s.Routing != nil {
+		scenarioPriority = s.Routing.ScenarioPriority
+	}
+
+	decision := ResolveRoutingDecision(
+		middlewareDecision,
+		normalized,
+		features,
+		routingHints,
+		threshold,
+		scenarioPriority,
+		sessionID,
+		bodyMap,
+	)
+
+	// T036: Log routing decision
+	s.Logger.Printf("[routing] scenario=%s, source=%s, reason=%s, confidence=%.2f",
+		decision.Scenario, decision.Source, decision.Reason, decision.Confidence)
+
+	// T044-T045: Look up scenario route (with fallback to default)
 	providers := s.Providers
 	var modelOverrides map[string]string
-	var detectedScenario config.Scenario
 	var usingScenarioRoute bool
+	var scenarioProviders *ScenarioProviders
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
-		threshold := s.Routing.LongContextThreshold
-		if threshold <= 0 {
-			threshold = defaultLongContextThreshold
+		// Try to find route for the detected scenario
+		normalizedScenario := config.NormalizeScenarioKey(decision.Scenario)
+
+		// Try normalized key first, then original key
+		if sp, ok := s.Routing.ScenarioRoutes[normalizedScenario]; ok {
+			scenarioProviders = sp
+		} else if sp, ok := s.Routing.ScenarioRoutes[decision.Scenario]; ok {
+			scenarioProviders = sp
 		}
-		detectedScenario, _ = DetectScenarioFromJSON(bodyBytes, threshold, sessionID)
-		if sp, ok := s.Routing.ScenarioRoutes[detectedScenario]; ok {
-			providers = sp.Providers
-			modelOverrides = sp.Models
+
+		if scenarioProviders != nil {
+			providers = scenarioProviders.Providers
+			modelOverrides = scenarioProviders.Models
 			usingScenarioRoute = true
-			s.Logger.Printf("[routing] scenario=%s, providers=%d, model_overrides=%d",
-				detectedScenario, len(providers), len(modelOverrides))
-		} else if detectedScenario != config.ScenarioDefault {
-			s.Logger.Printf("[routing] scenario=%s (no route configured, using default)", detectedScenario)
+			s.Logger.Printf("[routing] using scenario route: providers=%d, model_overrides=%d",
+				len(providers), len(modelOverrides))
+		} else if decision.Scenario != string(config.ScenarioDefault) {
+			s.Logger.Printf("[routing] no route configured for scenario=%s, using default providers", decision.Scenario)
+		}
+	}
+
+	// Apply RoutingDecision overrides (ModelHint, ProviderAllowlist, ProviderDenylist)
+	if decision.ModelHint != nil && *decision.ModelHint != "" {
+		// Apply model hint as override for all providers
+		if modelOverrides == nil {
+			modelOverrides = make(map[string]string)
+		}
+		for _, p := range providers {
+			if _, exists := modelOverrides[p.Name]; !exists {
+				modelOverrides[p.Name] = *decision.ModelHint
+			}
+		}
+	}
+
+	// Apply provider allowlist/denylist filters
+	if len(decision.ProviderAllowlist) > 0 {
+		allowSet := make(map[string]bool)
+		for _, name := range decision.ProviderAllowlist {
+			allowSet[name] = true
+		}
+		filtered := make([]*Provider, 0, len(providers))
+		for _, p := range providers {
+			if allowSet[p.Name] {
+				filtered = append(filtered, p)
+			}
+		}
+		providers = filtered
+		if len(providers) == 0 {
+			s.Logger.Printf("[routing] provider allowlist resulted in no providers")
+		}
+	}
+
+	if len(decision.ProviderDenylist) > 0 {
+		denySet := make(map[string]bool)
+		for _, name := range decision.ProviderDenylist {
+			denySet[name] = true
+		}
+		filtered := make([]*Provider, 0, len(providers))
+		for _, p := range providers {
+			if !denySet[p.Name] {
+				filtered = append(filtered, p)
+			}
+		}
+		providers = filtered
+		if len(providers) == 0 {
+			s.Logger.Printf("[routing] provider denylist resulted in no providers")
 		}
 	}
 
@@ -373,8 +572,22 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// round-robin counters, weighted distribution, and least-* rankings.
 	availableProviders, disabledNames := s.filterDisabledProviders(providers)
 	if len(availableProviders) == 0 && len(disabledNames) > 0 {
-		// If using scenario route, try falling back to default providers first
+		// If using scenario route, check if fallback is allowed
 		if usingScenarioRoute && len(s.Providers) > 0 {
+			// Check fallback_to_default setting (default: true for backward compatibility)
+			allowFallback := true
+			if scenarioProviders != nil && scenarioProviders.FallbackToDefault != nil {
+				allowFallback = *scenarioProviders.FallbackToDefault
+			}
+
+			if !allowFallback {
+				// Fallback disabled, return error immediately
+				s.Logger.Printf("[proxy] all scenario providers unavailable (manually disabled) and fallback_to_default=false: %v", disabledNames)
+				s.writeAllProvidersUnavailableError(w, disabledNames)
+				return
+			}
+
+			// Fallback allowed, try default providers
 			defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)
 			if len(defaultAvailable) == 0 && len(defaultDisabledNames) > 0 {
 				allDisabled := append(disabledNames, defaultDisabledNames...)
@@ -392,17 +605,34 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Use only non-disabled providers for strategy selection and routing
 	providers = availableProviders
 
-	// Apply load balancing strategy to reorder providers
+	// T055: Apply load balancing strategy to reorder providers
 	if s.LoadBalancer != nil && len(providers) > 1 {
 		// Extract model from request body for strategy decisions
 		var model string
-		var bodyMap map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+		if bodyMap != nil {
 			if m, ok := bodyMap["model"].(string); ok {
 				model = m
 			}
 		}
-		providers = s.LoadBalancer.Select(providers, s.Strategy, model, s.Profile, modelOverrides)
+
+		// Use per-scenario strategy if available, otherwise use profile default
+		strategy := s.Strategy
+		var weights map[string]int
+		if usingScenarioRoute && scenarioProviders != nil {
+			if scenarioProviders.Strategy != nil {
+				strategy = *scenarioProviders.Strategy
+			}
+			if len(scenarioProviders.ProviderWeights) > 0 {
+				weights = scenarioProviders.ProviderWeights
+			}
+		}
+
+		// Apply RoutingDecision strategy override (highest priority)
+		if decision.StrategyOverride != nil {
+			strategy = *decision.StrategyOverride
+		}
+
+		providers = s.LoadBalancer.Select(providers, strategy, model, s.Profile, modelOverrides, weights)
 	}
 
 	// Track provider failure details for error reporting
@@ -421,7 +651,37 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// If scenario route failed and we have default providers to fallback to
 	if usingScenarioRoute && len(s.Providers) > 0 {
-		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", detectedScenario)
+		// Check fallback_to_default setting (default: true for backward compatibility)
+		allowFallback := true
+		if scenarioProviders != nil && scenarioProviders.FallbackToDefault != nil {
+			allowFallback = *scenarioProviders.FallbackToDefault
+		}
+
+		if !allowFallback {
+			// Fallback disabled, return error immediately
+			s.Logger.Printf("[routing] scenario=%s all providers failed, but fallback_to_default=false", decision.Scenario)
+			// Build error message with scenario provider failures
+			var errMsg strings.Builder
+			errMsg.WriteString("all scenario providers failed (fallback disabled)\n")
+			for _, f := range failures {
+				if f.StatusCode > 0 {
+					errMsg.WriteString(fmt.Sprintf("[%s] %d %s (%dms)\n", f.Name, f.StatusCode, f.Body, f.Elapsed.Milliseconds()))
+				} else {
+					errMsg.WriteString(fmt.Sprintf("[%s] error: %s (%dms)\n", f.Name, f.Body, f.Elapsed.Milliseconds()))
+				}
+			}
+			errStr := errMsg.String()
+			s.Logger.Printf("%s", errStr)
+			if s.StructuredLogger != nil {
+				s.StructuredLogger.Error("", errStr)
+			}
+			duration := time.Since(requestStart)
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all scenario providers failed"))
+			http.Error(w, errStr, http.StatusBadGateway)
+			return
+		}
+
+		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", decision.Scenario)
 		// Filter disabled providers from defaults
 		defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)
 		if len(defaultAvailable) == 0 && len(defaultDisabledNames) > 0 {
@@ -443,7 +703,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					model = m
 				}
 			}
-			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model, s.Profile, nil)
+			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model, s.Profile, nil, nil)
 		}
 		success = s.tryProviders(w, r, defaultProviders, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -316,13 +318,45 @@ func (sr *ScenarioRoute) ModelForProvider(name string) string {
 	return ""
 }
 
+// RoutePolicy defines routing configuration for a scenario (v15+).
+// Replaces ScenarioRoute with per-scenario strategy, weights, and threshold support.
+type RoutePolicy struct {
+	Providers            []*ProviderRoute        `json:"providers"`
+	Strategy             LoadBalanceStrategy     `json:"strategy,omitempty"`              // per-scenario strategy override
+	ProviderWeights      map[string]int          `json:"provider_weights,omitempty"`      // per-scenario weights
+	LongContextThreshold *int                    `json:"long_context_threshold,omitempty"` // per-scenario threshold (nil = use profile default)
+	FallbackToDefault    *bool                   `json:"fallback_to_default,omitempty"`   // whether to fallback to default route on failure
+}
+
+// ProviderNames returns the list of provider names in order.
+func (rp *RoutePolicy) ProviderNames() []string {
+	names := make([]string, 0, len(rp.Providers))
+	for _, pr := range rp.Providers {
+		if pr != nil {
+			names = append(names, pr.Name)
+		}
+	}
+	return names
+}
+
+// ModelForProvider returns the model override for a specific provider, or empty string.
+func (rp *RoutePolicy) ModelForProvider(name string) string {
+	for _, pr := range rp.Providers {
+		if pr != nil && pr.Name == name {
+			return pr.Model
+		}
+	}
+	return ""
+}
+
 // ProfileConfig holds a profile's provider list and optional scenario routing.
 type ProfileConfig struct {
 	Providers            []string                    `json:"providers"`
-	Routing              map[Scenario]*ScenarioRoute `json:"routing,omitempty"`
+	Routing              map[string]*RoutePolicy     `json:"routing,omitempty"`                // v15: string keys, RoutePolicy values
 	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
 	Strategy             LoadBalanceStrategy         `json:"strategy,omitempty"`               // load balancing strategy
 	ProviderWeights      map[string]int              `json:"provider_weights,omitempty"`       // weights for weighted strategy
+	ScenarioPriority     []string                    `json:"scenario_priority,omitempty"`      // scenario priority order for builtin classifier
 }
 
 // Clone returns a deep copy of the ProfileConfig.
@@ -338,6 +372,10 @@ func (pc *ProfileConfig) Clone() *ProfileConfig {
 		clone.Providers = make([]string, len(pc.Providers))
 		copy(clone.Providers, pc.Providers)
 	}
+	if pc.ScenarioPriority != nil {
+		clone.ScenarioPriority = make([]string, len(pc.ScenarioPriority))
+		copy(clone.ScenarioPriority, pc.ScenarioPriority)
+	}
 	if pc.ProviderWeights != nil {
 		clone.ProviderWeights = make(map[string]int, len(pc.ProviderWeights))
 		for k, v := range pc.ProviderWeights {
@@ -345,10 +383,17 @@ func (pc *ProfileConfig) Clone() *ProfileConfig {
 		}
 	}
 	if pc.Routing != nil {
-		clone.Routing = make(map[Scenario]*ScenarioRoute, len(pc.Routing))
+		clone.Routing = make(map[string]*RoutePolicy, len(pc.Routing))
 		for k, v := range pc.Routing {
 			if v != nil {
-				routeClone := &ScenarioRoute{}
+				routeClone := &RoutePolicy{
+					Strategy:             v.Strategy,
+					FallbackToDefault:    v.FallbackToDefault,
+				}
+				if v.LongContextThreshold != nil {
+					threshold := *v.LongContextThreshold
+					routeClone.LongContextThreshold = &threshold
+				}
 				if v.Providers != nil {
 					routeClone.Providers = make([]*ProviderRoute, len(v.Providers))
 					for i, pr := range v.Providers {
@@ -358,6 +403,12 @@ func (pc *ProfileConfig) Clone() *ProfileConfig {
 								Model: pr.Model,
 							}
 						}
+					}
+				}
+				if v.ProviderWeights != nil {
+					routeClone.ProviderWeights = make(map[string]int, len(v.ProviderWeights))
+					for pk, pv := range v.ProviderWeights {
+						routeClone.ProviderWeights[pk] = pv
 					}
 				}
 				clone.Routing[k] = routeClone
@@ -412,7 +463,7 @@ func (pc *ProfileConfig) UnmarshalJSON(data []byte) error {
 // - Version 12 (v3.0.0+): added auto-permission configuration (claude_auto_permission, codex_auto_permission, opencode_auto_permission)
 // - Version 13 (v3.0.0+): added feature_gates for experimental features (bot, compression, middleware, agent)
 // - Version 14 (v3.0.0+): added disabled_providers map for manual provider unavailability marking
-const CurrentConfigVersion = 14
+const CurrentConfigVersion = 15
 
 // FeatureGates controls experimental features.
 type FeatureGates struct {
@@ -1004,4 +1055,75 @@ func (c *OpenCCConfig) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+// NormalizeScenarioKey converts scenario keys to camelCase format.
+// Supports kebab-case (web-search) and snake_case (long_context) aliases.
+// Examples:
+//   - "web-search" → "webSearch"
+//   - "long_context" → "longContext"
+//   - "webSearch" → "webSearch" (no change)
+func NormalizeScenarioKey(key string) string {
+	if key == "" {
+		return ""
+	}
+
+	// Check if key contains delimiters (hyphens or underscores)
+	hasDelimiters := strings.ContainsAny(key, "-_")
+	if !hasDelimiters {
+		// No delimiters - return as-is (already camelCase or single word)
+		return key
+	}
+
+	// Split on hyphens and underscores
+	parts := splitOnDelimiters(key)
+	if len(parts) == 0 {
+		return key
+	}
+
+	// First part stays lowercase, rest are title-cased
+	result := strings.ToLower(parts[0])
+	for i := 1; i < len(parts); i++ {
+		if parts[i] != "" {
+			result += titleCase(parts[i])
+		}
+	}
+
+	return result
+}
+
+// splitOnDelimiters splits a string on hyphens and underscores
+func splitOnDelimiters(s string) []string {
+	var parts []string
+	var current strings.Builder
+
+	for _, r := range s {
+		if r == '-' || r == '_' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+		} else {
+			current.WriteRune(r)
+		}
+	}
+
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+
+	return parts
+}
+
+// titleCase converts the first character to uppercase, rest to lowercase
+func titleCase(s string) string {
+	if s == "" {
+		return ""
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	for i := 1; i < len(runes); i++ {
+		runes[i] = unicode.ToLower(runes[i])
+	}
+	return string(runes)
 }

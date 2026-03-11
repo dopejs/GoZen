@@ -25,7 +25,7 @@ func ParseRoutePath(path string) (*RouteInfo, error) {
 	// Split into segments
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("path must contain at least /<profile>/<session>/...")
+		return nil, fmt.Errorf("path must contain at least /<profile>/<session>/")
 	}
 
 	profile := parts[0]

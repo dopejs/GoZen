@@ -83,8 +83,8 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build routing config if scenario routing is configured
 	var routing *RoutingConfig
-	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
-		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
+	if len(profileCfg.routing) > 0 {
+		scenarioRoutes := make(map[string]*ScenarioProviders)
 		for scenario, sr := range profileCfg.routing {
 			scenarioProviders, err := pp.buildProviders(sr.ProviderNames(), profileCfg.providerWeights)
 			if err != nil {
@@ -98,8 +98,12 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			scenarioRoutes[scenario] = &ScenarioProviders{
-				Providers: scenarioProviders,
-				Models:    models,
+				Providers:            scenarioProviders,
+				Models:               models,
+				Strategy:             &sr.Strategy,
+				ProviderWeights:      sr.ProviderWeights,
+				LongContextThreshold: sr.LongContextThreshold,
+				FallbackToDefault:    sr.FallbackToDefault,
 			}
 		}
 		if len(scenarioRoutes) > 0 {
@@ -107,6 +111,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				DefaultProviders:     providers,
 				ScenarioRoutes:       scenarioRoutes,
 				LongContextThreshold: profileCfg.longContextThreshold,
+				ScenarioPriority:     profileCfg.scenarioPriority,
 			}
 		}
 	}
@@ -143,10 +148,11 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // profileInfo holds resolved profile data for proxy construction.
 type profileInfo struct {
 	providers            []string
-	routing              map[config.Scenario]*config.ScenarioRoute
+	routing              map[string]*config.RoutePolicy
 	longContextThreshold int
 	strategy             config.LoadBalanceStrategy
 	providerWeights      map[string]int
+	scenarioPriority     []string
 }
 
 // resolveProfileConfig looks up provider names and routing config for a profile.
@@ -177,6 +183,7 @@ func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, er
 		longContextThreshold: pc.LongContextThreshold,
 		strategy:             pc.Strategy,
 		providerWeights:      pc.ProviderWeights,
+		scenarioPriority:     pc.ScenarioPriority,
 	}, nil
 }
 

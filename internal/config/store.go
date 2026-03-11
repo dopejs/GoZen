@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -446,6 +447,228 @@ func (s *Store) reloadIfModified() {
 	}
 }
 
+// ValidateConfig performs comprehensive validation of the entire configuration.
+// This should be called at startup and after config reload to catch configuration errors early.
+// Returns a list of validation errors (hard errors that prevent operation) and warnings (soft issues).
+func ValidateConfig(cfg *OpenCCConfig) (errors []error, warnings []string) {
+	if cfg == nil {
+		return []error{fmt.Errorf("config is nil")}, nil
+	}
+
+	// Validate providers
+	if len(cfg.Providers) == 0 {
+		warnings = append(warnings, "no providers configured")
+	}
+
+	for name, provider := range cfg.Providers {
+		if provider == nil {
+			errors = append(errors, fmt.Errorf("provider %q is nil", name))
+			continue
+		}
+		if provider.BaseURL == "" {
+			errors = append(errors, fmt.Errorf("provider %q: base_url is required", name))
+		}
+		if provider.AuthToken == "" {
+			warnings = append(warnings, fmt.Sprintf("provider %q: auth_token is empty", name))
+		}
+	}
+
+	// Validate profiles
+	if len(cfg.Profiles) == 0 {
+		warnings = append(warnings, "no profiles configured")
+	}
+
+	for profileName, profile := range cfg.Profiles {
+		if profile == nil {
+			errors = append(errors, fmt.Errorf("profile %q is nil", profileName))
+			continue
+		}
+
+		// Validate profile providers exist (warning only - runtime handles cleanup via validateProviderNames)
+		for _, providerName := range profile.Providers {
+			if _, exists := cfg.Providers[providerName]; !exists {
+				warnings = append(warnings, fmt.Sprintf("profile %q references non-existent provider %q", profileName, providerName))
+			}
+		}
+
+		// Validate routing configuration
+		if len(profile.Routing) > 0 {
+			if err := ValidateRoutingConfig(cfg, profileName); err != nil {
+				errors = append(errors, err)
+			}
+		}
+	}
+
+	// Validate default profile exists
+	defaultProfile := cfg.DefaultProfile
+	if defaultProfile == "" {
+		defaultProfile = DefaultProfileName
+	}
+	if _, exists := cfg.Profiles[defaultProfile]; !exists && len(cfg.Profiles) > 0 {
+		warnings = append(warnings, fmt.Sprintf("default profile %q does not exist", defaultProfile))
+	}
+
+	// Validate project bindings
+	for path, binding := range cfg.ProjectBindings {
+		if binding == nil {
+			errors = append(errors, fmt.Errorf("project binding for %q is nil", path))
+			continue
+		}
+		if binding.Profile != "" {
+			if _, exists := cfg.Profiles[binding.Profile]; !exists {
+				errors = append(errors, fmt.Errorf("project binding %q references non-existent profile %q", path, binding.Profile))
+			}
+		}
+		if binding.Client != "" && !IsValidClient(binding.Client) {
+			errors = append(errors, fmt.Errorf("project binding %q has invalid client %q", path, binding.Client))
+		}
+	}
+
+	return errors, warnings
+}
+
+// ValidateRoutingConfig validates the routing configuration for a profile.
+// Returns an error if any routing policy references non-existent providers,
+// has invalid weights, invalid strategies, or malformed scenario keys.
+func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
+	if cfg == nil {
+		return fmt.Errorf("config is nil")
+	}
+
+	profile, exists := cfg.Profiles[profileName]
+	if !exists {
+		return fmt.Errorf("profile %q does not exist", profileName)
+	}
+
+	if len(profile.Routing) == 0 {
+		return nil // No routing config to validate
+	}
+
+	// Build set of valid provider names
+	validProviders := make(map[string]bool)
+	for name := range cfg.Providers {
+		validProviders[name] = true
+	}
+
+	// Validate each route policy
+	for scenarioKey, policy := range profile.Routing {
+		if policy == nil {
+			return fmt.Errorf("profile %q: scenario %q has nil policy", profileName, scenarioKey)
+		}
+
+		// Validate scenario key format (non-empty, no spaces)
+		if scenarioKey == "" {
+			return fmt.Errorf("profile %q: empty scenario key", profileName)
+		}
+		if strings.Contains(scenarioKey, " ") {
+			return fmt.Errorf("profile %q: scenario key %q contains spaces", profileName, scenarioKey)
+		}
+
+		// Validate providers list is non-empty
+		if len(policy.Providers) == 0 {
+			return fmt.Errorf("profile %q: scenario %q has empty providers list", profileName, scenarioKey)
+		}
+
+		// Validate each provider exists
+		for _, pr := range policy.Providers {
+			if pr == nil {
+				return fmt.Errorf("profile %q: scenario %q has nil provider entry", profileName, scenarioKey)
+			}
+			if pr.Name == "" {
+				return fmt.Errorf("profile %q: scenario %q has provider with empty name", profileName, scenarioKey)
+			}
+			if !validProviders[pr.Name] {
+				return fmt.Errorf("profile %q: scenario %q references non-existent provider %q", profileName, scenarioKey, pr.Name)
+			}
+		}
+
+		// Validate strategy if specified
+		if policy.Strategy != "" {
+			validStrategies := map[LoadBalanceStrategy]bool{
+				LoadBalanceFailover:     true,
+				LoadBalanceRoundRobin:   true,
+				LoadBalanceLeastLatency: true,
+				LoadBalanceLeastCost:    true,
+				LoadBalanceWeighted:     true,
+			}
+			if !validStrategies[policy.Strategy] {
+				return fmt.Errorf("profile %q: scenario %q has invalid strategy %q", profileName, scenarioKey, policy.Strategy)
+			}
+		}
+
+		// Validate weights if specified
+		if len(policy.ProviderWeights) > 0 {
+			for providerName, weight := range policy.ProviderWeights {
+				if !validProviders[providerName] {
+					return fmt.Errorf("profile %q: scenario %q has weight for non-existent provider %q", profileName, scenarioKey, providerName)
+				}
+				if weight < 0 {
+					return fmt.Errorf("profile %q: scenario %q has negative weight %d for provider %q", profileName, scenarioKey, weight, providerName)
+				}
+			}
+		}
+
+		// Validate threshold if specified
+		if policy.LongContextThreshold != nil && *policy.LongContextThreshold < 0 {
+			return fmt.Errorf("profile %q: scenario %q has negative long_context_threshold %d", profileName, scenarioKey, *policy.LongContextThreshold)
+		}
+	}
+
+	// Validate scenario_priority if specified (FR-005)
+	if len(profile.ScenarioPriority) > 0 {
+		// Build set of known scenarios (builtin + custom from routing)
+		// Use normalized keys to support aliases (web-search → webSearch, long_context → longContext)
+		knownScenarios := make(map[string]bool)
+		// Add builtin scenarios (normalized)
+		builtinScenarios := []string{
+			string(ScenarioWebSearch),
+			string(ScenarioThink),
+			string(ScenarioImage),
+			string(ScenarioLongContext),
+			string(ScenarioCode),
+			string(ScenarioBackground),
+			string(ScenarioDefault),
+		}
+		for _, s := range builtinScenarios {
+			knownScenarios[s] = true
+		}
+		// Add custom scenarios from routing config (normalized)
+		for scenarioKey := range profile.Routing {
+			normalized := NormalizeScenarioKey(scenarioKey)
+			knownScenarios[normalized] = true
+		}
+
+		// Validate each scenario in priority list
+		// Use normalized keys for duplicate detection to catch aliases
+		seen := make(map[string]bool)
+		matchedBuiltin := false
+		for i, scenario := range profile.ScenarioPriority {
+			if scenario == "" {
+				return fmt.Errorf("profile %q: scenario_priority[%d] is empty", profileName, i)
+			}
+			// Normalize for duplicate detection (web-search and webSearch are the same)
+			normalized := NormalizeScenarioKey(scenario)
+			if seen[normalized] {
+				return fmt.Errorf("profile %q: scenario_priority contains duplicate %q (normalized: %q)", profileName, scenario, normalized)
+			}
+			seen[normalized] = true
+
+			// Track if any builtin scenario is matched
+			if knownScenarios[normalized] {
+				matchedBuiltin = true
+			}
+		}
+
+		// Warn if priority list doesn't match any builtin scenarios
+		// This is not a hard error but indicates potential misconfiguration
+		if !matchedBuiltin && len(profile.ScenarioPriority) > 0 {
+			log.Printf("Warning: profile %q: scenario_priority does not include any builtin scenarios. Routing may fall back to unpredictable behavior.", profileName)
+		}
+	}
+
+	return nil
+}
+
 // loadLocked is the internal load implementation. Must be called with s.mu held.
 func (s *Store) loadLocked() error {
 	data, err := os.ReadFile(s.path)
@@ -480,6 +703,20 @@ func (s *Store) loadLocked() error {
 		if cfg.Profiles == nil {
 			cfg.Profiles = make(map[string]*ProfileConfig)
 		}
+
+		// Comprehensive config validation
+		validationErrors, validationWarnings := ValidateConfig(&cfg)
+
+		// Log warnings
+		for _, warning := range validationWarnings {
+			log.Printf("Config warning: %s", warning)
+		}
+
+		// Return first validation error if any
+		if len(validationErrors) > 0 {
+			return fmt.Errorf("config validation failed: %w", validationErrors[0])
+		}
+
 		s.config = &cfg
 		// Update modification time
 		if info, statErr := os.Stat(s.path); statErr == nil {
@@ -550,6 +787,20 @@ func (s *Store) Save() error {
 
 func (s *Store) saveLocked() error {
 	s.ensureConfig()
+
+	// Validate config before saving to prevent writing invalid configurations
+	validationErrors, validationWarnings := ValidateConfig(s.config)
+
+	// Log warnings
+	for _, warning := range validationWarnings {
+		log.Printf("Config warning: %s", warning)
+	}
+
+	// Reject save if there are validation errors
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("config validation failed: %w", validationErrors[0])
+	}
+
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create config dir: %w", err)

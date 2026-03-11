@@ -45,7 +45,8 @@ func (lb *LoadBalancer) ReloadPricing() {
 // Returns a reordered slice of providers (does not modify original).
 // profile is used for per-profile state isolation (e.g. round-robin counters).
 // modelOverrides maps provider name → override model for scenario routes (used by least-cost).
-func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanceStrategy, model string, profile string, modelOverrides map[string]string) []*Provider {
+// weights maps provider name → weight override for weighted strategy (nil = use Provider.Weight).
+func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanceStrategy, model string, profile string, modelOverrides map[string]string, weights map[string]int) []*Provider {
 	if len(providers) <= 1 {
 		return providers
 	}
@@ -100,16 +101,31 @@ func (lb *LoadBalancer) Select(providers []*Provider, strategy config.LoadBalanc
 		}
 	case config.LoadBalanceWeighted:
 		strategyName = "weighted"
-		result = lb.selectWeighted(providers)
+		result = lb.selectWeighted(providers, weights)
 		if len(result) > 0 {
 			// Calculate percentage for selected provider
 			totalWeight := 0
-			selectedWeight := result[0].Weight
-			for _, p := range providers {
-				if p.IsHealthy() {
-					totalWeight += p.Weight
+			selectedWeight := 0
+
+			// Use override weights if provided, otherwise use Provider.Weight
+			if len(weights) > 0 {
+				selectedWeight = weights[result[0].Name]
+				for _, p := range providers {
+					if p.IsHealthy() {
+						if w, ok := weights[p.Name]; ok {
+							totalWeight += w
+						}
+					}
+				}
+			} else {
+				selectedWeight = result[0].Weight
+				for _, p := range providers {
+					if p.IsHealthy() {
+						totalWeight += p.Weight
+					}
 				}
 			}
+
 			// If no weights configured, use equal weights for percentage calculation
 			if totalWeight == 0 {
 				healthyCount := 0
@@ -421,7 +437,7 @@ func findModelPricing(model string, pricing map[string]*config.ModelPricing) *co
 // selectWeighted performs weighted random selection among healthy providers.
 // Weights are recalculated to exclude unhealthy providers.
 // If no weights are configured (all weights are 0), uses equal weights.
-func (lb *LoadBalancer) selectWeighted(providers []*Provider) []*Provider {
+func (lb *LoadBalancer) selectWeighted(providers []*Provider, weightOverrides map[string]int) []*Provider {
 	if len(providers) == 0 {
 		return providers
 	}
@@ -447,8 +463,17 @@ func (lb *LoadBalancer) selectWeighted(providers []*Provider) []*Provider {
 	totalWeight := 0
 	weights := make([]int, len(healthy))
 	for i, p := range healthy {
-		weights[i] = p.Weight
-		totalWeight += p.Weight
+		// Use override weights if provided, otherwise use Provider.Weight
+		if len(weightOverrides) > 0 {
+			if w, ok := weightOverrides[p.Name]; ok {
+				weights[i] = w
+			} else {
+				weights[i] = 0 // Provider not in override map gets 0 weight
+			}
+		} else {
+			weights[i] = p.Weight
+		}
+		totalWeight += weights[i]
 	}
 
 	// If no weights configured (all 0), use equal weights

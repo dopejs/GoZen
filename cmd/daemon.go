@@ -259,6 +259,7 @@ func startDaemonBackground() error {
 			fmt.Println("zend is now running (started by another process).")
 			return nil
 		}
+		return fmt.Errorf("daemon failed to start (concurrent startup attempt failed, please retry)")
 	} else if err != nil {
 		return fmt.Errorf("cannot acquire daemon lock: %w", err)
 	}

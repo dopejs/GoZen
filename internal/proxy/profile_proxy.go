@@ -98,8 +98,12 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			scenarioRoutes[scenario] = &ScenarioProviders{
-				Providers: scenarioProviders,
-				Models:    models,
+				Providers:            scenarioProviders,
+				Models:               models,
+				Strategy:             &sr.Strategy,
+				ProviderWeights:      sr.ProviderWeights,
+				LongContextThreshold: sr.LongContextThreshold,
+				FallbackToDefault:    sr.FallbackToDefault,
 			}
 		}
 		if len(scenarioRoutes) > 0 {

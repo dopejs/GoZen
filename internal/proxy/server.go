@@ -118,10 +118,14 @@ type RoutingConfig struct {
 	LongContextThreshold int // threshold for longContext scenario detection
 }
 
-// ScenarioProviders defines the providers and per-provider model overrides for a scenario.
+// ScenarioProviders defines the providers and routing policy for a scenario.
 type ScenarioProviders struct {
-	Providers []*Provider
-	Models    map[string]string // provider name → model override
+	Providers            []*Provider
+	Models               map[string]string // provider name → model override
+	Strategy             *config.LoadBalanceStrategy
+	ProviderWeights      map[string]int
+	LongContextThreshold *int
+	FallbackToDefault    *bool
 }
 
 // providerFailure tracks details of a failed provider attempt.
@@ -424,13 +428,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	providers := s.Providers
 	var modelOverrides map[string]string
 	var usingScenarioRoute bool
+	var scenarioProviders *ScenarioProviders
 
 	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
 		// Try to find route for the detected scenario
 		normalizedScenario := NormalizeScenarioKey(decision.Scenario)
 
 		// Try normalized key first, then original key
-		var scenarioProviders *ScenarioProviders
 		if sp, ok := s.Routing.ScenarioRoutes[normalizedScenario]; ok {
 			scenarioProviders = sp
 		} else if sp, ok := s.Routing.ScenarioRoutes[decision.Scenario]; ok {
@@ -481,10 +485,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Use profile default strategy (per-scenario strategy not yet supported in RoutingConfig)
+		// Use per-scenario strategy if available, otherwise use profile default
 		strategy := s.Strategy
+		var weights map[string]int
+		if usingScenarioRoute && scenarioProviders != nil {
+			if scenarioProviders.Strategy != nil {
+				strategy = *scenarioProviders.Strategy
+			}
+			if len(scenarioProviders.ProviderWeights) > 0 {
+				weights = scenarioProviders.ProviderWeights
+			}
+		}
 
-		providers = s.LoadBalancer.Select(providers, strategy, model, s.Profile, modelOverrides)
+		providers = s.LoadBalancer.Select(providers, strategy, model, s.Profile, modelOverrides, weights)
 	}
 
 	// Track provider failure details for error reporting
@@ -525,7 +538,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					model = m
 				}
 			}
-			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model, s.Profile, nil)
+			defaultProviders = s.LoadBalancer.Select(defaultProviders, s.Strategy, model, s.Profile, nil, nil)
 		}
 		success = s.tryProviders(w, r, defaultProviders, nil, bodyBytes, sessionID, clientType, requestFormat, &failures, requestStart)
 		if success {

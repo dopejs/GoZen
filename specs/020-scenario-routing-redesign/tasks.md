@@ -265,7 +265,7 @@ GoZen uses Go project structure:
 - [X] T094 [P] Add edge case tests for concurrent requests in tests/integration/
 - [X] T095 [P] Add edge case tests for session cache interaction in tests/integration/
 - [X] T096 [P] Add comprehensive E2E tests for all builtin scenarios in tests/e2e_proxy_test.go
-- [ ] T097 Run quickstart.md validation scenarios
+- [X] T097 Run quickstart.md validation scenarios
 - [X] T098 Verify test coverage ≥ 80% for internal/proxy and internal/config
 
 ---

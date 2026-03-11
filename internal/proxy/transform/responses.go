@@ -197,3 +197,104 @@ func ResponsesAPIToAnthropic(body []byte) ([]byte, error) {
 
 	return json.Marshal(anthropic)
 }
+
+// ResponsesAPIToOpenAIChat transforms an OpenAI Responses API response body
+// to OpenAI Chat Completions API format.
+func ResponsesAPIToOpenAIChat(body []byte) ([]byte, error) {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return body, err
+	}
+
+	// Extract text content and tool calls from the output array
+	var content string
+	var toolCalls []interface{}
+
+	if output, ok := data["output"].([]interface{}); ok {
+		for _, item := range output {
+			itemMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			switch itemMap["type"] {
+			case "message":
+				if parts, ok := itemMap["content"].([]interface{}); ok {
+					for _, part := range parts {
+						partMap, ok := part.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						if partMap["type"] == "output_text" {
+							if t, ok := partMap["text"].(string); ok {
+								content += t
+							}
+						}
+					}
+				}
+			case "function_call":
+				toolCalls = append(toolCalls, map[string]interface{}{
+					"id":   itemMap["call_id"],
+					"type": "function",
+					"function": map[string]interface{}{
+						"name":      itemMap["name"],
+						"arguments": itemMap["arguments"],
+					},
+				})
+			}
+		}
+	}
+
+	// Build finish_reason
+	finishReason := "stop"
+	if status, ok := data["status"].(string); ok && status == "incomplete" {
+		finishReason = "length"
+	}
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
+	}
+
+	// Build choice message
+	msg := map[string]interface{}{
+		"role":    "assistant",
+		"content": content,
+	}
+	if len(toolCalls) > 0 {
+		msg["tool_calls"] = toolCalls
+	}
+
+	// Map usage
+	usage := map[string]interface{}{
+		"prompt_tokens":     0,
+		"completion_tokens": 0,
+		"total_tokens":      0,
+	}
+	if u, ok := data["usage"].(map[string]interface{}); ok {
+		if v, ok := u["input_tokens"].(float64); ok {
+			usage["prompt_tokens"] = int(v)
+		}
+		if v, ok := u["output_tokens"].(float64); ok {
+			usage["completion_tokens"] = int(v)
+		}
+		if pt, ok := usage["prompt_tokens"].(int); ok {
+			if ct, ok := usage["completion_tokens"].(int); ok {
+				usage["total_tokens"] = pt + ct
+			}
+		}
+	}
+
+	result := map[string]interface{}{
+		"id":      data["id"],
+		"object":  "chat.completion",
+		"model":   data["model"],
+		"choices": []interface{}{
+			map[string]interface{}{
+				"index":         0,
+				"message":       msg,
+				"finish_reason": finishReason,
+			},
+		},
+		"usage": usage,
+	}
+
+	return json.Marshal(result)
+}

@@ -180,12 +180,7 @@ func (d *Daemon) handleDaemonShutdown(w http.ResponseWriter, r *http.Request) {
 	// Trigger shutdown in background so the response is sent first
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		select {
-		case <-d.shutdownCh:
-			// Already closed
-		default:
-			close(d.shutdownCh)
-		}
+		d.shutdownOnce.Do(func() { close(d.shutdownCh) })
 	}()
 }
 
@@ -232,9 +227,9 @@ func (d *Daemon) handleDaemonSessions(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleGetSessions(w http.ResponseWriter, r *http.Request) {
 	d.mu.RLock()
-	sessions := make([]*SessionInfo, 0, len(d.sessions))
+	sessions := make([]SessionInfo, 0, len(d.sessions))
 	for _, s := range d.sessions {
-		sessions = append(sessions, s)
+		sessions = append(sessions, *s) // copy struct to avoid data race after unlock
 	}
 	d.mu.RUnlock()
 

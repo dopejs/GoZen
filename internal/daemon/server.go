@@ -83,10 +83,11 @@ type Daemon struct {
 	currentGates *config.FeatureGates
 
 	// Shutdown channel - closed when shutdown is requested via API
-	shutdownCh chan struct{}
-	runCtx     context.Context
-	runCancel  context.CancelFunc
-	bgWG       sync.WaitGroup
+	shutdownCh   chan struct{}
+	shutdownOnce sync.Once
+	runCtx       context.Context
+	runCancel    context.CancelFunc
+	bgWG         sync.WaitGroup
 
 	// Goroutine leak detection
 	baselineGoroutines int

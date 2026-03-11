@@ -1087,8 +1087,8 @@ func TestLoadBalancer_RoundRobinPerProfileIsolation(t *testing.T) {
 	// Profile A and B should have the same rotation sequence (both start from counter=0)
 	for i := 0; i < 3; i++ {
 		if profileAResults[i] != profileBResults[i] {
-			// This is the key assertion: both profiles should independently cycle
-			// through the same sequence since they start from their own counter=0
+			t.Errorf("profile isolation broken at index %d: profile-a=%s, profile-b=%s (counters should be independent)",
+				i, profileAResults[i], profileBResults[i])
 		}
 	}
 

@@ -632,7 +632,13 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			strategy = *decision.StrategyOverride
 		}
 
-		providers = s.LoadBalancer.Select(providers, strategy, model, s.Profile, modelOverrides, weights)
+		// Use a scenario-specific counter key so scenario route round-robin
+		// does not advance the default profile's counter.
+		rrKey := s.Profile
+		if usingScenarioRoute && decision.Scenario != "" {
+			rrKey = s.Profile + ":scenario:" + decision.Scenario
+		}
+		providers = s.LoadBalancer.Select(providers, strategy, model, rrKey, modelOverrides, weights)
 	}
 
 	// Track provider failure details for error reporting
@@ -961,8 +967,14 @@ func (s *ProxyServer) tryProviders(w http.ResponseWriter, r *http.Request, provi
 		s.Logger.Printf("[%s] %s", p.Name, msg)
 		s.logStructured(p.Name, r.Method, r.URL.Path, resp.StatusCode, LogLevelInfo, msg, sessionID, clientType)
 
-		// Update session cache with token usage from response
-		s.updateSessionCache(sessionID, resp)
+		// Update session cache with token usage from response.
+		// For SSE (streaming), wrap the body with an extractor that parses
+		// usage events in-flight so longContext routing stays accurate.
+		if sessionID != "" && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+			resp.Body = &sseUsageExtractor{r: resp.Body, sessionID: sessionID}
+		} else {
+			s.updateSessionCache(sessionID, resp)
+		}
 
 		// Record usage and metrics
 		s.recordUsageAndMetrics(p.Name, sessionID, clientType, bodyBytes, resp, requestID, requestStart, requestFormat, failures)
@@ -1195,15 +1207,25 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 			return
 		}
 
-		// Transform Responses API → Anthropic
-		// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
-		if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
+		// Transform Responses API → client format
+		switch transform.NormalizeFormat(requestFormat) {
+		case config.ProviderTypeAnthropic:
 			transformed, err := transform.ResponsesAPIToAnthropic(body)
 			if err != nil {
 				s.Logger.Printf("[%s] Responses API response transform error: %v", p.Name, err)
 			} else {
 				s.Logger.Printf("[%s] transformed Responses API → Anthropic", p.Name)
 				body = transformed
+			}
+		case config.ProviderTypeOpenAI:
+			if requestFormat == transform.FormatOpenAIChat {
+				transformed, err := transform.ResponsesAPIToOpenAIChat(body)
+				if err != nil {
+					s.Logger.Printf("[%s] Responses API → Chat Completions transform error: %v", p.Name, err)
+				} else {
+					s.Logger.Printf("[%s] transformed Responses API → OpenAI Chat Completions", p.Name)
+					body = transformed
+				}
 			}
 		}
 
@@ -1232,14 +1254,23 @@ func (s *ProxyServer) copyResponseFromResponsesAPI(w http.ResponseWriter, resp *
 	flusher, ok := w.(http.Flusher)
 
 	var reader io.Reader = resp.Body
-	// Check if client expects Anthropic format (anthropic-messages or legacy anthropic)
-	if transform.NormalizeFormat(requestFormat) == config.ProviderTypeAnthropic {
+	switch transform.NormalizeFormat(requestFormat) {
+	case config.ProviderTypeAnthropic:
 		st := &transform.StreamTransformer{
 			ClientFormat:   "anthropic",
-			ProviderFormat: "openai-responses",
+			ProviderFormat: transform.FormatOpenAIResponses,
 		}
 		reader = st.TransformSSEStream(resp.Body)
 		s.Logger.Printf("[%s] transforming Responses API SSE stream → Anthropic", p.Name)
+	case config.ProviderTypeOpenAI:
+		if requestFormat == transform.FormatOpenAIChat {
+			st := &transform.StreamTransformer{
+				ClientFormat:   transform.FormatOpenAIChat,
+				ProviderFormat: transform.FormatOpenAIResponses,
+			}
+			reader = st.TransformSSEStream(resp.Body)
+			s.Logger.Printf("[%s] transforming Responses API SSE stream → OpenAI Chat Completions", p.Name)
+		}
 	}
 
 	buf := make([]byte, 4096)
@@ -1849,4 +1880,79 @@ func GetDaemonLogger() daemonLogger {
 		return *daemonStructuredLogger
 	}
 	return nil
+}
+
+// sseUsageExtractor wraps an SSE response body, parsing Anthropic SSE events
+// in-flight to extract token usage. When the stream ends, it updates the
+// session cache so longContext routing has accurate usage for streaming turns.
+type sseUsageExtractor struct {
+	r         io.ReadCloser
+	sessionID string
+	partial   []byte      // incomplete line buffer
+	inputTok  int
+	outputTok int
+}
+
+func (e *sseUsageExtractor) Read(p []byte) (n int, err error) {
+	n, err = e.r.Read(p)
+	if n > 0 {
+		e.processChunk(p[:n])
+	}
+	if err == io.EOF {
+		if e.sessionID != "" && (e.inputTok > 0 || e.outputTok > 0) {
+			UpdateSessionUsage(e.sessionID, &SessionUsage{
+				InputTokens:  e.inputTok,
+				OutputTokens: e.outputTok,
+			})
+		}
+	}
+	return
+}
+
+func (e *sseUsageExtractor) Close() error { return e.r.Close() }
+
+// processChunk scans raw SSE bytes for usage data events.
+func (e *sseUsageExtractor) processChunk(data []byte) {
+	// Append to partial buffer and process line by line
+	buf := append(e.partial, data...)
+	for {
+		idx := bytes.IndexByte(buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := string(bytes.TrimRight(buf[:idx], "\r"))
+		buf = buf[idx+1:]
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			continue
+		}
+		var ev map[string]interface{}
+		if json.Unmarshal([]byte(payload), &ev) != nil {
+			continue
+		}
+		evType, _ := ev["type"].(string)
+		switch evType {
+		case "message_start":
+			// {"type":"message_start","message":{"usage":{"input_tokens":N}}}
+			if msg, ok := ev["message"].(map[string]interface{}); ok {
+				if u, ok := msg["usage"].(map[string]interface{}); ok {
+					if v, ok := u["input_tokens"].(float64); ok {
+						e.inputTok += int(v)
+					}
+				}
+			}
+		case "message_delta":
+			// {"type":"message_delta","usage":{"output_tokens":N}}
+			if u, ok := ev["usage"].(map[string]interface{}); ok {
+				if v, ok := u["output_tokens"].(float64); ok {
+					e.outputTok += int(v)
+				}
+			}
+		}
+	}
+	e.partial = buf
 }

@@ -44,7 +44,11 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 	normalizedClient := NormalizeFormat(st.ClientFormat)
 	normalizedProvider := NormalizeFormat(st.ProviderFormat)
 
-	if normalizedClient == normalizedProvider {
+	// Short-circuit only when formats are truly identical (including fine-grained).
+	// openai-responses → openai-chat still needs transformation even though both
+	// normalize to "openai".
+	crossOpenAI := st.ProviderFormat == FormatOpenAIResponses && st.ClientFormat == FormatOpenAIChat
+	if normalizedClient == normalizedProvider && !crossOpenAI {
 		return r
 	}
 
@@ -52,8 +56,11 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 
 	go func() {
 		defer pw.Close()
+		// Responses API → OpenAI Chat Completions SSE
+		if st.ProviderFormat == FormatOpenAIResponses && st.ClientFormat == FormatOpenAIChat {
+			st.transformResponsesAPIToOpenAIChat(r, pw)
 		// Check specific format first before normalized comparison
-		if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
+		} else if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
 			st.transformResponsesAPIToAnthropic(r, pw)
 		} else if normalizedProvider == "anthropic" && normalizedClient == "openai" {
 			// Provider is Anthropic, client expects OpenAI
@@ -1083,4 +1090,152 @@ func (st *StreamTransformer) transformResponsesAPIToAnthropic(r io.Reader, w io.
 	}
 
 	_ = inputTokens
+}
+
+// transformResponsesAPIToOpenAIChat converts OpenAI Responses API SSE events
+// to OpenAI Chat Completions SSE format (data: {...}\n\n with "delta" chunks).
+func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+	// Use a deterministic ID prefix; real responses will come from the event data.
+	completionID := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
+	model := st.Model
+	created := time.Now().Unix()
+
+	emitChunk := func(delta map[string]interface{}, finishReason interface{}) {
+		choice := map[string]interface{}{
+			"index":         0,
+			"delta":         delta,
+			"finish_reason": finishReason,
+		}
+		chunk := map[string]interface{}{
+			"id":      completionID,
+			"object":  "chat.completion.chunk",
+			"created": created,
+			"model":   model,
+			"choices": []interface{}{choice},
+		}
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		if line != "" || dataBuffer.Len() == 0 {
+			continue
+		}
+
+		// Empty line = end of event
+		data := dataBuffer.String()
+		dataBuffer.Reset()
+
+		var eventData map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+			currentEvent = ""
+			continue
+		}
+
+		switch currentEvent {
+		case "response.created", "response.in_progress":
+			// Emit role delta at stream start
+			if id, ok := eventData["id"].(string); ok {
+				completionID = "chatcmpl-" + id
+			}
+			if m, ok := eventData["model"].(string); ok {
+				model = m
+			}
+			emitChunk(map[string]interface{}{"role": "assistant", "content": ""}, nil)
+
+		case "response.output_text.delta":
+			if delta, ok := eventData["delta"].(string); ok && delta != "" {
+				emitChunk(map[string]interface{}{"content": delta}, nil)
+			}
+
+		case "response.function_call_arguments.delta":
+			// Streaming tool call arguments
+			if delta, ok := eventData["delta"].(string); ok && delta != "" {
+				emitChunk(map[string]interface{}{
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"index": 0,
+							"function": map[string]interface{}{
+								"arguments": delta,
+							},
+						},
+					},
+				}, nil)
+			}
+
+		case "response.completed":
+			// Determine finish reason from completed response
+			finishReason := "stop"
+			if resp, ok := eventData["response"].(map[string]interface{}); ok {
+				if status, ok := resp["status"].(string); ok && status == "incomplete" {
+					finishReason = "length"
+				}
+				// Check for tool use in output
+				if output, ok := resp["output"].([]interface{}); ok {
+					for _, item := range output {
+						if itemMap, ok := item.(map[string]interface{}); ok {
+							if itemMap["type"] == "function_call" {
+								finishReason = "tool_calls"
+								break
+							}
+						}
+					}
+				}
+			}
+			emitChunk(map[string]interface{}{}, finishReason)
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+		}
+
+		currentEvent = ""
+	}
+
+	// Process remaining buffered data (stream may end without trailing blank line)
+	if dataBuffer.Len() > 0 && currentEvent == "response.completed" {
+		var eventData map[string]interface{}
+		if json.Unmarshal(dataBuffer.Bytes(), &eventData) == nil {
+			finishReason := "stop"
+			if resp, ok := eventData["response"].(map[string]interface{}); ok {
+				if status, ok := resp["status"].(string); ok && status == "incomplete" {
+					finishReason = "length"
+				}
+				if output, ok := resp["output"].([]interface{}); ok {
+					for _, item := range output {
+						if itemMap, ok := item.(map[string]interface{}); ok {
+							if itemMap["type"] == "function_call" {
+								finishReason = "tool_calls"
+								break
+							}
+						}
+					}
+				}
+			}
+			emitChunk(map[string]interface{}{}, finishReason)
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+	}
 }

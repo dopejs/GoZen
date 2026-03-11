@@ -484,10 +484,10 @@ func ValidateConfig(cfg *OpenCCConfig) (errors []error, warnings []string) {
 			continue
 		}
 
-		// Validate profile providers exist
+		// Validate profile providers exist (warning only - runtime handles cleanup via validateProviderNames)
 		for _, providerName := range profile.Providers {
 			if _, exists := cfg.Providers[providerName]; !exists {
-				errors = append(errors, fmt.Errorf("profile %q references non-existent provider %q", profileName, providerName))
+				warnings = append(warnings, fmt.Sprintf("profile %q references non-existent provider %q", profileName, providerName))
 			}
 		}
 
@@ -505,7 +505,7 @@ func ValidateConfig(cfg *OpenCCConfig) (errors []error, warnings []string) {
 		defaultProfile = DefaultProfileName
 	}
 	if _, exists := cfg.Profiles[defaultProfile]; !exists && len(cfg.Profiles) > 0 {
-		errors = append(errors, fmt.Errorf("default profile %q does not exist", defaultProfile))
+		warnings = append(warnings, fmt.Sprintf("default profile %q does not exist", defaultProfile))
 	}
 
 	// Validate project bindings

@@ -77,8 +77,9 @@ func TestValidateConfig(t *testing.T) {
 					"default": {Providers: []string{"provider1", "nonexistent"}},
 				},
 			},
-			wantErrorCount: 1,
-			errorContains:  "references non-existent provider",
+			wantErrorCount: 0,
+			wantWarnCount:  1,
+			warnContains:   "references non-existent provider",
 		},
 		{
 			name: "default profile does not exist",
@@ -91,8 +92,9 @@ func TestValidateConfig(t *testing.T) {
 				},
 				DefaultProfile: "nonexistent",
 			},
-			wantErrorCount: 1,
-			errorContains:  "default profile",
+			wantErrorCount: 0,
+			wantWarnCount:  1,
+			warnContains:   "default profile",
 		},
 		{
 			name: "project binding references non-existent profile",
@@ -213,14 +215,13 @@ func TestValidateOnSave(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "profile with non-existent provider rejected",
+			name: "profile with non-existent provider allowed (warning only)",
 			setup: func(s *Store) error {
 				return s.SetProfileConfig("test", &ProfileConfig{
 					Providers: []string{"nonexistent"},
 				})
 			},
-			wantErr:       true,
-			errorContains: "references non-existent provider",
+			wantErr: false,
 		},
 		{
 			name: "routing with non-existent provider rejected",

@@ -376,3 +376,85 @@ func TestResponsesAPIToAnthropic_ToolCall(t *testing.T) {
 		})
 	}
 }
+
+func TestResponsesAPIToOpenAIChat(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		checkFn func(t *testing.T, result map[string]interface{})
+	}{
+		{
+			name:  "text_response",
+			input: `{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello from Responses!"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				if result["object"] != "chat.completion" {
+					t.Errorf("object = %v, want chat.completion", result["object"])
+				}
+				choices := result["choices"].([]interface{})
+				if len(choices) != 1 {
+					t.Fatalf("choices len = %d, want 1", len(choices))
+				}
+				choice := choices[0].(map[string]interface{})
+				if choice["finish_reason"] != "stop" {
+					t.Errorf("finish_reason = %v, want stop", choice["finish_reason"])
+				}
+				msg := choice["message"].(map[string]interface{})
+				if msg["content"] != "Hello from Responses!" {
+					t.Errorf("content = %v, want Hello from Responses!", msg["content"])
+				}
+				usage := result["usage"].(map[string]interface{})
+				if usage["prompt_tokens"].(float64) != 10 {
+					t.Errorf("prompt_tokens = %v, want 10", usage["prompt_tokens"])
+				}
+			},
+		},
+		{
+			name:  "tool_call_response",
+			input: `{"id":"resp_2","object":"response","status":"completed","model":"gpt-5","output":[{"id":"fc_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"location\":\"Paris\"}","status":"completed"}],"usage":{"input_tokens":20,"output_tokens":10}}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				choices := result["choices"].([]interface{})
+				choice := choices[0].(map[string]interface{})
+				if choice["finish_reason"] != "tool_calls" {
+					t.Errorf("finish_reason = %v, want tool_calls", choice["finish_reason"])
+				}
+				msg := choice["message"].(map[string]interface{})
+				toolCalls := msg["tool_calls"].([]interface{})
+				if len(toolCalls) != 1 {
+					t.Fatalf("tool_calls len = %d, want 1", len(toolCalls))
+				}
+				tc := toolCalls[0].(map[string]interface{})
+				if tc["type"] != "function" {
+					t.Errorf("tool_call type = %v, want function", tc["type"])
+				}
+				fn := tc["function"].(map[string]interface{})
+				if fn["name"] != "get_weather" {
+					t.Errorf("function name = %v, want get_weather", fn["name"])
+				}
+			},
+		},
+		{
+			name:  "incomplete_status",
+			input: `{"id":"resp_3","object":"response","status":"incomplete","model":"gpt-5","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"truncated"}]}],"usage":{"input_tokens":5,"output_tokens":100}}`,
+			checkFn: func(t *testing.T, result map[string]interface{}) {
+				choices := result["choices"].([]interface{})
+				choice := choices[0].(map[string]interface{})
+				if choice["finish_reason"] != "length" {
+					t.Errorf("finish_reason = %v, want length", choice["finish_reason"])
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := ResponsesAPIToOpenAIChat([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("ResponsesAPIToOpenAIChat() error: %v", err)
+			}
+			var result map[string]interface{}
+			if err := json.Unmarshal(output, &result); err != nil {
+				t.Fatalf("failed to parse output: %v", err)
+			}
+			tt.checkFn(t, result)
+		})
+	}
+}

@@ -1210,6 +1210,31 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 		currentEvent = ""
 	}
 
+	// Process remaining buffered data (stream may end without trailing blank line)
+	if dataBuffer.Len() > 0 && currentEvent == "response.completed" {
+		var eventData map[string]interface{}
+		if json.Unmarshal(dataBuffer.Bytes(), &eventData) == nil {
+			finishReason := "stop"
+			if resp, ok := eventData["response"].(map[string]interface{}); ok {
+				if status, ok := resp["status"].(string); ok && status == "incomplete" {
+					finishReason = "length"
+				}
+				if output, ok := resp["output"].([]interface{}); ok {
+					for _, item := range output {
+						if itemMap, ok := item.(map[string]interface{}); ok {
+							if itemMap["type"] == "function_call" {
+								finishReason = "tool_calls"
+								break
+							}
+						}
+					}
+				}
+			}
+			emitChunk(map[string]interface{}{}, finishReason)
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+		}
+	}
+
 	if err := scanner.Err(); err != nil {
 		st.writeStreamError(w, err)
 	}

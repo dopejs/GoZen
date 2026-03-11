@@ -3332,3 +3332,63 @@ func TestTransformError_ProperJSONResponse(t *testing.T) {
 		t.Errorf("expected message to contain error text, got: %s", message)
 	}
 }
+
+func TestSSEUsageExtractor(t *testing.T) {
+	t.Run("extracts_usage_from_anthropic_sse", func(t *testing.T) {
+		sse := strings.Join([]string{
+			`data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":25,"output_tokens":0}}}`,
+			``,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+			``,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}`,
+			``,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n")
+
+		var got *SessionUsage
+		// Temporarily wire a capture via a fake session
+		sessionID := "test-sse-usage-session"
+		ClearSessionUsage(sessionID)
+
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		_, err := io.ReadAll(extractor)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		got = GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 25 {
+			t.Errorf("InputTokens = %d, want 25", got.InputTokens)
+		}
+		if got.OutputTokens != 42 {
+			t.Errorf("OutputTokens = %d, want 42", got.OutputTokens)
+		}
+	})
+
+	t.Run("no_update_on_empty_session", func(t *testing.T) {
+		sse := "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n"
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: "", // empty → should not call UpdateSessionUsage
+		}
+		// Should complete without panic
+		io.ReadAll(extractor)
+	})
+
+	t.Run("close_delegates_to_inner", func(t *testing.T) {
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader("")),
+			sessionID: "",
+		}
+		if err := extractor.Close(); err != nil {
+			t.Errorf("Close() error: %v", err)
+		}
+	})
+}

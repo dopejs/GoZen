@@ -1178,3 +1178,80 @@ func parseSSEEvents(output string) []sseEvent {
 
 	return events
 }
+
+func TestTransformResponsesAPIToOpenAIChat_Text(t *testing.T) {
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_chat1","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hello"}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":" world"}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_chat1","status":"completed","model":"gpt-5","output":[],"usage":{"input_tokens":5,"output_tokens":3}}}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   FormatOpenAIChat,
+		ProviderFormat: FormatOpenAIResponses,
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	// Should produce Chat Completions chunks
+	if !strings.Contains(result, `"chat.completion.chunk"`) {
+		t.Error("should emit chat.completion.chunk objects")
+	}
+	if !strings.Contains(result, `"Hello"`) {
+		t.Error("should include first delta text")
+	}
+	if !strings.Contains(result, `" world"`) {
+		t.Error("should include second delta text")
+	}
+	if !strings.Contains(result, `"stop"`) {
+		t.Error("should include finish_reason stop in final chunk")
+	}
+	if !strings.Contains(result, "data: [DONE]") {
+		t.Error("should emit [DONE] sentinel")
+	}
+}
+
+func TestTransformResponsesAPIToOpenAIChat_ToolCall(t *testing.T) {
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_tc1","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.function_call_arguments.delta`,
+		`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"loc"}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_tc1","status":"completed","model":"gpt-5","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"weather"}]}}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   FormatOpenAIChat,
+		ProviderFormat: FormatOpenAIResponses,
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result := string(output)
+
+	if !strings.Contains(result, `"tool_calls"`) {
+		t.Error("should emit tool_calls delta")
+	}
+	if !strings.Contains(result, `"tool_calls"`) || !strings.Contains(result, `"finish_reason"`) {
+		t.Error("should emit finish chunk with tool_calls finish_reason")
+	}
+}

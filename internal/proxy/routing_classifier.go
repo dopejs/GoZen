@@ -118,16 +118,31 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 	}
 
 	// Check for long context
-	if features.TotalTokens > threshold {
+	// FR-002: Without session history, use 80% of threshold (0.8 × threshold)
+	// With session history, use full threshold
+	effectiveThreshold := threshold
+	hasSessionHistory := sessionID != "" && GetSessionUsage(sessionID) != nil
+	if !hasSessionHistory {
+		// No session history: use 80% threshold for current request only
+		effectiveThreshold = int(float64(threshold) * 0.8)
+	}
+
+	if features.TotalTokens > effectiveThreshold {
+		reason := "token count exceeds threshold"
+		if !hasSessionHistory {
+			reason = "token count exceeds 80% threshold (no session history)"
+		}
 		return &RoutingDecision{
 			Scenario:   string(config.ScenarioLongContext),
 			Source:     "builtin:classifier",
-			Reason:     "token count exceeds threshold",
+			Reason:     reason,
 			Confidence: 0.9,
 		}
 	}
 
 	// Check session history for long context continuation
+	// This path handles cases where current request is below threshold but
+	// session history indicates we're in a long context conversation
 	if sessionID != "" && body != nil && isLongContext(body, threshold, sessionID) {
 		return &RoutingDecision{
 			Scenario:   string(config.ScenarioLongContext),

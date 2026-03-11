@@ -314,3 +314,130 @@ func TestBuiltinClassifier_PerScenarioThreshold(t *testing.T) {
 		})
 	}
 }
+
+// Test 80% threshold rule for long context without session history (FR-002)
+func TestBuiltinClassifier_LongContextThresholdWithoutSession(t *testing.T) {
+	classifier := &BuiltinClassifier{Threshold: 32000}
+
+	tests := []struct {
+		name             string
+		tokenCount       int
+		sessionID        string
+		expectedScenario string
+		reason           string
+	}{
+		{
+			name:             "below 80% threshold without session",
+			tokenCount:       25000, // 25000 < 25600 (0.8 × 32000)
+			sessionID:        "",
+			expectedScenario: string(config.ScenarioCode),
+			reason:           "should not trigger longContext",
+		},
+		{
+			name:             "at 80% threshold without session",
+			tokenCount:       25600, // exactly 0.8 × 32000
+			sessionID:        "",
+			expectedScenario: string(config.ScenarioCode),
+			reason:           "should not trigger longContext (not exceeding)",
+		},
+		{
+			name:             "above 80% threshold without session",
+			tokenCount:       26000, // 26000 > 25600 (0.8 × 32000)
+			sessionID:        "",
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "should trigger longContext with 80% threshold",
+		},
+		{
+			name:             "between 80% and 100% threshold without session",
+			tokenCount:       30000, // 25600 < 30000 < 32000
+			sessionID:        "",
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "should trigger longContext (in 80%-100% range)",
+		},
+		{
+			name:             "above 100% threshold without session",
+			tokenCount:       35000, // 35000 > 32000
+			sessionID:        "",
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "should trigger longContext (exceeds full threshold)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			features := &RequestFeatures{
+				Model:        "claude-opus-4",
+				TotalTokens:  tt.tokenCount,
+				MessageCount: 1,
+			}
+
+			decision := classifier.Classify(nil, features, nil, tt.sessionID, nil)
+
+			if decision.Scenario != tt.expectedScenario {
+				t.Errorf("%s: got scenario %s, want %s", tt.reason, decision.Scenario, tt.expectedScenario)
+			}
+
+			// Verify reason mentions 80% threshold when no session
+			if tt.sessionID == "" && tt.expectedScenario == string(config.ScenarioLongContext) {
+				if decision.Reason != "token count exceeds 80% threshold (no session history)" {
+					t.Errorf("expected reason to mention 80%% threshold, got: %s", decision.Reason)
+				}
+			}
+		})
+	}
+}
+
+// Test full threshold with session history
+func TestBuiltinClassifier_LongContextThresholdWithSession(t *testing.T) {
+	classifier := &BuiltinClassifier{Threshold: 32000}
+
+	// Set up session with previous usage that exceeded threshold
+	sessionID := "test-session-with-history"
+	UpdateSessionUsage(sessionID, &SessionUsage{
+		InputTokens:  35000, // Previous request exceeded threshold
+		OutputTokens: 1000,
+	})
+	defer ClearSessionUsage(sessionID)
+
+	tests := []struct {
+		name             string
+		tokenCount       int
+		expectedScenario string
+		reason           string
+	}{
+		{
+			name:             "below 80% threshold with session",
+			tokenCount:       25000, // 25000 < 25600 (0.8 × 32000)
+			expectedScenario: string(config.ScenarioCode),
+			reason:           "should not trigger (below full threshold, current request uses full threshold with session)",
+		},
+		{
+			name:             "between 80% and 100% threshold with session",
+			tokenCount:       30000, // 25600 < 30000 < 32000
+			expectedScenario: string(config.ScenarioCode),
+			reason:           "should not trigger via current request check (uses full threshold=32000 with session)",
+		},
+		{
+			name:             "above 100% threshold with session",
+			tokenCount:       35000, // 35000 > 32000
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "should trigger (exceeds full threshold)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			features := &RequestFeatures{
+				Model:        "claude-opus-4",
+				TotalTokens:  tt.tokenCount,
+				MessageCount: 1,
+			}
+
+			decision := classifier.Classify(nil, features, nil, sessionID, nil)
+
+			if decision.Scenario != tt.expectedScenario {
+				t.Errorf("%s: got scenario %s, want %s", tt.reason, decision.Scenario, tt.expectedScenario)
+			}
+		})
+	}
+}

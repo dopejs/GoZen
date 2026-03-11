@@ -7,6 +7,18 @@ import (
 	"github.com/dopejs/gozen/internal/config"
 )
 
+// NOTE: This file contains legacy scenario detection functions that are still used
+// by the new routing system (routing_classifier.go). These functions provide the
+// builtin classification logic for protocol-agnostic routing.
+//
+// The new routing architecture (020-scenario-routing-redesign) uses:
+// - routing_normalize.go: Protocol normalization
+// - routing_classifier.go: Builtin classifier (uses functions from this file)
+// - routing_resolver.go: Decision resolution
+//
+// This file is NOT deprecated - it provides the core detection logic that works
+// across Anthropic Messages, OpenAI Chat, and OpenAI Responses protocols.
+
 const (
 	defaultLongContextThreshold = 32000
 	// Minimum token count for current request when using session history

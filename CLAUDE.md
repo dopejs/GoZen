@@ -184,6 +184,17 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - SQLite (existing LogDB at `~/.zen/logs.db`) for latency metrics persistence; in-memory ring buffer for round-robin state (019-profile-strategy-routing)
 
 ## Recent Changes
+- 020-scenario-routing-redesign: Protocol-agnostic scenario routing with middleware extensibility
+  - Protocol-agnostic normalization: Anthropic Messages, OpenAI Chat, OpenAI Responses → unified NormalizedRequest
+  - Middleware-driven routing: RoutingDecision/RoutingHints in RequestContext, middleware precedence over builtin classifier
+  - Open scenario namespace: Custom scenario keys (camelCase, kebab-case, snake_case), no source code changes needed
+  - Per-scenario routing policies: Strategy, weights, model overrides, threshold per scenario
+  - Strong config validation: Provider existence, empty list, weights, strategy, scenario key format validated at load time
+  - Routing observability: Structured logs (scenario, source, reason, confidence), request features, fallback logging
+  - Config migration: Automatic v14→v15 migration (ScenarioRoute → RoutePolicy), backward compatible
+  - UI support: TUI and Web UI support custom scenarios (add/remove/configure)
+  - New types: NormalizedRequest, RequestFeatures, RoutingDecision, RoutingHints, RoutePolicy
+  - New files: routing_normalize.go, routing_classifier.go, routing_resolver.go, config_migration_test.go
 - 019-profile-strategy-routing: Profile strategy-aware provider routing with 5 strategies
   - Least-latency: Routes to provider with lowest average response time (100-request rolling window, min 10 samples from SQLite LogDB)
   - Least-cost: Routes to provider with lowest model pricing (uses built-in Anthropic pricing table)

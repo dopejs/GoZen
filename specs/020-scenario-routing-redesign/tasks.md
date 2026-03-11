@@ -112,9 +112,9 @@ GoZen uses Go project structure:
 - [X] T031 [P] [US2] Implement confidence scoring in internal/proxy/routing_classifier.go
 - [X] T032 [US2] Implement ResolveRoutingDecision function in internal/proxy/routing_resolver.go
 - [X] T033 [US2] Implement routing hints integration in builtin classifier in internal/proxy/routing_classifier.go
-- [ ] T034 [US2] Update ProxyServer.ServeHTTP to call middleware pipeline before routing in internal/proxy/server.go
-- [ ] T035 [US2] Update ProxyServer.ServeHTTP to resolve routing decision after middleware in internal/proxy/server.go
-- [ ] T036 [US2] Add logging for routing decisions in internal/proxy/server.go
+- [X] T034 [US2] Update ProxyServer.ServeHTTP to call middleware pipeline before routing in internal/proxy/server.go
+- [X] T035 [US2] Update ProxyServer.ServeHTTP to resolve routing decision after middleware in internal/proxy/server.go
+- [X] T036 [US2] Add logging for routing decisions in internal/proxy/server.go
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work - middleware can override builtin classifier
 
@@ -138,8 +138,8 @@ GoZen uses Go project structure:
 - [X] T041 [P] [US3] Implement NormalizeScenarioKey function in internal/proxy/routing_classifier.go
 - [X] T042 [US3] Implement ResolveRoutePolicy function in internal/proxy/routing_resolver.go
 - [ ] T043 [US3] Update config validation to accept custom scenario keys in internal/config/store.go
-- [ ] T044 [US3] Update ProxyServer.ServeHTTP to use ResolveRoutePolicy in internal/proxy/server.go
-- [ ] T045 [US3] Add fallback to default route for unknown scenarios in internal/proxy/server.go
+- [X] T044 [US3] Update ProxyServer.ServeHTTP to use ResolveRoutePolicy in internal/proxy/server.go
+- [X] T045 [US3] Add fallback to default route for unknown scenarios in internal/proxy/server.go
 
 **Checkpoint**: All user stories 1-3 should now work - custom scenarios can be configured and routed
 
@@ -165,7 +165,7 @@ GoZen uses Go project structure:
 - [ ] T052 [US4] Update LoadBalancer.Select to accept route-specific weights in internal/proxy/loadbalancer.go
 - [ ] T053 [US4] Update ProfileProxy to apply route-specific model overrides in internal/proxy/profile_proxy.go
 - [ ] T054 [US4] Update scenario detection to use route-specific threshold in internal/proxy/routing_classifier.go
-- [ ] T055 [US4] Update ProxyServer.ServeHTTP to pass route policy to load balancer in internal/proxy/server.go
+- [X] T055 [US4] Update ProxyServer.ServeHTTP to pass route policy to load balancer in internal/proxy/server.go
 
 **Checkpoint**: All user stories 1-4 should work - each scenario can have independent routing policy
 

@@ -542,8 +542,22 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// round-robin counters, weighted distribution, and least-* rankings.
 	availableProviders, disabledNames := s.filterDisabledProviders(providers)
 	if len(availableProviders) == 0 && len(disabledNames) > 0 {
-		// If using scenario route, try falling back to default providers first
+		// If using scenario route, check if fallback is allowed
 		if usingScenarioRoute && len(s.Providers) > 0 {
+			// Check fallback_to_default setting (default: true for backward compatibility)
+			allowFallback := true
+			if scenarioProviders != nil && scenarioProviders.FallbackToDefault != nil {
+				allowFallback = *scenarioProviders.FallbackToDefault
+			}
+
+			if !allowFallback {
+				// Fallback disabled, return error immediately
+				s.Logger.Printf("[proxy] all scenario providers unavailable (manually disabled) and fallback_to_default=false: %v", disabledNames)
+				s.writeAllProvidersUnavailableError(w, disabledNames)
+				return
+			}
+
+			// Fallback allowed, try default providers
 			defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)
 			if len(defaultAvailable) == 0 && len(defaultDisabledNames) > 0 {
 				allDisabled := append(disabledNames, defaultDisabledNames...)
@@ -607,6 +621,36 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// If scenario route failed and we have default providers to fallback to
 	if usingScenarioRoute && len(s.Providers) > 0 {
+		// Check fallback_to_default setting (default: true for backward compatibility)
+		allowFallback := true
+		if scenarioProviders != nil && scenarioProviders.FallbackToDefault != nil {
+			allowFallback = *scenarioProviders.FallbackToDefault
+		}
+
+		if !allowFallback {
+			// Fallback disabled, return error immediately
+			s.Logger.Printf("[routing] scenario=%s all providers failed, but fallback_to_default=false", decision.Scenario)
+			// Build error message with scenario provider failures
+			var errMsg strings.Builder
+			errMsg.WriteString("all scenario providers failed (fallback disabled)\n")
+			for _, f := range failures {
+				if f.StatusCode > 0 {
+					errMsg.WriteString(fmt.Sprintf("[%s] %d %s (%dms)\n", f.Name, f.StatusCode, f.Body, f.Elapsed.Milliseconds()))
+				} else {
+					errMsg.WriteString(fmt.Sprintf("[%s] error: %s (%dms)\n", f.Name, f.Body, f.Elapsed.Milliseconds()))
+				}
+			}
+			errStr := errMsg.String()
+			s.Logger.Printf("%s", errStr)
+			if s.StructuredLogger != nil {
+				s.StructuredLogger.Error("", errStr)
+			}
+			duration := time.Since(requestStart)
+			s.logRequestReceived(r.Method, r.URL.Path, sessionID, clientType, duration, fmt.Errorf("all scenario providers failed"))
+			http.Error(w, errStr, http.StatusBadGateway)
+			return
+		}
+
 		s.Logger.Printf("[routing] scenario=%s all providers failed, falling back to default providers", decision.Scenario)
 		// Filter disabled providers from defaults
 		defaultAvailable, defaultDisabledNames := s.filterDisabledProviders(s.Providers)

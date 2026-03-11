@@ -1,8 +1,8 @@
-# Phase 4-9 Implementation Summary
+# Phase 4-10 Implementation Summary
 
 **Date**: 2026-03-11
 **Feature**: 020-scenario-routing-redesign
-**Phases Completed**: Phase 4 (complete), Phase 5 (complete), Phase 6 (complete), Phase 7 (complete), Phase 8 (complete), Phase 9 (complete)
+**Phases Completed**: Phase 4 (complete), Phase 5 (complete), Phase 6 (complete), Phase 7 (complete), Phase 8 (complete), Phase 9 (complete), Phase 10 (partial)
 
 ## Completed Work
 
@@ -160,6 +160,36 @@
 **Remaining Tasks**:
 - ⏳ T082-T085: Already implemented (verified by passing tests)
 - ⏳ Phase 10: Polish & Cross-Cutting Concerns (T089-T098)
+
+### Phase 10: Polish & Cross-Cutting Concerns ⏳ In Progress
+
+**Completed Tasks**:
+- ✅ T089: Update CLAUDE.md with new routing patterns
+- ✅ T090: Update docs/scenario-routing-architecture.md with implementation details
+- ✅ T091: Add clarifying comments to scenario.go (not deprecated, still used by routing_classifier.go)
+- ✅ T098: Verify test coverage ≥ 80% for internal/proxy and internal/config
+
+**Implementation Details**:
+- CLAUDE.md updated with 020-scenario-routing-redesign in Recent Changes section
+- scenario-routing-architecture.md updated with comprehensive Implementation Status section
+- Test coverage verified:
+  - internal/proxy: 82.4% coverage ✅
+  - internal/config: 81.3% coverage ✅
+- scenario.go clarified as still in use (provides core detection logic for routing_classifier.go)
+
+**Remaining Tasks**:
+- ⏳ T092: Code cleanup and refactoring across routing files
+- ⏳ T093: Performance profiling for normalization and classification
+- ⏳ T094: Add edge case tests for concurrent requests
+- ⏳ T095: Add edge case tests for session cache interaction
+- ⏳ T096: Add comprehensive E2E tests for all builtin scenarios
+- ⏳ T097: Run quickstart.md validation scenarios
+
+**Notes**:
+- Code quality checks passing (go build, go vet)
+- No staticcheck warnings in routing files
+- All unit and integration tests passing
+- Web UI build successful
 
 ## Architecture Summary
 

@@ -12,6 +12,7 @@
 - ✅ T026-T028: Unit tests for middleware precedence, builtin classifier, routing hints
 - ✅ T030-T033: BuiltinClassifier implementation with confidence scoring
 - ✅ T034-T036: ServeHTTP integration (middleware pipeline, decision resolution, logging)
+- ✅ T029: Integration test for middleware-driven routing
 
 **Implementation Details**:
 - Created `internal/proxy/routing_classifier.go` with `BuiltinClassifier` type
@@ -22,10 +23,12 @@
 - Middleware decisions take precedence over builtin classifier
 - Integrated into ServeHTTP: extracts RoutingDecision/RoutingHints from middleware context
 - Added structured logging for routing decisions (scenario, source, reason, confidence)
+- Created `tests/integration/routing_middleware_test.go` with 3 integration tests
 - All unit tests passing (15+ test cases)
+- All integration tests passing (3 test cases)
 
 **Remaining Tasks**:
-- ⏳ T029: Integration test for middleware-driven routing
+- ⏳ None for Phase 4-5 core functionality
 
 ### Phase 5: User Story 3 - Open Scenario Namespace ✅ Complete
 
@@ -33,6 +36,8 @@
 - ✅ T037-T039: Unit tests for custom scenario lookup, key normalization, fallback
 - ✅ T041-T042: NormalizeScenarioKey and ResolveRoutePolicy implementation
 - ✅ T044-T045: ServeHTTP integration (use ResolveRoutePolicy, fallback logic)
+- ✅ T040: Config validation tests for custom routes
+- ✅ T043: Config validation accepts custom scenario keys
 
 **Implementation Details**:
 - Enhanced `NormalizeScenarioKey` to preserve camelCase inputs
@@ -40,11 +45,12 @@
 - Implemented scenario route lookup with normalized key fallback
 - Fallback to default providers for unknown scenarios
 - Integrated into ServeHTTP: looks up scenario routes using normalized keys
+- ValidateRoutingConfig validates custom scenario keys (non-empty, no spaces)
 - All unit tests passing (10+ test cases)
+- All config validation tests passing (9 test cases)
 
 **Remaining Tasks**:
-- ⏳ T040: Config validation tests for custom routes
-- ⏳ T043: Update config validation to accept custom scenario keys
+- ⏳ None for Phase 5 core functionality
 
 ### Phase 6: User Story 4 - Per-Scenario Routing Policies ✅ Complete
 

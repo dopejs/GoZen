@@ -303,9 +303,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var bodyMap map[string]interface{}
 	var normalized *NormalizedRequest
 	var features *RequestFeatures
+	var detectedProtocol string
 	if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
 		// Detect protocol using priority: URL path → header → body structure
-		detectedProtocol := DetectProtocol(r.URL.Path, r.Header, bodyMap)
+		detectedProtocol = DetectProtocol(r.URL.Path, r.Header, bodyMap)
 
 		// Normalize request based on detected protocol
 		var normErr error
@@ -390,7 +391,43 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("middleware error: %v", err), http.StatusBadRequest)
 			return
 		}
-		bodyBytes = processedCtx.Body
+
+		// Check if middleware modified the request body
+		if !bytes.Equal(bodyBytes, processedCtx.Body) {
+			s.Logger.Printf("[middleware] body modified, re-normalizing request")
+			bodyBytes = processedCtx.Body
+
+			// Re-parse bodyMap for downstream use
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+				s.Logger.Printf("[middleware] failed to parse modified body: %v", err)
+			} else {
+				// Re-normalize the modified request
+				var normErr error
+				switch detectedProtocol {
+				case "anthropic":
+					normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+				case "openai_chat":
+					normalized, normErr = NormalizeOpenAIChat(bodyMap)
+				case "openai_responses":
+					normalized, normErr = NormalizeOpenAIResponses(bodyMap)
+				default:
+					normalized, normErr = NormalizeAnthropicMessages(bodyMap)
+				}
+
+				if normErr != nil {
+					s.Logger.Printf("[middleware] re-normalization error: %v", normErr)
+				} else if normalized != nil {
+					// Re-extract features from new normalized request
+					features = ExtractFeatures(normalized)
+					if features != nil {
+						s.Logger.Printf("[middleware] re-extracted features: has_image=%v, has_tools=%v, is_long_context=%v, total_tokens=%d, message_count=%d",
+							features.HasImage, features.HasTools, features.IsLongContext, features.TotalTokens, features.MessageCount)
+					}
+				}
+			}
+		} else {
+			bodyBytes = processedCtx.Body
+		}
 	}
 
 	// T034-T036: Extract routing decision and hints from middleware context

@@ -1,8 +1,8 @@
-# Phase 4-6 Implementation Summary
+# Phase 4-9 Implementation Summary
 
 **Date**: 2026-03-11
 **Feature**: 020-scenario-routing-redesign
-**Phases Completed**: Phase 4 (complete), Phase 5 (complete), Phase 6 (complete)
+**Phases Completed**: Phase 4 (complete), Phase 5 (complete), Phase 6 (complete), Phase 7 (complete), Phase 8 (complete), Phase 9 (complete)
 
 ## Completed Work
 
@@ -80,6 +80,87 @@
 **Remaining Tasks**:
 - ⏳ RoutePolicy migration (deferred to Phase 9 or future work)
 
+### Phase 7: User Story 5 - Strong Config Validation ✅ Complete
+
+**Completed Tasks**:
+- ✅ T056-T060: Unit tests for validation (non-existent provider, empty list, weights, strategy, scenario key format)
+- ✅ T061-T065: ValidateRoutingConfig implementation (all validation logic)
+- ✅ T066: Call ValidateRoutingConfig in Store.loadLocked
+- ✅ T067: Structured error messages
+
+**Implementation Details**:
+- Added 11 validation test cases in TestValidateRoutingConfig_CustomScenarios
+- Tests cover: non-existent provider, empty providers list, negative weights, weight for non-existent provider, invalid strategy, scenario key with spaces, empty scenario key
+- ValidateRoutingConfig validates: provider existence, empty list, weights (non-negative, provider exists), strategy (valid values), scenario key format (non-empty, no spaces), threshold (non-negative)
+- Store.loadLocked calls ValidateRoutingConfig for all profiles with routing configuration
+- Invalid configs are rejected at load time with clear error messages
+- All tests passing (11 validation tests)
+
+**Remaining Tasks**:
+- ⏳ None for Phase 7 core functionality
+
+### Phase 8: User Story 6 - Routing Observability ✅ Complete
+
+**Completed Tasks**:
+- ✅ T068-T071: Unit tests for logging (middleware decision, builtin classifier, fallback, provider selection)
+- ✅ T072-T073: LogRoutingDecision and LogRoutingFallback functions in daemon/logger.go
+- ✅ T074: Routing decision logging in ServeHTTP (scenario, source, reason, confidence)
+- ✅ T075: Fallback logging in ServeHTTP (scenario failed, falling back to default)
+- ✅ T076: Provider selection logging (already implemented in LoadBalancer)
+- ✅ T077: Request features logging (has_image, has_tools, is_long_context, total_tokens, message_count)
+
+**Implementation Details**:
+- Created server_routing_log_test.go with 5 comprehensive logging tests
+- All routing decisions logged with: scenario, source, reason, confidence
+- Fallback scenarios logged when scenario providers fail
+- Request features logged for classification transparency
+- Provider selection logged with strategy details (in LoadBalancer)
+- All logs use structured format with clear field names
+- All tests passing (5 logging tests)
+
+**Logging Examples**:
+```
+[routing] scenario=think, source=builtin:classifier, reason=thinking mode enabled, confidence=1.00
+[routing] features: has_image=true, has_tools=false, is_long_context=false, total_tokens=150, message_count=1
+[routing] using scenario route: providers=2, model_overrides=1
+[routing] scenario=code all providers failed, falling back to default providers
+[strategy] strategy=round-robin selected=provider2 reason="round-robin rotation" candidates=2
+```
+
+**Remaining Tasks**:
+- ⏳ None for Phase 8 core functionality
+
+### Phase 9: Config Migration & Backward Compatibility ✅ Complete
+
+**Completed Tasks**:
+- ✅ T078-T081: Config migration tests (v14→v15, key normalization, builtin preservation, round-trip)
+- ✅ T082-T085: Core migration logic (already implemented, verified by tests)
+- ✅ T086: TUI routing.go updated to support custom scenario keys
+- ✅ T087: Web UI types/api.ts updated (Scenario type changed to string)
+- ✅ T088: Web UI pages/profiles/edit.tsx updated to support custom scenarios
+
+**Implementation Details**:
+- Created config_migration_test.go with 5 comprehensive migration tests
+- All migration tests passed immediately - T082-T085 already implemented
+- Config automatically migrates from v14→v15, preserving all fields
+- TUI routing.go now displays custom scenarios alongside builtin scenarios
+- Web UI Scenario type changed from union type to string
+- Web UI profile editor supports adding/removing custom scenarios
+- Added translation keys for custom scenario UI (en, zh-CN, zh-TW)
+- Custom scenarios displayed with "Custom" badge in UI
+- Custom scenarios can be removed via trash icon (builtin scenarios cannot)
+
+**UI Changes**:
+- Profile edit page now shows "Add Custom Scenario" button
+- Custom scenario input with validation (no duplicates, no empty names)
+- Custom scenarios displayed with "(custom scenario)" label in TUI
+- Custom scenarios displayed with "Custom" badge in Web UI
+- Remove button only shown for custom scenarios (not builtin)
+
+**Remaining Tasks**:
+- ⏳ T082-T085: Already implemented (verified by passing tests)
+- ⏳ Phase 10: Polish & Cross-Cutting Concerns (T089-T098)
+
 ## Architecture Summary
 
 ### New Files Created
@@ -151,15 +232,17 @@ func NormalizeScenarioKey(key string) string
 
 ## Test Coverage
 
-**Unit Tests**: ✅ 31+ tests passing
+**Unit Tests**: ✅ 47+ tests passing
 - routing_classifier_test.go: 10 tests
 - routing_resolver_test.go: 6 tests
 - routing_normalize_test.go: 12 tests (from Phase 3)
 - loadbalancer_test.go: 3 new tests
+- config_test.go: 11 validation tests (Phase 7)
+- server_routing_log_test.go: 5 logging tests (Phase 8)
 
-**Integration Tests**: ⏳ Pending
-- T029: Middleware-driven routing integration
-- T050: Per-scenario policies integration
+**Integration Tests**: ✅ 6 tests passing
+- routing_middleware_test.go: 3 tests (T029)
+- routing_policy_test.go: 3 tests (T050)
 
 **Code Quality**: ✅ All checks passing
 - `go build ./...` - Success

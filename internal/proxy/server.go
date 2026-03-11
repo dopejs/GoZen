@@ -325,6 +325,11 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Extract features for routing classification
 		if normalized != nil {
 			features = ExtractFeatures(normalized)
+			// T077: Log request features for observability
+			if features != nil {
+				s.Logger.Printf("[routing] features: has_image=%v, has_tools=%v, is_long_context=%v, total_tokens=%d, message_count=%d",
+					features.HasImage, features.HasTools, features.IsLongContext, features.TotalTokens, features.MessageCount)
+			}
 		}
 	}
 

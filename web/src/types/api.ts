@@ -48,11 +48,17 @@ export const CLIENT_ENV_HINTS: Record<ClientType, string[]> = {
 }
 
 // Scenarios
-export type Scenario = 'think' | 'image' | 'longContext' | 'webSearch' | 'code' | 'background' | 'default'
+// T087: Change Scenario type to string to support custom scenarios
+export type Scenario = string
 
-export const SCENARIOS: Scenario[] = ['default', 'think', 'image', 'longContext', 'code', 'webSearch', 'background']
+// Builtin scenarios
+export const BUILTIN_SCENARIOS = ['default', 'think', 'image', 'longContext', 'code', 'webSearch', 'background'] as const
+export type BuiltinScenario = typeof BUILTIN_SCENARIOS[number]
 
-export const SCENARIO_LABELS: Record<Scenario, string> = {
+// For backward compatibility
+export const SCENARIOS: string[] = [...BUILTIN_SCENARIOS]
+
+export const SCENARIO_LABELS: Record<string, string> = {
   default: 'Default',
   think: 'Extended Thinking',
   image: 'Image Processing',
@@ -87,7 +93,7 @@ export const LOAD_BALANCE_STRATEGIES: LoadBalanceStrategy[] = [
 export interface Profile {
   name: string
   providers: string[]
-  routing?: Partial<Record<Scenario, ScenarioRoute>>
+  routing?: Record<string, ScenarioRoute>
   long_context_threshold?: number
   strategy?: LoadBalanceStrategy
   is_default?: boolean

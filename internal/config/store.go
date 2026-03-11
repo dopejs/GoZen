@@ -571,6 +571,16 @@ func (s *Store) loadLocked() error {
 		if cfg.Profiles == nil {
 			cfg.Profiles = make(map[string]*ProfileConfig)
 		}
+
+		// T066: Validate routing configuration for all profiles
+		for profileName, profile := range cfg.Profiles {
+			if profile.Routing != nil && len(profile.Routing) > 0 {
+				if err := ValidateRoutingConfig(&cfg, profileName); err != nil {
+					return fmt.Errorf("invalid routing config: %w", err)
+				}
+			}
+		}
+
 		s.config = &cfg
 		// Update modification time
 		if info, statErr := os.Stat(s.path); statErr == nil {

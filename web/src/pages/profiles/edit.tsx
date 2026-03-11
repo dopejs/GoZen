@@ -18,7 +18,7 @@ import {
 import { useProfile, useCreateProfile, useUpdateProfile } from '@/hooks/use-profiles'
 import { useProviders } from '@/hooks/use-providers'
 import {
-  SCENARIOS,
+  BUILTIN_SCENARIOS,
   SCENARIO_LABELS,
   LOAD_BALANCE_STRATEGIES,
   type Profile,
@@ -55,7 +55,11 @@ export function ProfileEditPage() {
   })
 
   // Scenario routing expanded state
-  const [expandedScenarios, setExpandedScenarios] = useState<Record<Scenario, boolean>>({} as Record<Scenario, boolean>)
+  const [expandedScenarios, setExpandedScenarios] = useState<Record<string, boolean>>({})
+
+  // T088: Track custom scenario input
+  const [customScenarioInput, setCustomScenarioInput] = useState('')
+  const [showCustomScenarioInput, setShowCustomScenarioInput] = useState(false)
 
   // Initialize form with existing data
   useEffect(() => {
@@ -109,7 +113,7 @@ export function ProfileEditPage() {
     setExpandedScenarios((prev) => ({ ...prev, [scenario]: !prev[scenario] }))
   }
 
-  const updateScenarioRoute = (scenario: Scenario, route: ScenarioRoute | undefined) => {
+  const updateScenarioRoute = (scenario: string, route: ScenarioRoute | undefined) => {
     setFormData((prev) => {
       const newRouting = { ...(prev.routing || {}) }
       if (route && route.providers.length > 0) {
@@ -120,6 +124,40 @@ export function ProfileEditPage() {
       return { ...prev, routing: newRouting }
     })
   }
+
+  // T088: Add custom scenario
+  const addCustomScenario = () => {
+    const trimmed = customScenarioInput.trim()
+    if (!trimmed) return
+
+    // Check if scenario already exists
+    if (formData.routing?.[trimmed]) {
+      toast.error(t('profiles.scenarioAlreadyExists'))
+      return
+    }
+
+    // Add empty route for custom scenario
+    updateScenarioRoute(trimmed, { providers: [] })
+    setExpandedScenarios((prev) => ({ ...prev, [trimmed]: true }))
+    setCustomScenarioInput('')
+    setShowCustomScenarioInput(false)
+  }
+
+  // T088: Remove custom scenario
+  const removeCustomScenario = (scenario: string) => {
+    updateScenarioRoute(scenario, undefined)
+    setExpandedScenarios((prev) => {
+      const newExpanded = { ...prev }
+      delete newExpanded[scenario]
+      return newExpanded
+    })
+  }
+
+  // T088: Get all scenarios (builtin + custom)
+  const allScenarios = [
+    ...BUILTIN_SCENARIOS.filter((s) => s !== 'default'),
+    ...Object.keys(formData.routing || {}).filter((s) => !BUILTIN_SCENARIOS.includes(s as any)),
+  ]
 
   if (isLoading && !isNew) {
     return <div className="flex justify-center p-8">{t('common.loading')}</div>
@@ -273,7 +311,7 @@ export function ProfileEditPage() {
         </TabsContent>
         <TabsContent value="routing" className="mt-4">
           <div className="space-y-4">
-            {SCENARIOS.filter((s) => s !== 'default').map((scenario) => (
+            {allScenarios.map((scenario) => (
               <ScenarioCard
                 key={scenario}
                 scenario={scenario}
@@ -282,8 +320,56 @@ export function ProfileEditPage() {
                 expanded={expandedScenarios[scenario] || false}
                 onToggle={() => toggleScenario(scenario)}
                 onUpdate={(route) => updateScenarioRoute(scenario, route)}
+                onRemove={!BUILTIN_SCENARIOS.includes(scenario as any) ? () => removeCustomScenario(scenario) : undefined}
               />
             ))}
+
+            {/* T088: Add custom scenario button */}
+            {showCustomScenarioInput ? (
+              <Card>
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex gap-2">
+                    <Input
+                      value={customScenarioInput}
+                      onChange={(e) => setCustomScenarioInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') addCustomScenario()
+                        if (e.key === 'Escape') {
+                          setShowCustomScenarioInput(false)
+                          setCustomScenarioInput('')
+                        }
+                      }}
+                      placeholder={t('profiles.customScenarioName')}
+                      autoFocus
+                    />
+                    <Button onClick={addCustomScenario}>
+                      {t('common.add')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowCustomScenarioInput(false)
+                        setCustomScenarioInput('')
+                      }}
+                    >
+                      {t('common.cancel')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('profiles.customScenarioHint')}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setShowCustomScenarioInput(true)}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {t('profiles.addCustomScenario')}
+              </Button>
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -301,17 +387,19 @@ export function ProfileEditPage() {
 }
 
 interface ScenarioCardProps {
-  scenario: Scenario
+  scenario: string
   route?: ScenarioRoute
   providers: { name: string }[]
   expanded: boolean
   onToggle: () => void
   onUpdate: (route: ScenarioRoute | undefined) => void
+  onRemove?: () => void // T088: Optional remove handler for custom scenarios
 }
 
-function ScenarioCard({ scenario, route, providers, expanded, onToggle, onUpdate }: ScenarioCardProps) {
+function ScenarioCard({ scenario, route, providers, expanded, onToggle, onUpdate, onRemove }: ScenarioCardProps) {
   const { t } = useTranslation()
   const hasRoute = route && route.providers.length > 0
+  const isCustom = onRemove !== undefined
 
   const addScenarioProvider = () => {
     const newProviders: ProviderRoute[] = [...(route?.providers || []), { name: '' }]
@@ -329,6 +417,9 @@ function ScenarioCard({ scenario, route, providers, expanded, onToggle, onUpdate
     onUpdate(newProviders.length > 0 ? { providers: newProviders } : undefined)
   }
 
+  // T088: Get scenario label (builtin or custom)
+  const scenarioLabel = SCENARIO_LABELS[scenario] || scenario
+
   return (
     <Card>
       <CardHeader
@@ -336,15 +427,36 @@ function ScenarioCard({ scenario, route, providers, expanded, onToggle, onUpdate
         onClick={onToggle}
       >
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base">{SCENARIO_LABELS[scenario]}</CardTitle>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">{scenarioLabel}</CardTitle>
+              {isCustom && (
+                <span className="text-xs text-muted-foreground px-2 py-0.5 bg-muted rounded">
+                  {t('profiles.customScenario')}
+                </span>
+              )}
+            </div>
             <CardDescription>
               {hasRoute
                 ? `${route.providers.length} ${t('profiles.scenarioProviders').toLowerCase()}`
                 : t('profiles.inheritFromProfile')}
             </CardDescription>
           </div>
-          {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          <div className="flex items-center gap-2">
+            {isCustom && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemove()
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+            {expanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          </div>
         </div>
       </CardHeader>
       {expanded && (

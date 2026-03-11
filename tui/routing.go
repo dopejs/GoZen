@@ -87,7 +87,11 @@ func (m routingModel) init() tea.Cmd {
 			routing = pc.Routing
 		}
 
+		// T086: Support custom scenario keys
 		var scenarios []scenarioEntry
+
+		// First, add all known builtin scenarios
+		knownScenarioMap := make(map[string]bool)
 		for _, ks := range knownScenarios {
 			configured := false
 			if routing != nil {
@@ -100,6 +104,21 @@ func (m routingModel) init() tea.Cmd {
 				label:      ks.label,
 				configured: configured,
 			})
+			knownScenarioMap[ks.scenario] = true
+		}
+
+		// Then, add any custom scenarios from routing config
+		if routing != nil {
+			for scenarioKey := range routing {
+				if !knownScenarioMap[scenarioKey] {
+					// Custom scenario - add it to the list
+					scenarios = append(scenarios, scenarioEntry{
+						scenario:   scenarioKey,
+						label:      scenarioKey + "     (custom scenario)",
+						configured: true,
+					})
+				}
+			}
 		}
 
 		return routingLoadedMsg{

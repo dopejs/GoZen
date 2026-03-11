@@ -181,21 +181,21 @@ GoZen uses Go project structure:
 
 ### Tests for User Story 5
 
-- [ ] T056 [P] [US5] Write test for non-existent provider validation in internal/config/config_test.go
-- [ ] T057 [P] [US5] Write test for empty provider list validation in internal/config/config_test.go
-- [ ] T058 [P] [US5] Write test for invalid weights validation in internal/config/config_test.go
-- [ ] T059 [P] [US5] Write test for invalid strategy validation in internal/config/config_test.go
-- [ ] T060 [P] [US5] Write test for scenario key format validation in internal/config/config_test.go
+- [X] T056 [P] [US5] Write test for non-existent provider validation in internal/config/config_test.go
+- [X] T057 [P] [US5] Write test for empty provider list validation in internal/config/config_test.go
+- [X] T058 [P] [US5] Write test for invalid weights validation in internal/config/config_test.go
+- [X] T059 [P] [US5] Write test for invalid strategy validation in internal/config/config_test.go
+- [X] T060 [P] [US5] Write test for scenario key format validation in internal/config/config_test.go
 
 ### Implementation for User Story 5
 
-- [ ] T061 [US5] Implement provider existence validation in ValidateRoutingConfig in internal/config/store.go
-- [ ] T062 [US5] Implement empty provider list validation in ValidateRoutingConfig in internal/config/store.go
-- [ ] T063 [US5] Implement weights validation in ValidateRoutingConfig in internal/config/store.go
-- [ ] T064 [US5] Implement strategy validation in ValidateRoutingConfig in internal/config/store.go
-- [ ] T065 [US5] Implement scenario key format validation in ValidateRoutingConfig in internal/config/store.go
-- [ ] T066 [US5] Call ValidateRoutingConfig in Store.loadLocked in internal/config/store.go
-- [ ] T067 [US5] Add structured error messages for validation failures in internal/config/store.go
+- [X] T061 [US5] Implement provider existence validation in ValidateRoutingConfig in internal/config/store.go
+- [X] T062 [US5] Implement empty provider list validation in ValidateRoutingConfig in internal/config/store.go
+- [X] T063 [US5] Implement weights validation in ValidateRoutingConfig in internal/config/store.go
+- [X] T064 [US5] Implement strategy validation in ValidateRoutingConfig in internal/config/store.go
+- [X] T065 [US5] Implement scenario key format validation in ValidateRoutingConfig in internal/config/store.go
+- [X] T066 [US5] Call ValidateRoutingConfig in Store.loadLocked in internal/config/store.go
+- [X] T067 [US5] Add structured error messages for validation failures in internal/config/store.go
 
 **Checkpoint**: All user stories 1-5 should work - invalid configs are rejected at load time
 
@@ -209,19 +209,19 @@ GoZen uses Go project structure:
 
 ### Tests for User Story 6
 
-- [ ] T068 [P] [US6] Write test for middleware decision logging in internal/proxy/server_test.go
-- [ ] T069 [P] [US6] Write test for builtin classifier logging in internal/proxy/server_test.go
-- [ ] T070 [P] [US6] Write test for fallback logging in internal/proxy/server_test.go
-- [ ] T071 [P] [US6] Write test for provider selection logging in internal/proxy/server_test.go
+- [X] T068 [P] [US6] Write test for middleware decision logging in internal/proxy/server_test.go
+- [X] T069 [P] [US6] Write test for builtin classifier logging in internal/proxy/server_test.go
+- [X] T070 [P] [US6] Write test for fallback logging in internal/proxy/server_test.go
+- [X] T071 [P] [US6] Write test for provider selection logging in internal/proxy/server_test.go
 
 ### Implementation for User Story 6
 
-- [ ] T072 [US6] Implement LogRoutingDecision function in internal/daemon/logger.go
-- [ ] T073 [US6] Implement LogRoutingFallback function in internal/daemon/logger.go
-- [ ] T074 [US6] Add routing decision logging in ProxyServer.ServeHTTP in internal/proxy/server.go
-- [ ] T075 [US6] Add fallback logging in ProxyServer.ServeHTTP in internal/proxy/server.go
-- [ ] T076 [US6] Add provider selection logging in ProxyServer.ServeHTTP in internal/proxy/server.go
-- [ ] T077 [US6] Add request features logging in ProxyServer.ServeHTTP in internal/proxy/server.go
+- [X] T072 [US6] Implement LogRoutingDecision function in internal/daemon/logger.go
+- [X] T073 [US6] Implement LogRoutingFallback function in internal/daemon/logger.go
+- [X] T074 [US6] Add routing decision logging in ProxyServer.ServeHTTP in internal/proxy/server.go
+- [X] T075 [US6] Add fallback logging in ProxyServer.ServeHTTP in internal/proxy/server.go
+- [X] T076 [US6] Add provider selection logging in ProxyServer.ServeHTTP in internal/proxy/server.go
+- [X] T077 [US6] Add request features logging in ProxyServer.ServeHTTP in internal/proxy/server.go
 
 **Checkpoint**: All user stories complete - routing decisions are fully observable
 
@@ -245,9 +245,9 @@ GoZen uses Go project structure:
 - [ ] T083.1 Verify profile-level strategy/weights/threshold fields preserved during v14→v15 migration in internal/config/config.go
 - [ ] T084 Implement scenario key normalization (web-search → webSearch) in internal/proxy/routing_classifier.go
 - [ ] T085 Update Store.saveLocked to write version 15 in internal/config/store.go
-- [ ] T086 [P] Update TUI routing.go to support custom scenario keys
-- [ ] T087 [P] Update Web UI types/api.ts to change Scenario type to string
-- [ ] T088 [P] Update Web UI pages/profiles/edit.tsx to support custom scenarios
+- [X] T086 [P] Update TUI routing.go to support custom scenario keys
+- [X] T087 [P] Update Web UI types/api.ts to change Scenario type to string
+- [X] T088 [P] Update Web UI pages/profiles/edit.tsx to support custom scenarios
 
 **Checkpoint**: Legacy configs migrate automatically, custom scenarios work in UI
 

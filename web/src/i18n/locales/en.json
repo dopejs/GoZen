@@ -133,7 +133,12 @@
     "scenarioProviders": "Scenario Providers",
     "modelOverride": "Model Override",
     "addScenarioProvider": "Add Provider",
-    "inheritFromProfile": "Inherit from profile"
+    "inheritFromProfile": "Inherit from profile",
+    "customScenario": "Custom",
+    "addCustomScenario": "Add Custom Scenario",
+    "customScenarioName": "Scenario name (e.g., plan, research)",
+    "customScenarioHint": "Custom scenarios can be triggered by middleware or routing hints",
+    "scenarioAlreadyExists": "Scenario already exists"
   },
   "logs": {
     "title": "Logs",

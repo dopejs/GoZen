@@ -2916,6 +2916,58 @@ func TestValidateRoutingConfig_CustomScenarios(t *testing.T) {
 			wantError: true,
 			errorMsg:  "invalid strategy",
 		},
+		{
+			name: "invalid negative weight",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								ProviderWeights: map[string]int{
+									"provider1": -1,
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "negative weight",
+		},
+		{
+			name: "invalid weight for non-existent provider",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								ProviderWeights: map[string]int{
+									"nonexistent": 10,
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "weight for non-existent provider",
+		},
 	}
 
 	for _, tt := range tests {

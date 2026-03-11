@@ -115,7 +115,8 @@ func GetGlobalLogDB() *LogDB {
 type RoutingConfig struct {
 	DefaultProviders     []*Provider
 	ScenarioRoutes       map[string]*ScenarioProviders
-	LongContextThreshold int // threshold for longContext scenario detection
+	LongContextThreshold int      // threshold for longContext scenario detection
+	ScenarioPriority     []string // scenario priority order for builtin classifier (FR-005)
 }
 
 // ScenarioProviders defines the providers and routing policy for a scenario.
@@ -470,12 +471,19 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get scenario priority from routing config (if available)
+	var scenarioPriority []string
+	if s.Routing != nil {
+		scenarioPriority = s.Routing.ScenarioPriority
+	}
+
 	decision := ResolveRoutingDecision(
 		middlewareDecision,
 		normalized,
 		features,
 		routingHints,
 		threshold,
+		scenarioPriority,
 		sessionID,
 		bodyMap,
 	)

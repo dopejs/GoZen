@@ -13,6 +13,10 @@ type BuiltinClassifier struct {
 	// Threshold is the token count threshold for long-context detection.
 	// If 0, uses defaultLongContextThreshold (32000).
 	Threshold int
+
+	// ScenarioPriority defines the priority order for scenario selection.
+	// If empty, uses default priority: webSearch > think > image > longContext > code > background > default
+	ScenarioPriority []string
 }
 
 // Classify analyzes the normalized request and returns a routing decision.
@@ -80,16 +84,20 @@ func (c *BuiltinClassifier) Classify(
 }
 
 // classifyFromFeatures uses extracted features to determine the scenario.
-// Priority: webSearch > think > image > longContext > code > background > default
+// Uses configurable scenario priority order (FR-005).
+// Default priority: webSearch > think > image > longContext > code > background > default
 func (c *BuiltinClassifier) classifyFromFeatures(
 	features *RequestFeatures,
 	threshold int,
 	sessionID string,
 	body map[string]interface{},
 ) *RoutingDecision {
+	// Build a map of scenario → decision for all matching scenarios
+	candidates := make(map[string]*RoutingDecision)
+
 	// Check for web search tools
 	if features.HasWebSearch {
-		return &RoutingDecision{
+		candidates[string(config.ScenarioWebSearch)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioWebSearch),
 			Source:     "builtin:classifier",
 			Reason:     "web_search tool detected",
@@ -99,7 +107,7 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 
 	// Check for thinking/reasoning mode
 	if features.HasThinking {
-		return &RoutingDecision{
+		candidates[string(config.ScenarioThink)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioThink),
 			Source:     "builtin:classifier",
 			Reason:     "thinking mode enabled",
@@ -109,7 +117,7 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 
 	// Check for image content
 	if features.HasImage {
-		return &RoutingDecision{
+		candidates[string(config.ScenarioImage)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioImage),
 			Source:     "builtin:classifier",
 			Reason:     "image content detected",
@@ -132,7 +140,7 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 		if !hasSessionHistory {
 			reason = "token count exceeds 80% threshold (no session history)"
 		}
-		return &RoutingDecision{
+		candidates[string(config.ScenarioLongContext)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioLongContext),
 			Source:     "builtin:classifier",
 			Reason:     reason,
@@ -144,18 +152,20 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 	// This path handles cases where current request is below threshold but
 	// session history indicates we're in a long context conversation
 	if sessionID != "" && body != nil && isLongContext(body, threshold, sessionID) {
-		return &RoutingDecision{
-			Scenario:   string(config.ScenarioLongContext),
-			Source:     "builtin:classifier",
-			Reason:     "session history indicates long context",
-			Confidence: 0.7,
+		if _, exists := candidates[string(config.ScenarioLongContext)]; !exists {
+			candidates[string(config.ScenarioLongContext)] = &RoutingDecision{
+				Scenario:   string(config.ScenarioLongContext),
+				Source:     "builtin:classifier",
+				Reason:     "session history indicates long context",
+				Confidence: 0.7,
+			}
 		}
 	}
 
 	// Check for background (Haiku model)
 	modelLower := strings.ToLower(features.Model)
 	if strings.Contains(modelLower, "claude") && strings.Contains(modelLower, "haiku") {
-		return &RoutingDecision{
+		candidates[string(config.ScenarioBackground)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioBackground),
 			Source:     "builtin:classifier",
 			Reason:     "haiku model detected",
@@ -163,14 +173,51 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 		}
 	}
 
-	// Default to code scenario for non-haiku models
-	if features.Model != "" {
-		return &RoutingDecision{
+	// Check for code scenario (non-haiku models)
+	if features.Model != "" && !strings.Contains(modelLower, "haiku") {
+		candidates[string(config.ScenarioCode)] = &RoutingDecision{
 			Scenario:   string(config.ScenarioCode),
 			Source:     "builtin:classifier",
 			Reason:     "non-haiku model (default coding scenario)",
 			Confidence: 0.5,
 		}
+	}
+
+	// If no candidates match, return default
+	if len(candidates) == 0 {
+		return &RoutingDecision{
+			Scenario:   string(config.ScenarioDefault),
+			Source:     "builtin:classifier",
+			Reason:     "no distinctive features detected",
+			Confidence: 0.3,
+		}
+	}
+
+	// Select scenario based on priority order
+	priority := c.ScenarioPriority
+	if len(priority) == 0 {
+		// Use default priority order
+		priority = []string{
+			string(config.ScenarioWebSearch),
+			string(config.ScenarioThink),
+			string(config.ScenarioImage),
+			string(config.ScenarioLongContext),
+			string(config.ScenarioCode),
+			string(config.ScenarioBackground),
+			string(config.ScenarioDefault),
+		}
+	}
+
+	// Find first matching scenario in priority order
+	for _, scenario := range priority {
+		if decision, ok := candidates[scenario]; ok {
+			return decision
+		}
+	}
+
+	// Fallback: return first candidate (shouldn't happen if priority list is complete)
+	for _, decision := range candidates {
+		return decision
 	}
 
 	return &RoutingDecision{

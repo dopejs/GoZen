@@ -119,7 +119,7 @@ func BenchmarkResolveRoutingDecision(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ResolveRoutingDecision(nil, normalized, features, nil, 100000, "", body)
+		_ = ResolveRoutingDecision(nil, normalized, features, nil, 100000, nil, "", body)
 	}
 }
 
@@ -186,7 +186,7 @@ func BenchmarkFullRoutingPipeline(b *testing.B) {
 		features := ExtractFeatures(normalized)
 
 		// Classify
-		decision := ResolveRoutingDecision(nil, normalized, features, nil, 100000, "", body)
+		decision := ResolveRoutingDecision(nil, normalized, features, nil, 100000, nil, "", body)
 
 		// Resolve route
 		_ = ResolveRoutePolicy(decision.Scenario, routing)

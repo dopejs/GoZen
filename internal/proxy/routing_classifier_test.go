@@ -441,3 +441,94 @@ func TestBuiltinClassifier_LongContextThresholdWithSession(t *testing.T) {
 		})
 	}
 }
+
+// Test configurable scenario priority (FR-005)
+func TestBuiltinClassifier_ConfigurableScenarioPriority(t *testing.T) {
+	// Create a request that matches multiple scenarios
+	features := &RequestFeatures{
+		Model:        "claude-opus-4",
+		HasImage:     true,  // matches image scenario
+		HasTools:     true,  // matches code scenario (tools are common in code)
+		TotalTokens:  50000, // matches longContext scenario
+		MessageCount: 10,
+	}
+
+	tests := []struct {
+		name             string
+		priority         []string
+		expectedScenario string
+		reason           string
+	}{
+		{
+			name:             "default priority (image > longContext)",
+			priority:         nil, // use default
+			expectedScenario: string(config.ScenarioImage),
+			reason:           "default priority puts image before longContext",
+		},
+		{
+			name:             "custom priority (longContext first)",
+			priority:         []string{"longContext", "image", "code"},
+			expectedScenario: string(config.ScenarioLongContext),
+			reason:           "custom priority puts longContext first",
+		},
+		{
+			name:             "custom priority (code first)",
+			priority:         []string{"code", "longContext", "image"},
+			expectedScenario: string(config.ScenarioCode),
+			reason:           "custom priority puts code first",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classifier := &BuiltinClassifier{
+				Threshold:        32000,
+				ScenarioPriority: tt.priority,
+			}
+
+			decision := classifier.Classify(nil, features, nil, "", nil)
+
+			if decision.Scenario != tt.expectedScenario {
+				t.Errorf("%s: got scenario %s, want %s", tt.reason, decision.Scenario, tt.expectedScenario)
+			}
+		})
+	}
+}
+
+// Test scenario priority with single matching scenario
+func TestBuiltinClassifier_PrioritySingleMatch(t *testing.T) {
+	// Request that only matches one scenario (think)
+	features := &RequestFeatures{
+		Model:        "claude-opus-4",
+		HasThinking:  true, // only matches think scenario
+		TotalTokens:  1000,
+		MessageCount: 1,
+	}
+
+	// Even with custom priority that puts think last, should still match it
+	// Note: priority list must include all scenarios that might match
+	classifier := &BuiltinClassifier{
+		Threshold: 32000,
+		ScenarioPriority: []string{
+			"code",        // code will also match (has model)
+			"longContext", // won't match
+			"image",       // won't match
+			"think",       // will match
+		},
+	}
+
+	decision := classifier.Classify(nil, features, nil, "", nil)
+
+	// Should match code first (higher priority than think in this custom order)
+	if decision.Scenario != string(config.ScenarioCode) {
+		t.Errorf("expected code scenario (higher priority), got %s", decision.Scenario)
+	}
+
+	// Now test with think having higher priority
+	classifier.ScenarioPriority = []string{"think", "code", "longContext", "image"}
+	decision = classifier.Classify(nil, features, nil, "", nil)
+
+	if decision.Scenario != string(config.ScenarioThink) {
+		t.Errorf("expected think scenario (higher priority), got %s", decision.Scenario)
+	}
+}

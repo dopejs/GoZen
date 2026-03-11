@@ -12,6 +12,7 @@ func ResolveRoutingDecision(
 	features *RequestFeatures,
 	hints *RoutingHints,
 	threshold int,
+	scenarioPriority []string,
 	sessionID string,
 	body map[string]interface{},
 ) *RoutingDecision {
@@ -26,7 +27,10 @@ func ResolveRoutingDecision(
 	}
 
 	// Fall back to builtin classifier
-	classifier := &BuiltinClassifier{Threshold: threshold}
+	classifier := &BuiltinClassifier{
+		Threshold:        threshold,
+		ScenarioPriority: scenarioPriority,
+	}
 	decision := classifier.Classify(normalized, features, hints, sessionID, body)
 
 	// Apply middleware overrides to builtin classifier decision

@@ -354,6 +354,7 @@ type ProfileConfig struct {
 	LongContextThreshold int                         `json:"long_context_threshold,omitempty"` // defaults to 32000 if not set
 	Strategy             LoadBalanceStrategy         `json:"strategy,omitempty"`               // load balancing strategy
 	ProviderWeights      map[string]int              `json:"provider_weights,omitempty"`       // weights for weighted strategy
+	ScenarioPriority     []string                    `json:"scenario_priority,omitempty"`      // scenario priority order for builtin classifier
 }
 
 // Clone returns a deep copy of the ProfileConfig.
@@ -368,6 +369,10 @@ func (pc *ProfileConfig) Clone() *ProfileConfig {
 	if pc.Providers != nil {
 		clone.Providers = make([]string, len(pc.Providers))
 		copy(clone.Providers, pc.Providers)
+	}
+	if pc.ScenarioPriority != nil {
+		clone.ScenarioPriority = make([]string, len(pc.ScenarioPriority))
+		copy(clone.ScenarioPriority, pc.ScenarioPriority)
 	}
 	if pc.ProviderWeights != nil {
 		clone.ProviderWeights = make(map[string]int, len(pc.ProviderWeights))

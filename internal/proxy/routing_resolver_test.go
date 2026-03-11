@@ -29,7 +29,7 @@ func TestResolveRoutingDecision_MiddlewarePrecedence(t *testing.T) {
 		MessageCount: 1,
 	}
 
-	result := ResolveRoutingDecision(middlewareDecision, normalized, features, nil, 32000, "", nil)
+	result := ResolveRoutingDecision(middlewareDecision, normalized, features, nil, 32000, nil, "", nil)
 
 	if result.Scenario != "custom-plan" {
 		t.Errorf("expected scenario 'custom-plan', got '%s'", result.Scenario)
@@ -61,7 +61,7 @@ func TestResolveRoutingDecision_BuiltinFallback(t *testing.T) {
 	}
 
 	// No middleware decision - should use builtin classifier
-	result := ResolveRoutingDecision(nil, normalized, features, nil, 32000, "", nil)
+	result := ResolveRoutingDecision(nil, normalized, features, nil, 32000, nil, "", nil)
 
 	if result.Source != "builtin:classifier" {
 		t.Errorf("expected source 'builtin:classifier', got '%s'", result.Source)
@@ -93,7 +93,7 @@ func TestResolveRoutingDecision_EmptyMiddlewareIgnored(t *testing.T) {
 		MessageCount: 1,
 	}
 
-	result := ResolveRoutingDecision(emptyDecision, normalized, features, nil, 32000, "", nil)
+	result := ResolveRoutingDecision(emptyDecision, normalized, features, nil, 32000, nil, "", nil)
 
 	// Should fall back to builtin classifier
 	if result.Source != "builtin:classifier" {

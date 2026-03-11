@@ -21,6 +21,12 @@ type NormalizedRequest struct {
 	// HasTools indicates if the request includes tool/function definitions
 	HasTools bool
 
+	// HasWebSearch indicates if the request includes web_search tool
+	HasWebSearch bool
+
+	// HasThinking indicates if thinking/reasoning mode is enabled
+	HasThinking bool
+
 	// MaxTokens is the requested maximum output tokens (if specified)
 	MaxTokens int
 
@@ -53,6 +59,12 @@ type RequestFeatures struct {
 
 	// HasTools indicates if the request includes tool definitions
 	HasTools bool
+
+	// HasWebSearch indicates if the request includes web_search tool
+	HasWebSearch bool
+
+	// HasThinking indicates if thinking/reasoning mode is enabled
+	HasThinking bool
 
 	// IsLongContext indicates if the total token count exceeds the threshold
 	IsLongContext bool
@@ -158,6 +170,30 @@ func NormalizeAnthropicMessages(body map[string]interface{}) (*NormalizedRequest
 	}
 	if tools, ok := body["tools"].([]interface{}); ok && len(tools) > 0 {
 		normalized.HasTools = true
+		// Check for web_search tool
+		for _, tool := range tools {
+			t, ok := tool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if toolType, ok := t["type"].(string); ok && strings.HasPrefix(toolType, "web_search") {
+				normalized.HasWebSearch = true
+				break
+			}
+		}
+	}
+
+	// Check for thinking mode
+	if thinking, ok := body["thinking"]; ok {
+		// Check if thinking is a boolean true
+		if b, ok := thinking.(bool); ok {
+			normalized.HasThinking = b
+		} else if m, ok := thinking.(map[string]interface{}); ok {
+			// Check if thinking is a map with type="enabled"
+			if t, ok := m["type"].(string); ok {
+				normalized.HasThinking = (t == "enabled")
+			}
+		}
 	}
 
 	return normalized, nil
@@ -258,9 +294,31 @@ func NormalizeOpenAIChat(body map[string]interface{}) (*NormalizedRequest, error
 	}
 	if tools, ok := body["tools"].([]interface{}); ok && len(tools) > 0 {
 		normalized.HasTools = true
+		// Check for web_search tool
+		for _, tool := range tools {
+			t, ok := tool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if toolType, ok := t["type"].(string); ok && strings.HasPrefix(toolType, "web_search") {
+				normalized.HasWebSearch = true
+				break
+			}
+		}
 	}
 	if functions, ok := body["functions"].([]interface{}); ok && len(functions) > 0 {
 		normalized.HasTools = true
+	}
+
+	// Check for thinking mode (OpenAI reasoning models or explicit thinking parameter)
+	if thinking, ok := body["thinking"]; ok {
+		if b, ok := thinking.(bool); ok {
+			normalized.HasThinking = b
+		} else if m, ok := thinking.(map[string]interface{}); ok {
+			if t, ok := m["type"].(string); ok {
+				normalized.HasThinking = (t == "enabled")
+			}
+		}
 	}
 
 	return normalized, nil
@@ -299,12 +357,39 @@ func NormalizeOpenAIResponses(body map[string]interface{}) (*NormalizedRequest, 
 			TokenCount: estimateTokens(input),
 		})
 	case []interface{}:
+		// Handle structured input items (text, image, etc.)
 		for _, item := range input {
+			// Handle string items (legacy format)
 			if str, ok := item.(string); ok {
 				normalized.Messages = append(normalized.Messages, NormalizedMessage{
 					Role:       "user",
 					Content:    str,
 					TokenCount: estimateTokens(str),
+				})
+				continue
+			}
+
+			// Handle structured items (new format)
+			itemMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			itemType, _ := itemMap["type"].(string)
+			switch itemType {
+			case "text":
+				if text, ok := itemMap["text"].(string); ok {
+					normalized.Messages = append(normalized.Messages, NormalizedMessage{
+						Role:       "user",
+						Content:    text,
+						TokenCount: estimateTokens(text),
+					})
+				}
+			case "image":
+				// Image item detected
+				normalized.Messages = append(normalized.Messages, NormalizedMessage{
+					Role:     "user",
+					HasImage: true,
 				})
 			}
 		}
@@ -314,6 +399,33 @@ func NormalizeOpenAIResponses(body map[string]interface{}) (*NormalizedRequest, 
 
 	if len(normalized.Messages) == 0 {
 		return nil, fmt.Errorf("no valid input messages found")
+	}
+
+	// Extract optional fields
+	if tools, ok := body["tools"].([]interface{}); ok && len(tools) > 0 {
+		normalized.HasTools = true
+		// Check for web_search tool
+		for _, tool := range tools {
+			t, ok := tool.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if toolType, ok := t["type"].(string); ok && strings.HasPrefix(toolType, "web_search") {
+				normalized.HasWebSearch = true
+				break
+			}
+		}
+	}
+
+	// Check for thinking mode
+	if thinking, ok := body["thinking"]; ok {
+		if b, ok := thinking.(bool); ok {
+			normalized.HasThinking = b
+		} else if m, ok := thinking.(map[string]interface{}); ok {
+			if t, ok := m["type"].(string); ok {
+				normalized.HasThinking = (t == "enabled")
+			}
+		}
 	}
 
 	return normalized, nil
@@ -328,6 +440,8 @@ func ExtractFeatures(normalized *NormalizedRequest) *RequestFeatures {
 	features := &RequestFeatures{
 		Model:        normalized.Model,
 		HasTools:     normalized.HasTools,
+		HasWebSearch: normalized.HasWebSearch,
+		HasThinking:  normalized.HasThinking,
 		MessageCount: len(normalized.Messages),
 	}
 

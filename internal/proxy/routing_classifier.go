@@ -88,7 +88,7 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 	body map[string]interface{},
 ) *RoutingDecision {
 	// Check for web search tools
-	if features.HasTools && body != nil && hasWebSearchTool(body) {
+	if features.HasWebSearch {
 		return &RoutingDecision{
 			Scenario:   string(config.ScenarioWebSearch),
 			Source:     "builtin:classifier",
@@ -98,7 +98,7 @@ func (c *BuiltinClassifier) classifyFromFeatures(
 	}
 
 	// Check for thinking/reasoning mode
-	if body != nil && hasThinkingEnabled(body) {
+	if features.HasThinking {
 		return &RoutingDecision{
 			Scenario:   string(config.ScenarioThink),
 			Source:     "builtin:classifier",

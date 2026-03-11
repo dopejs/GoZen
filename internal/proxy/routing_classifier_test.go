@@ -91,6 +91,7 @@ func TestBuiltinClassifier_ThinkingMode(t *testing.T) {
 
 	features := &RequestFeatures{
 		Model:        "claude-opus-4",
+		HasThinking:  true,
 		TotalTokens:  100,
 		MessageCount: 1,
 	}
@@ -122,6 +123,7 @@ func TestBuiltinClassifier_WebSearchTool(t *testing.T) {
 	features := &RequestFeatures{
 		Model:        "claude-opus-4",
 		HasTools:     true,
+		HasWebSearch: true,
 		TotalTokens:  100,
 		MessageCount: 1,
 	}

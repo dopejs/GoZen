@@ -233,18 +233,18 @@ GoZen uses Go project structure:
 
 ### Tests for Config Migration
 
-- [ ] T078 [P] Write test for v14→v15 config migration (ScenarioRoute → RoutePolicy) in internal/config/config_test.go
-- [ ] T079 [P] Write test for scenario key normalization (kebab-case → camelCase) in internal/config/config_test.go
-- [ ] T080 [P] Write test for builtin scenario preservation in internal/proxy/routing_classifier_test.go
-- [ ] T081 [P] Write test for config round-trip (marshal/unmarshal) in internal/config/config_test.go
+- [X] T078 [P] Write test for v14→v15 config migration (ScenarioRoute → RoutePolicy) in internal/config/config_test.go
+- [X] T079 [P] Write test for scenario key normalization (kebab-case → camelCase) in internal/config/config_test.go
+- [X] T080 [P] Write test for builtin scenario preservation in internal/proxy/routing_classifier_test.go
+- [X] T081 [P] Write test for config round-trip (marshal/unmarshal) in internal/config/config_test.go
 
 ### Implementation for Config Migration
 
-- [ ] T082 Implement RoutePolicy.UnmarshalJSON with v14 ScenarioRoute detection in internal/config/config.go
-- [ ] T083 Implement legacy ScenarioRoute to RoutePolicy conversion (add default values for new fields) in internal/config/config.go
-- [ ] T083.1 Verify profile-level strategy/weights/threshold fields preserved during v14→v15 migration in internal/config/config.go
-- [ ] T084 Implement scenario key normalization (web-search → webSearch) in internal/proxy/routing_classifier.go
-- [ ] T085 Update Store.saveLocked to write version 15 in internal/config/store.go
+- [X] T082 Implement RoutePolicy.UnmarshalJSON with v14 ScenarioRoute detection in internal/config/config.go
+- [X] T083 Implement legacy ScenarioRoute to RoutePolicy conversion (add default values for new fields) in internal/config/config.go
+- [X] T083.1 Verify profile-level strategy/weights/threshold fields preserved during v14→v15 migration in internal/config/config.go
+- [X] T084 Implement scenario key normalization (web-search → webSearch) in internal/proxy/routing_classifier.go
+- [X] T085 Update Store.saveLocked to write version 15 in internal/config/store.go
 - [X] T086 [P] Update TUI routing.go to support custom scenario keys
 - [X] T087 [P] Update Web UI types/api.ts to change Scenario type to string
 - [X] T088 [P] Update Web UI pages/profiles/edit.tsx to support custom scenarios

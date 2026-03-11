@@ -257,16 +257,16 @@ GoZen uses Go project structure:
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T089 [P] Update CLAUDE.md with new routing patterns
-- [ ] T090 [P] Update docs/scenario-routing-architecture.md with implementation details
-- [ ] T091 [P] Remove or deprecate old scenario.go file
+- [X] T089 [P] Update CLAUDE.md with new routing patterns
+- [X] T090 [P] Update docs/scenario-routing-architecture.md with implementation details
+- [X] T091 [P] Remove or deprecate old scenario.go file
 - [ ] T092 Code cleanup and refactoring across routing files
 - [ ] T093 Performance profiling for normalization and classification
 - [ ] T094 [P] Add edge case tests for concurrent requests in tests/integration/
 - [ ] T095 [P] Add edge case tests for session cache interaction in tests/integration/
 - [ ] T096 [P] Add comprehensive E2E tests for all builtin scenarios in tests/e2e_proxy_test.go
 - [ ] T097 Run quickstart.md validation scenarios
-- [ ] T098 Verify test coverage ≥ 80% for internal/proxy and internal/config
+- [X] T098 Verify test coverage ≥ 80% for internal/proxy and internal/config
 
 ---
 

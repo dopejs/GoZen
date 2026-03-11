@@ -1165,6 +1165,9 @@ func TestProfileProxyDisabledProviderExcludedFromStrategy(t *testing.T) {
 	config.SetProvider("pc", &config.ProviderConfig{BaseURL: mockC.URL, AuthToken: "key-c"})
 
 	store := config.DefaultStore()
+	store.SetProfileConfig(config.DefaultProfileName, &config.ProfileConfig{
+		Providers: []string{"pa"},
+	})
 	store.SetProfileConfig("rr-profile", &config.ProfileConfig{
 		Providers: []string{"pa", "pb", "pc"},
 		Strategy:  config.LoadBalanceRoundRobin,

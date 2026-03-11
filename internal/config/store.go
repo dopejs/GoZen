@@ -787,6 +787,20 @@ func (s *Store) Save() error {
 
 func (s *Store) saveLocked() error {
 	s.ensureConfig()
+
+	// Validate config before saving to prevent writing invalid configurations
+	validationErrors, validationWarnings := ValidateConfig(s.config)
+
+	// Log warnings
+	for _, warning := range validationWarnings {
+		log.Printf("Config warning: %s", warning)
+	}
+
+	// Reject save if there are validation errors
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("config validation failed: %w", validationErrors[0])
+	}
+
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create config dir: %w", err)

@@ -173,6 +173,12 @@ func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate provider config before saving
+	if req.Config.BaseURL == "" {
+		writeError(w, http.StatusBadRequest, "base_url is required")
+		return
+	}
+
 	// Validate proxy URL if provided
 	if err := config.ValidateProxyURL(req.Config.ProxyURL); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

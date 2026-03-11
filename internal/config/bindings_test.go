@@ -10,6 +10,10 @@ import (
 func TestProjectBindings(t *testing.T) {
 	home := setTestHome(t)
 
+	// Create a test provider and default profile first
+	SetProvider("test-provider", &ProviderConfig{BaseURL: "https://api.example.com", AuthToken: "t"})
+	SetProfileConfig("default", &ProfileConfig{Providers: []string{"test-provider"}})
+
 	// Create a test profile
 	err := SetProfileConfig("test-profile", &ProfileConfig{
 		Providers: []string{"test-provider"},
@@ -59,8 +63,25 @@ func TestProjectBindings(t *testing.T) {
 func TestProjectBindingsWithCLI(t *testing.T) {
 	home := setTestHome(t)
 
+	// Create a test provider first
+	err := SetProvider("test-provider", &ProviderConfig{
+		BaseURL:   "https://api.example.com",
+		AuthToken: "test-token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create default profile (required by validation)
+	err = SetProfileConfig("default", &ProfileConfig{
+		Providers: []string{"test-provider"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Create a test profile
-	err := SetProfileConfig("cli-profile", &ProfileConfig{
+	err = SetProfileConfig("cli-profile", &ProfileConfig{
 		Providers: []string{"test-provider"},
 	})
 	if err != nil {
@@ -188,6 +209,10 @@ func TestProjectBindingPersistence(t *testing.T) {
 func TestProjectBindingSymlinkDedup(t *testing.T) {
 	home := setTestHome(t)
 
+	// Create a test provider and default profile first
+	SetProvider("test-provider", &ProviderConfig{BaseURL: "https://api.example.com", AuthToken: "t"})
+	SetProfileConfig("default", &ProfileConfig{Providers: []string{"test-provider"}})
+
 	// Create a test profile
 	err := SetProfileConfig("sym-profile", &ProfileConfig{
 		Providers: []string{"test-provider"},
@@ -274,7 +299,9 @@ func TestConfigVersionWithBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a profile and binding
+	// Create provider, default profile, then test profile
+	SetProvider("p1", &ProviderConfig{BaseURL: "https://api.example.com", AuthToken: "t"})
+	SetProfileConfig("default", &ProfileConfig{Providers: []string{"p1"}})
 	SetProfileConfig("test", &ProfileConfig{Providers: []string{"p1"}})
 	BindProject("/test/path", "test", "codex")
 

@@ -190,3 +190,111 @@ func TestValidateConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateOnSave verifies that validation is enforced when saving config
+func TestValidateOnSave(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(*Store) error
+		wantErr       bool
+		errorContains string
+	}{
+		{
+			name: "valid config saves successfully",
+			setup: func(s *Store) error {
+				s.SetProvider("provider1", &ProviderConfig{
+					BaseURL:   "https://api.example.com",
+					AuthToken: "token1",
+				})
+				return s.SetProfileConfig("default", &ProfileConfig{
+					Providers: []string{"provider1"},
+				})
+			},
+			wantErr: false,
+		},
+		{
+			name: "profile with non-existent provider rejected",
+			setup: func(s *Store) error {
+				return s.SetProfileConfig("test", &ProfileConfig{
+					Providers: []string{"nonexistent"},
+				})
+			},
+			wantErr:       true,
+			errorContains: "references non-existent provider",
+		},
+		{
+			name: "routing with non-existent provider rejected",
+			setup: func(s *Store) error {
+				s.SetProvider("provider1", &ProviderConfig{
+					BaseURL:   "https://api.example.com",
+					AuthToken: "token1",
+				})
+				return s.SetProfileConfig("test", &ProfileConfig{
+					Providers: []string{"provider1"},
+					Routing: map[string]*RoutePolicy{
+						"think": {
+							Providers: []*ProviderRoute{
+								{Name: "nonexistent"},
+							},
+						},
+					},
+				})
+			},
+			wantErr:       true,
+			errorContains: "references non-existent provider",
+		},
+		{
+			name: "project binding with non-existent profile rejected",
+			setup: func(s *Store) error {
+				s.SetProvider("provider1", &ProviderConfig{
+					BaseURL:   "https://api.example.com",
+					AuthToken: "token1",
+				})
+				s.SetProfileConfig("default", &ProfileConfig{
+					Providers: []string{"provider1"},
+				})
+				return s.BindProject("/path/to/project", "nonexistent", "")
+			},
+			wantErr:       true,
+			errorContains: "does not exist",
+		},
+		{
+			name: "project binding with invalid client rejected",
+			setup: func(s *Store) error {
+				s.SetProvider("provider1", &ProviderConfig{
+					BaseURL:   "https://api.example.com",
+					AuthToken: "token1",
+				})
+				s.SetProfileConfig("default", &ProfileConfig{
+					Providers: []string{"provider1"},
+				})
+				return s.BindProject("/path/to/project", "default", "invalid-client")
+			},
+			wantErr:       true,
+			errorContains: "invalid client",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HOME", dir)
+			ResetDefaultStore()
+			t.Cleanup(func() { ResetDefaultStore() })
+
+			store := DefaultStore()
+			err := tt.setup(store)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("got error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errorContains != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("error = %v, want error containing %q", err, tt.errorContains)
+				}
+			}
+		})
+	}
+}

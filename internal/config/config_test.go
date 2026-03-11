@@ -18,6 +18,20 @@ func setTestHome(t *testing.T) string {
 	return dir
 }
 
+// ensureProviders creates stub providers so that profile configs referencing them pass validation.
+func ensureProviders(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if err := DefaultStore().SetProvider(name, &ProviderConfig{
+			BaseURL:   "https://stub.example.com",
+			AuthToken: "stub-token",
+		}); err != nil {
+			t.Fatalf("ensureProviders: failed to create provider %q: %v", name, err)
+		}
+	}
+}
+
+
 func TestConfigVersion(t *testing.T) {
 	home := setTestHome(t)
 	configPath := filepath.Join(home, ConfigDir, ConfigFile)
@@ -568,6 +582,7 @@ func TestReadWriteFallbackOrder(t *testing.T) {
 	setTestHome(t)
 
 	names := []string{"yunyi", "cctq", "minimax"}
+	ensureProviders(t, names...)
 	if err := WriteFallbackOrder(names); err != nil {
 		t.Fatalf("WriteFallbackOrder() error: %v", err)
 	}
@@ -619,6 +634,7 @@ func TestWriteFallbackOrderCreatesDir(t *testing.T) {
 	ResetDefaultStore()
 	t.Cleanup(func() { ResetDefaultStore() })
 
+	ensureProviders(t, "a")
 	if err := WriteFallbackOrder([]string{"a"}); err != nil {
 		t.Fatalf("WriteFallbackOrder() error: %v", err)
 	}
@@ -645,6 +661,7 @@ func TestWriteFallbackOrderErrorBadDir(t *testing.T) {
 
 func TestRemoveFromFallbackOrder(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("b"); err != nil {
@@ -667,6 +684,7 @@ func TestRemoveFromFallbackOrderMissingProfile(t *testing.T) {
 
 func TestRemoveFromFallbackOrderNotPresent(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b")
 	WriteFallbackOrder([]string{"a", "b"})
 
 	if err := RemoveFromFallbackOrder("z"); err != nil {
@@ -681,6 +699,7 @@ func TestRemoveFromFallbackOrderNotPresent(t *testing.T) {
 
 func TestRemoveFromFallbackOrderFirst(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("a"); err != nil {
@@ -695,6 +714,7 @@ func TestRemoveFromFallbackOrderFirst(t *testing.T) {
 
 func TestRemoveFromFallbackOrderLast(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("c"); err != nil {
@@ -709,6 +729,7 @@ func TestRemoveFromFallbackOrderLast(t *testing.T) {
 
 func TestRemoveFromFallbackOrderOnlyItem(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "solo")
 	WriteFallbackOrder([]string{"solo"})
 
 	if err := RemoveFromFallbackOrder("solo"); err != nil {
@@ -723,6 +744,7 @@ func TestRemoveFromFallbackOrderOnlyItem(t *testing.T) {
 
 func TestRemoveFromFallbackOrderDuplicates(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "a", "c"})
 
 	if err := RemoveFromFallbackOrder("a"); err != nil {
@@ -741,6 +763,9 @@ func TestReadWriteProfileOrder(t *testing.T) {
 	setTestHome(t)
 
 	names := []string{"p1", "p2"}
+	ensureProviders(t, names...)
+	// Create default profile required by validation
+	WriteProfileOrder(DefaultProfileName, names)
 	if err := WriteProfileOrder("work", names); err != nil {
 		t.Fatalf("WriteProfileOrder() error: %v", err)
 	}
@@ -753,15 +778,19 @@ func TestReadWriteProfileOrder(t *testing.T) {
 		t.Errorf("got %v, want [p1 p2]", got)
 	}
 
-	// Default profile should be unaffected
-	_, err = ReadProfileOrder("default")
-	if err == nil {
-		t.Error("expected error for missing default profile")
+	// Default profile should have the names set earlier
+	defaultGot, err := ReadProfileOrder("default")
+	if err != nil {
+		t.Fatalf("ReadProfileOrder(default) error: %v", err)
+	}
+	if len(defaultGot) != 2 {
+		t.Errorf("default profile providers = %v, want 2 items", defaultGot)
 	}
 }
 
 func TestListProfiles(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 
 	WriteProfileOrder("default", []string{"a"})
 	WriteProfileOrder("work", []string{"b"})
@@ -828,6 +857,8 @@ func TestDeleteProfileEmpty(t *testing.T) {
 
 func TestRemoveFromProfileOrder(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
+	WriteProfileOrder(DefaultProfileName, []string{"a"})
 	WriteProfileOrder("work", []string{"a", "b", "c"})
 
 	if err := RemoveFromProfileOrder("work", "b"); err != nil {
@@ -1115,6 +1146,8 @@ func TestProfileConfigRoundTripOldFormat(t *testing.T) {
 
 func TestFullConfigRoundTrip(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "p1", "p2")
+	SetProfileConfig(DefaultProfileName, &ProfileConfig{Providers: []string{"p1"}})
 
 	// Write config with routing
 	pc := &ProfileConfig{
@@ -1707,6 +1740,7 @@ func TestCompatDefaultProfileAndCLI(t *testing.T) {
 		t.Errorf("GetDefaultProfile() = %q", p)
 	}
 
+	ensureProviders(t, "a")
 	WriteProfileOrder("work", []string{"a"})
 	if err := SetDefaultProfile("work"); err != nil {
 		t.Fatal(err)

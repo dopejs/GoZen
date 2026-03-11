@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -437,4 +438,77 @@ func TestEnsureProxyPort(t *testing.T) {
 			t.Errorf("config.ProxyPort = %d, want 29841 (unchanged)", s.config.ProxyPort)
 		}
 	})
+}
+
+// Test scenario_priority validation
+func TestValidateRoutingConfig_ScenarioPriority(t *testing.T) {
+	tests := []struct {
+		name        string
+		priority    []string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:     "valid priority list",
+			priority: []string{"think", "image", "longContext", "code"},
+			wantErr:  false,
+		},
+		{
+			name:     "empty priority list (valid)",
+			priority: []string{},
+			wantErr:  false,
+		},
+		{
+			name:     "nil priority list (valid)",
+			priority: nil,
+			wantErr:  false,
+		},
+		{
+			name:        "empty scenario in priority",
+			priority:    []string{"think", "", "code"},
+			wantErr:     true,
+			errContains: "scenario_priority[1] is empty",
+		},
+		{
+			name:        "duplicate scenario in priority",
+			priority:    []string{"think", "code", "think"},
+			wantErr:     true,
+			errContains: "duplicate",
+		},
+		{
+			name:     "unknown scenario (allowed for forward compatibility)",
+			priority: []string{"think", "future-scenario", "code"},
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {BaseURL: "http://example.com", AuthToken: "test"},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"test": {
+						Providers:        []string{"provider1"},
+						ScenarioPriority: tt.priority,
+						Routing: map[string]*RoutePolicy{
+							"think": {
+								Providers: []*ProviderRoute{{Name: "provider1"}},
+							},
+						},
+					},
+				},
+			}
+
+			err := ValidateRoutingConfig(cfg, "test")
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateRoutingConfig() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("ValidateRoutingConfig() error = %v, want error containing %q", err, tt.errContains)
+			}
+		})
+	}
 }

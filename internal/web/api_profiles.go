@@ -25,20 +25,23 @@ type scenarioRouteResponse struct {
 
 // profileResponse is the JSON shape returned for a single profile.
 type profileResponse struct {
-	Name      string                             `json:"name"`
-	Providers []string                           `json:"providers"`
-	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name             string                             `json:"name"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 type createProfileRequest struct {
-	Name      string                             `json:"name"`
-	Providers []string                           `json:"providers"`
-	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name             string                             `json:"name"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 type updateProfileRequest struct {
-	Providers []string                           `json:"providers"`
-	Routing   map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 // profileConfigToResponse converts a ProfileConfig to a profileResponse.
@@ -48,8 +51,9 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 		providers = []string{}
 	}
 	resp := profileResponse{
-		Name:      name,
-		Providers: providers,
+		Name:             name,
+		Providers:        providers,
+		ScenarioPriority: pc.ScenarioPriority,
 	}
 	if len(pc.Routing) > 0 {
 		resp.Routing = make(map[string]*scenarioRouteResponse)
@@ -222,8 +226,9 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pc := &config.ProfileConfig{
-		Providers: providers,
-		Routing:   routingResponseToConfig(req.Routing),
+		Providers:        providers,
+		Routing:          routingResponseToConfig(req.Routing),
+		ScenarioPriority: req.ScenarioPriority,
 	}
 
 	if err := store.SetProfileConfig(req.Name, pc); err != nil {
@@ -254,6 +259,7 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request, name stri
 
 	existing.Providers = providers
 	existing.Routing = routingResponseToConfig(req.Routing)
+	existing.ScenarioPriority = req.ScenarioPriority
 
 	if err := store.SetProfileConfig(name, existing); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

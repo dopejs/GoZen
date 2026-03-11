@@ -534,6 +534,47 @@ func ValidateRoutingConfig(cfg *OpenCCConfig, profileName string) error {
 		}
 	}
 
+	// Validate scenario_priority if specified (FR-005)
+	if len(profile.ScenarioPriority) > 0 {
+		// Build set of known scenarios (builtin + custom from routing)
+		knownScenarios := make(map[string]bool)
+		// Add builtin scenarios
+		builtinScenarios := []string{
+			string(ScenarioWebSearch),
+			string(ScenarioThink),
+			string(ScenarioImage),
+			string(ScenarioLongContext),
+			string(ScenarioCode),
+			string(ScenarioBackground),
+			string(ScenarioDefault),
+		}
+		for _, s := range builtinScenarios {
+			knownScenarios[s] = true
+		}
+		// Add custom scenarios from routing config
+		for scenarioKey := range profile.Routing {
+			knownScenarios[scenarioKey] = true
+		}
+
+		// Validate each scenario in priority list
+		seen := make(map[string]bool)
+		for i, scenario := range profile.ScenarioPriority {
+			if scenario == "" {
+				return fmt.Errorf("profile %q: scenario_priority[%d] is empty", profileName, i)
+			}
+			if seen[scenario] {
+				return fmt.Errorf("profile %q: scenario_priority contains duplicate %q", profileName, scenario)
+			}
+			seen[scenario] = true
+
+			// Warn if scenario is not known (not a hard error, allows forward compatibility)
+			if !knownScenarios[scenario] {
+				// This is a soft warning - we don't fail validation for unknown scenarios
+				// to allow forward compatibility with new scenario types
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -111,6 +111,7 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				DefaultProviders:     providers,
 				ScenarioRoutes:       scenarioRoutes,
 				LongContextThreshold: profileCfg.longContextThreshold,
+				ScenarioPriority:     profileCfg.scenarioPriority,
 			}
 		}
 	}
@@ -151,6 +152,7 @@ type profileInfo struct {
 	longContextThreshold int
 	strategy             config.LoadBalanceStrategy
 	providerWeights      map[string]int
+	scenarioPriority     []string
 }
 
 // resolveProfileConfig looks up provider names and routing config for a profile.
@@ -181,6 +183,7 @@ func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, er
 		longContextThreshold: pc.LongContextThreshold,
 		strategy:             pc.Strategy,
 		providerWeights:      pc.ProviderWeights,
+		scenarioPriority:     pc.ScenarioPriority,
 	}, nil
 }
 

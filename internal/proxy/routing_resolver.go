@@ -20,9 +20,35 @@ func ResolveRoutingDecision(
 		return middlewareDecision
 	}
 
+	// Apply threshold override from middleware hints if provided
+	if middlewareDecision != nil && middlewareDecision.ThresholdOverride != nil {
+		threshold = *middlewareDecision.ThresholdOverride
+	}
+
 	// Fall back to builtin classifier
 	classifier := &BuiltinClassifier{Threshold: threshold}
-	return classifier.Classify(normalized, features, hints, sessionID, body)
+	decision := classifier.Classify(normalized, features, hints, sessionID, body)
+
+	// Apply middleware overrides to builtin classifier decision
+	if middlewareDecision != nil {
+		if middlewareDecision.ModelHint != nil {
+			decision.ModelHint = middlewareDecision.ModelHint
+		}
+		if middlewareDecision.StrategyOverride != nil {
+			decision.StrategyOverride = middlewareDecision.StrategyOverride
+		}
+		if middlewareDecision.ThresholdOverride != nil {
+			decision.ThresholdOverride = middlewareDecision.ThresholdOverride
+		}
+		if len(middlewareDecision.ProviderAllowlist) > 0 {
+			decision.ProviderAllowlist = middlewareDecision.ProviderAllowlist
+		}
+		if len(middlewareDecision.ProviderDenylist) > 0 {
+			decision.ProviderDenylist = middlewareDecision.ProviderDenylist
+		}
+	}
+
+	return decision
 }
 
 // ResolveRoutePolicy looks up the RoutePolicy for a given scenario in the profile config.

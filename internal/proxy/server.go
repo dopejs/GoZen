@@ -361,6 +361,7 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Metadata:          make(map[string]interface{}),
 			RequestFormat:     requestFormat,
 			NormalizedRequest: normalized,
+			Profile:           s.Profile,
 		}
 
 		// Parse model and messages for middleware
@@ -452,6 +453,54 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply RoutingDecision overrides (ModelHint, ProviderAllowlist, ProviderDenylist)
+	if decision.ModelHint != nil && *decision.ModelHint != "" {
+		// Apply model hint as override for all providers
+		if modelOverrides == nil {
+			modelOverrides = make(map[string]string)
+		}
+		for _, p := range providers {
+			if _, exists := modelOverrides[p.Name]; !exists {
+				modelOverrides[p.Name] = *decision.ModelHint
+			}
+		}
+	}
+
+	// Apply provider allowlist/denylist filters
+	if len(decision.ProviderAllowlist) > 0 {
+		allowSet := make(map[string]bool)
+		for _, name := range decision.ProviderAllowlist {
+			allowSet[name] = true
+		}
+		filtered := make([]*Provider, 0, len(providers))
+		for _, p := range providers {
+			if allowSet[p.Name] {
+				filtered = append(filtered, p)
+			}
+		}
+		providers = filtered
+		if len(providers) == 0 {
+			s.Logger.Printf("[routing] provider allowlist resulted in no providers")
+		}
+	}
+
+	if len(decision.ProviderDenylist) > 0 {
+		denySet := make(map[string]bool)
+		for _, name := range decision.ProviderDenylist {
+			denySet[name] = true
+		}
+		filtered := make([]*Provider, 0, len(providers))
+		for _, p := range providers {
+			if !denySet[p.Name] {
+				filtered = append(filtered, p)
+			}
+		}
+		providers = filtered
+		if len(providers) == 0 {
+			s.Logger.Printf("[routing] provider denylist resulted in no providers")
+		}
+	}
+
 	// Filter disabled providers BEFORE strategy selection to avoid polluting
 	// round-robin counters, weighted distribution, and least-* rankings.
 	availableProviders, disabledNames := s.filterDisabledProviders(providers)
@@ -495,6 +544,11 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if len(scenarioProviders.ProviderWeights) > 0 {
 				weights = scenarioProviders.ProviderWeights
 			}
+		}
+
+		// Apply RoutingDecision strategy override (highest priority)
+		if decision.StrategyOverride != nil {
+			strategy = *decision.StrategyOverride
 		}
 
 		providers = s.LoadBalancer.Select(providers, strategy, model, s.Profile, modelOverrides, weights)

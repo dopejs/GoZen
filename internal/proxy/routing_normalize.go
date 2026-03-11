@@ -357,7 +357,7 @@ func NormalizeOpenAIResponses(body map[string]interface{}) (*NormalizedRequest, 
 			TokenCount: estimateTokens(input),
 		})
 	case []interface{}:
-		// Handle structured input items (text, image, etc.)
+		// Handle structured input items (text, image, input_text, output_text, etc.)
 		for _, item := range input {
 			// Handle string items (legacy format)
 			if str, ok := item.(string); ok {
@@ -377,10 +377,20 @@ func NormalizeOpenAIResponses(body map[string]interface{}) (*NormalizedRequest, 
 
 			itemType, _ := itemMap["type"].(string)
 			switch itemType {
-			case "text":
+			case "text", "input_text":
+				// Both "text" and "input_text" are text content
 				if text, ok := itemMap["text"].(string); ok {
 					normalized.Messages = append(normalized.Messages, NormalizedMessage{
 						Role:       "user",
+						Content:    text,
+						TokenCount: estimateTokens(text),
+					})
+				}
+			case "output_text":
+				// Assistant output text
+				if text, ok := itemMap["text"].(string); ok {
+					normalized.Messages = append(normalized.Messages, NormalizedMessage{
+						Role:       "assistant",
 						Content:    text,
 						TokenCount: estimateTokens(text),
 					})

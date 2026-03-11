@@ -502,3 +502,73 @@ func TestExtractFeatures(t *testing.T) {
 		})
 	}
 }
+
+// TestNormalizeOpenAIResponses_StructuredInput tests normalization of structured input items
+func TestNormalizeOpenAIResponses_StructuredInput(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       map[string]interface{}
+		wantMsgLen int
+		wantRoles  []string
+	}{
+		{
+			name: "input_text and output_text types",
+			body: map[string]interface{}{
+				"model": "gpt-4",
+				"input": []interface{}{
+					map[string]interface{}{"type": "input_text", "text": "Hello"},
+					map[string]interface{}{"type": "output_text", "text": "Hi there"},
+					map[string]interface{}{"type": "input_text", "text": "How are you?"},
+				},
+			},
+			wantMsgLen: 3,
+			wantRoles:  []string{"user", "assistant", "user"},
+		},
+		{
+			name: "mixed text and input_text types",
+			body: map[string]interface{}{
+				"model": "gpt-4",
+				"input": []interface{}{
+					map[string]interface{}{"type": "text", "text": "First message"},
+					map[string]interface{}{"type": "input_text", "text": "Second message"},
+				},
+			},
+			wantMsgLen: 2,
+			wantRoles:  []string{"user", "user"},
+		},
+		{
+			name: "image type",
+			body: map[string]interface{}{
+				"model": "gpt-4",
+				"input": []interface{}{
+					map[string]interface{}{"type": "input_text", "text": "Describe this image"},
+					map[string]interface{}{"type": "image", "source": "data:image/png;base64,..."},
+				},
+			},
+			wantMsgLen: 2,
+			wantRoles:  []string{"user", "user"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			normalized, err := NormalizeOpenAIResponses(tt.body)
+			if err != nil {
+				t.Fatalf("NormalizeOpenAIResponses() error = %v", err)
+			}
+
+			if len(normalized.Messages) != tt.wantMsgLen {
+				t.Errorf("Messages length = %d, want %d", len(normalized.Messages), tt.wantMsgLen)
+			}
+
+			for i, wantRole := range tt.wantRoles {
+				if i >= len(normalized.Messages) {
+					break
+				}
+				if normalized.Messages[i].Role != wantRole {
+					t.Errorf("Message[%d].Role = %s, want %s", i, normalized.Messages[i].Role, wantRole)
+				}
+			}
+		})
+	}
+}

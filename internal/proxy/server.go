@@ -443,9 +443,20 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// T035: Resolve routing decision (middleware > builtin classifier)
+	// Use longContext route's threshold if available, otherwise use profile threshold
 	threshold := defaultLongContextThreshold
 	if s.Routing != nil && s.Routing.LongContextThreshold > 0 {
 		threshold = s.Routing.LongContextThreshold
+	}
+
+	// Check if longContext route has a custom threshold
+	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
+		if longContextRoute, ok := s.Routing.ScenarioRoutes["longContext"]; ok {
+			if longContextRoute != nil && longContextRoute.LongContextThreshold != nil {
+				threshold = *longContextRoute.LongContextThreshold
+				s.Logger.Printf("[routing] using longContext route threshold: %d", threshold)
+			}
+		}
 	}
 
 	decision := ResolveRoutingDecision(
@@ -457,34 +468,6 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sessionID,
 		bodyMap,
 	)
-
-	// T046: Apply per-scenario long_context_threshold override
-	// After initial classification, check if the selected scenario has its own threshold
-	if s.Routing != nil && len(s.Routing.ScenarioRoutes) > 0 {
-		normalizedScenario := NormalizeScenarioKey(decision.Scenario)
-		var scenarioRoute *ScenarioProviders
-		if sp, ok := s.Routing.ScenarioRoutes[normalizedScenario]; ok {
-			scenarioRoute = sp
-		} else if sp, ok := s.Routing.ScenarioRoutes[decision.Scenario]; ok {
-			scenarioRoute = sp
-		}
-
-		// If scenario has its own threshold, re-evaluate longContext classification
-		if scenarioRoute != nil && scenarioRoute.LongContextThreshold != nil {
-			scenarioThreshold := *scenarioRoute.LongContextThreshold
-			// If features indicate this might be long context with the scenario-specific threshold
-			if features != nil && features.TotalTokens > scenarioThreshold {
-				// Override to longContext scenario if not already
-				if decision.Scenario != string(config.ScenarioLongContext) {
-					s.Logger.Printf("[routing] scenario=%s threshold=%d exceeded (tokens=%d), overriding to longContext",
-						decision.Scenario, scenarioThreshold, features.TotalTokens)
-					decision.Scenario = string(config.ScenarioLongContext)
-					decision.Reason = fmt.Sprintf("per-scenario threshold (%d) exceeded", scenarioThreshold)
-					decision.Confidence = 0.9
-				}
-			}
-		}
-	}
 
 	// T036: Log routing decision
 	s.Logger.Printf("[routing] scenario=%s, source=%s, reason=%s, confidence=%.2f",

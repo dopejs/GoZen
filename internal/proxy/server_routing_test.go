@@ -54,14 +54,23 @@ func TestFallbackToDefaultDisabled(t *testing.T) {
 
 // TestPerScenarioThreshold tests that per-scenario long_context_threshold overrides classification
 func TestPerScenarioThreshold(t *testing.T) {
-	// Create a scenario route with custom threshold
+	// Create a longContext route with custom threshold (1000)
+	// Other scenarios (like code) do NOT have custom thresholds
 	customThreshold := 1000
 	longcontextURL, _ := url.Parse("http://longcontext.example.com")
-	scenarioProviders := &ScenarioProviders{
+	longContextRoute := &ScenarioProviders{
 		Providers: []*Provider{
 			{Name: "longcontext-provider", BaseURL: longcontextURL},
 		},
 		LongContextThreshold: &customThreshold,
+	}
+
+	codeURL, _ := url.Parse("http://code.example.com")
+	codeRoute := &ScenarioProviders{
+		Providers: []*Provider{
+			{Name: "code-provider", BaseURL: codeURL},
+		},
+		// No custom threshold for code route
 	}
 
 	defaultURL, _ := url.Parse("http://default.example.com")
@@ -70,8 +79,8 @@ func TestPerScenarioThreshold(t *testing.T) {
 			{Name: "default-provider", BaseURL: defaultURL},
 		},
 		ScenarioRoutes: map[string]*ScenarioProviders{
-			"code":        scenarioProviders,
-			"longContext": scenarioProviders,
+			"code":        codeRoute,
+			"longContext": longContextRoute,
 		},
 		LongContextThreshold: 32000, // Profile-level threshold
 	}
@@ -79,8 +88,8 @@ func TestPerScenarioThreshold(t *testing.T) {
 	server := NewProxyServerWithRouting(routing, testLogger(), config.LoadBalanceFailover, nil)
 	server.Profile = "test-profile"
 
-	// Create a request with ~2000 tokens (exceeds scenario threshold of 1000, but not profile threshold of 32000)
-	// This should be classified as "code" initially, then overridden to "longContext"
+	// Create a request with ~2000 tokens (exceeds longContext route threshold of 1000, but not profile threshold of 32000)
+	// This should be classified as "longContext" because longContext route's threshold is used for classification
 	longContent := strings.Repeat("word ", 1000) // ~2000 tokens (each "word " is ~2 tokens)
 	reqBody := `{"model":"claude-opus-4","messages":[{"role":"user","content":"` + longContent + `"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(reqBody))
@@ -89,7 +98,7 @@ func TestPerScenarioThreshold(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.ServeHTTP(w, req)
 
-	// The request should be routed to longContext scenario due to per-scenario threshold
+	// The request should be routed to longContext scenario due to longContext route's threshold
 	// Since we don't have a real backend, we expect 502 (all providers failed)
 	// But the important part is that the routing decision was made correctly
 	if w.Code != http.StatusBadGateway && w.Code != http.StatusServiceUnavailable {

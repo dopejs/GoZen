@@ -1279,3 +1279,38 @@ func TestTransformResponsesAPIToOpenAIChat_ToolCall(t *testing.T) {
 		t.Error("should emit [DONE] sentinel")
 	}
 }
+
+func TestTransformResponsesAPIToOpenAIChat_NoDuplicateRoleChunk(t *testing.T) {
+	// When both response.created and response.in_progress arrive, only one
+	// assistant role chunk should be emitted.
+	input := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_dup1","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.in_progress`,
+		`data: {"type":"response.in_progress","response":{"id":"resp_dup1","status":"in_progress","model":"gpt-5","output":[]}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hi"}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","response":{"id":"resp_dup1","status":"completed","model":"gpt-5","output":[]}}`,
+		``,
+	}, "\n")
+
+	st := &StreamTransformer{
+		ClientFormat:   FormatOpenAIChat,
+		ProviderFormat: FormatOpenAIResponses,
+	}
+	reader := st.TransformSSEStream(strings.NewReader(input))
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Count how many times a role:assistant delta is emitted
+	roleCount := strings.Count(string(output), `"role":"assistant"`)
+	if roleCount != 1 {
+		t.Errorf("expected exactly 1 role:assistant chunk, got %d; output:\n%s", roleCount, string(output))
+	}
+}

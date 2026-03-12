@@ -1114,6 +1114,9 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 		headerSent bool
 	}
 	toolCalls := make(map[int]*toolMeta)
+	// Guard against duplicate role chunks when both response.created and
+	// response.in_progress arrive for the same stream.
+	roleSent := false
 
 	emitChunk := func(delta map[string]interface{}, finishReason interface{}) {
 		choice := map[string]interface{}{
@@ -1194,7 +1197,10 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 					model = m
 				}
 			}
-			emitChunk(map[string]interface{}{"role": "assistant", "content": ""}, nil)
+			if !roleSent {
+				roleSent = true
+				emitChunk(map[string]interface{}{"role": "assistant", "content": ""}, nil)
+			}
 
 		case "response.output_item.added":
 			// Capture function_call metadata so we can emit proper headers later.

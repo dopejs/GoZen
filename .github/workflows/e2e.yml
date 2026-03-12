@@ -2,6 +2,9 @@ name: E2E Tests
 
 # Run E2E tests separately from main CI to avoid blocking PRs with flaky tests
 # These tests may be unstable due to timing, process management, or runner environment
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   # Manual trigger
   workflow_dispatch:

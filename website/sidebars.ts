@@ -9,9 +9,23 @@ const sidebars: SidebarsConfig = {
     'bindings',
     'multi-cli',
     'web-ui',
-    'bot',
     'config',
     'config-sync',
+    {
+      type: 'category',
+      label: 'Features',
+      items: [
+        'usage-tracking',
+        'health-monitoring',
+        'load-balancing',
+        'webhooks',
+        'compression',
+        'middleware',
+        'agents',
+        'agent-infrastructure',
+        'bot',
+      ],
+    },
   ],
 };
 

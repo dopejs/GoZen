@@ -1,20 +1,20 @@
 ---
 sidebar_position: 13
-title: Webhooks
+title: Webhook
 ---
 
-# Webhooks
+# Webhook
 
-Slack, Discord 또는 사용자 정의 webhook을 통해 예산 경고, 제공자 상태 변경 및 일일 요약에 대한 실시간 알림을 받습니다.
+Slack, Discord 또는 사용자 정의 Webhook을 통해 예산 경고, 제공자 상태 변경 및 일일 요약에 대한 실시간 알림을 받습니다.
 
 ## 기능
 
 - **다양한 형식** — Slack, Discord 또는 일반 JSON
 - **이벤트 필터링** — 특정 이벤트 유형 구독
 - **사용자 정의 헤더** — 인증 또는 사용자 정의 헤더 추가
-- **비동기 전달** — 논블로킹 webhook 전달
+- **비동기 전달** — 논블로킹 Webhook 전달
 - **자동 포맷팅** — 이모지 및 색상이 포함된 풍부한 메시지
-- **테스트 기능** — 활성화 전 webhook 설정 검증
+- **테스트 기능** — 활성화 전 Webhook 설정 검증
 
 ## 설정
 
@@ -198,8 +198,8 @@ URL에 `discord.com`이 포함되어 있으면 자동으로 감지됩니다.
 1. [Slack API](https://api.slack.com/apps) 방문
 2. 새 앱 생성 또는 기존 앱 선택
 3. "Incoming Webhooks" 활성화
-4. 워크스페이스에 webhook 추가
-5. webhook URL 복사 (`https://hooks.slack.com/`으로 시작)
+4. 워크스페이스에 Webhook 추가
+5. Webhook URL 복사 (`https://hooks.slack.com/`으로 시작)
 
 **설정:**
 ```json
@@ -219,7 +219,7 @@ URL에 `discord.com`이 포함되어 있으면 자동으로 감지됩니다.
 1. Discord 서버 설정 열기
 2. Integrations → Webhooks로 이동
 3. "New Webhook" 클릭
-4. 채널 선택 및 webhook URL 복사
+4. 채널 선택 및 Webhook URL 복사
 
 **설정:**
 ```json
@@ -256,11 +256,11 @@ URL에 `discord.com`이 포함되어 있으면 자동으로 감지됩니다.
 
 ## Web UI 설정
 
-`http://localhost:19840/settings`에서 webhook 설정에 액세스:
+`http://localhost:19840/settings`에서 Webhook 설정에 액세스:
 
 1. "Webhooks" 탭으로 이동
 2. "Add Webhook" 클릭
-3. webhook URL 입력
+3. Webhook URL 입력
 4. 구독할 이벤트 선택
 5. (선택 사항) 사용자 정의 헤더 추가
 6. "Test" 클릭하여 설정 검증
@@ -352,28 +352,28 @@ POST /api/v1/webhooks/{id}/test
 
 ## 모범 사례
 
-1. **별도의 webhook 사용** — 다른 이벤트 유형에 대해 다른 webhook 생성
-2. **활성화 전 테스트** — 저장하기 전에 항상 webhook 설정 테스트
-3. **사용자 정의 webhook 보호** — HTTPS 및 인증 헤더 사용
-4. **webhook 실패 모니터링** — 알림이 중단되면 데몬 로그 확인
-5. **민감한 데이터 방지** — webhook URL에 API 키 또는 토큰 포함하지 않음
+1. **별도의 Webhook 사용** — 다른 이벤트 유형에 대해 다른 Webhook 생성
+2. **활성화 전 테스트** — 저장하기 전에 항상 Webhook 설정 테스트
+3. **사용자 정의 Webhook 보호** — HTTPS 및 인증 헤더 사용
+4. **Webhook 실패 모니터링** — 알림이 중단되면 데몬 로그 확인
+5. **민감한 데이터 방지** — Webhook URL에 API 키 또는 토큰 포함하지 않음
 6. **경고 설정** — `budget_exceeded` 및 `provider_down`과 같은 중요한 이벤트 구독
 
 ## 문제 해결
 
 ### Webhook이 메시지를 받지 못함
 
-1. 설정에서 webhook이 활성화되어 있는지 확인
+1. 설정에서 Webhook이 활성화되어 있는지 확인
 2. URL이 올바른지 확인 (curl로 테스트)
 3. 이벤트 설정이 올바른지 확인
-4. 데몬 로그에서 webhook 오류 확인: `tail -f ~/.zen/zend.log`
-5. API를 통해 webhook 테스트: `POST /api/v1/webhooks/{id}/test`
+4. 데몬 로그에서 Webhook 오류 확인: `tail -f ~/.zen/zend.log`
+5. API를 통해 Webhook 테스트: `POST /api/v1/webhooks/{id}/test`
 
-### Slack webhook 실패
+### Slack Webhook 실패
 
-1. webhook URL이 `https://hooks.slack.com/`으로 시작하는지 확인
-2. Slack 설정에서 webhook이 취소되지 않았는지 확인
-3. 워크스페이스에서 수신 webhook이 비활성화되지 않았는지 확인
+1. Webhook URL이 `https://hooks.slack.com/`으로 시작하는지 확인
+2. Slack 설정에서 Webhook이 취소되지 않았는지 확인
+3. 워크스페이스에서 수신 Webhook이 비활성화되지 않았는지 확인
 4. curl로 테스트:
    ```bash
    curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
@@ -381,10 +381,10 @@ POST /api/v1/webhooks/{id}/test
      -d '{"text":"test"}'
    ```
 
-### Discord webhook 실패
+### Discord Webhook 실패
 
-1. webhook URL이 `https://discord.com/api/webhooks/`로 시작하는지 확인
-2. Discord 설정에서 webhook이 삭제되지 않았는지 확인
+1. Webhook URL이 `https://discord.com/api/webhooks/`로 시작하는지 확인
+2. Discord 설정에서 Webhook이 삭제되지 않았는지 확인
 3. 봇이 채널에 게시할 권한이 있는지 확인
 4. curl로 테스트:
    ```bash
@@ -393,7 +393,7 @@ POST /api/v1/webhooks/{id}/test
      -d '{"content":"test"}'
    ```
 
-### 사용자 정의 webhook이 작동하지 않음
+### 사용자 정의 Webhook이 작동하지 않음
 
 1. 엔드포인트에 액세스할 수 있는지 확인 (curl로 테스트)
 2. 인증 헤더가 올바른지 확인
@@ -403,17 +403,17 @@ POST /api/v1/webhooks/{id}/test
 
 ## 보안 고려 사항
 
-1. **webhook URL 보호** — webhook URL을 기밀로 취급
-2. **HTTPS 사용** — webhook 엔드포인트에 항상 HTTPS 사용
-3. **서명 검증** — 사용자 정의 webhook에 대한 서명 검증 구현
-4. **속도 제한** — webhook 엔드포인트에 속도 제한 구현
-5. **민감한 데이터 로깅 금지** — 전체 webhook 페이로드 로깅 방지
+1. **Webhook URL 보호** — Webhook URL을 기밀로 취급
+2. **HTTPS 사용** — Webhook 엔드포인트에 항상 HTTPS 사용
+3. **서명 검증** — 사용자 정의 Webhook에 대한 서명 검증 구현
+4. **속도 제한** — Webhook 엔드포인트에 속도 제한 구현
+5. **민감한 데이터 로깅 금지** — 전체 Webhook 페이로드 로깅 방지
 
 ## 고급 설정
 
 ### 조건부 Webhook
 
-다른 이벤트를 다른 webhook으로 전송:
+다른 이벤트를 다른 Webhook으로 전송:
 
 ```json
 {

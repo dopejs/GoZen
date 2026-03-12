@@ -1,20 +1,20 @@
 ---
 sidebar_position: 13
-title: Webhooks
+title: Webhook
 ---
 
-# Webhooks
+# Webhook
 
-Slack、Discord、またはカスタムwebhookを通じて、予算アラート、プロバイダーステータス変更、日次サマリーのリアルタイム通知を受信します。
+Slack、Discord、またはカスタム Webhook を通じて、予算アラート、プロバイダーステータス変更、日次サマリーのリアルタイム通知を受信します。
 
 ## 機能
 
 - **複数のフォーマット** — Slack、Discord、または汎用JSON
 - **イベントフィルタリング** — 特定のイベントタイプを購読
 - **カスタムヘッダー** — 認証またはカスタムヘッダーを追加
-- **非同期配信** — ノンブロッキングwebhook配信
+- **非同期配信** — ノンブロッキングな Webhook 配信
 - **自動フォーマット** — 絵文字と色を使用したリッチメッセージ
-- **テスト機能** — 有効化前にwebhook設定を検証
+- **テスト機能** — 有効化前に Webhook 設定を検証
 
 ## 設定
 
@@ -198,8 +198,8 @@ URLに`discord.com`が含まれる場合、自動的に検出されます。
 1. [Slack API](https://api.slack.com/apps)にアクセス
 2. 新しいアプリを作成または既存のアプリを選択
 3. "Incoming Webhooks"を有効化
-4. ワークスペースにwebhookを追加
-5. webhook URLをコピー（`https://hooks.slack.com/`で始まる）
+4. ワークスペースに Webhook を追加
+5. Webhook URLをコピー（`https://hooks.slack.com/`で始まる）
 
 **設定：**
 ```json
@@ -219,7 +219,7 @@ URLに`discord.com`が含まれる場合、自動的に検出されます。
 1. Discordサーバー設定を開く
 2. Integrations → Webhooksに移動
 3. "New Webhook"をクリック
-4. チャンネルを選択してwebhook URLをコピー
+4. チャンネルを選択して Webhook URLをコピー
 
 **設定：**
 ```json
@@ -254,13 +254,13 @@ URLに`discord.com`が含まれる場合、自動的に検出されます。
 }
 ```
 
-## Web UI設定
+## Web UI 設定
 
-`http://localhost:19840/settings`でwebhook設定にアクセス：
+`http://localhost:19840/settings`で Webhook 設定にアクセス：
 
 1. "Webhooks"タブに移動
 2. "Add Webhook"をクリック
-3. webhook URLを入力
+3. Webhook URLを入力
 4. 購読するイベントを選択
 5. （オプション）カスタムヘッダーを追加
 6. "Test"をクリックして設定を検証
@@ -352,28 +352,28 @@ POST /api/v1/webhooks/{id}/test
 
 ## ベストプラクティス
 
-1. **個別のwebhookを使用** — 異なるイベントタイプに対して異なるwebhookを作成
-2. **有効化前にテスト** — 保存前に常にwebhook設定をテスト
-3. **カスタムwebhookを保護** — HTTPSと認証ヘッダーを使用
-4. **webhook失敗を監視** — 通知が停止した場合、デーモンログを確認
-5. **機密データを避ける** — webhook URLにAPIキーやトークンを含めない
+1. **個別の Webhook を使用** — 異なるイベントタイプに対して異なる Webhook を作成
+2. **有効化前にテスト** — 保存前に常に Webhook 設定をテスト
+3. **カスタム Webhook を保護** — HTTPSと認証ヘッダーを使用
+4. **Webhook 失敗を監視** — 通知が停止した場合、デーモンログを確認
+5. **機密データを避ける** — Webhook URLにAPIキーやトークンを含めない
 6. **アラートを設定** — `budget_exceeded`や`provider_down`などの重要なイベントを購読
 
 ## トラブルシューティング
 
 ### Webhookがメッセージを受信しない
 
-1. 設定でwebhookが有効化されていることを確認
+1. 設定で Webhook が有効化されていることを確認
 2. URLが正しいことを確認（curlでテスト）
 3. イベント設定が正しいことを確認
-4. デーモンログでwebhookエラーを確認：`tail -f ~/.zen/zend.log`
-5. API経由でwebhookをテスト：`POST /api/v1/webhooks/{id}/test`
+4. デーモンログで Webhook エラーを確認：`tail -f ~/.zen/zend.log`
+5. API 経由で Webhook をテスト：`POST /api/v1/webhooks/{id}/test`
 
-### Slack webhookが失敗する
+### Slack Webhook が失敗する
 
-1. webhook URLが`https://hooks.slack.com/`で始まることを確認
-2. Slack設定でwebhookが取り消されていないか確認
-3. ワークスペースが受信webhookを無効化していないことを確認
+1. Webhook URLが`https://hooks.slack.com/`で始まることを確認
+2. Slack設定で Webhook が取り消されていないか確認
+3. ワークスペースが受信 Webhook を無効化していないことを確認
 4. curlでテスト：
    ```bash
    curl -X POST https://hooks.slack.com/services/YOUR/WEBHOOK/URL \
@@ -381,10 +381,10 @@ POST /api/v1/webhooks/{id}/test
      -d '{"text":"test"}'
    ```
 
-### Discord webhookが失敗する
+### Discord Webhook が失敗する
 
-1. webhook URLが`https://discord.com/api/webhooks/`で始まることを確認
-2. Discord設定でwebhookが削除されていないか確認
+1. Webhook URLが`https://discord.com/api/webhooks/`で始まることを確認
+2. Discord設定で Webhook が削除されていないか確認
 3. Botがチャンネルに投稿する権限を持っていることを確認
 4. curlでテスト：
    ```bash
@@ -393,7 +393,7 @@ POST /api/v1/webhooks/{id}/test
      -d '{"content":"test"}'
    ```
 
-### カスタムwebhookが機能しない
+### カスタム Webhook が機能しない
 
 1. エンドポイントがアクセス可能であることを確認（curlでテスト）
 2. 認証ヘッダーが正しいことを確認
@@ -403,17 +403,17 @@ POST /api/v1/webhooks/{id}/test
 
 ## セキュリティ考慮事項
 
-1. **webhook URLを保護** — webhook URLを機密情報として扱う
-2. **HTTPSを使用** — webhookエンドポイントには常にHTTPSを使用
-3. **署名を検証** — カスタムwebhookに署名検証を実装
-4. **レート制限** — webhookエンドポイントにレート制限を実装
-5. **機密データをログに記録しない** — 完全なwebhookペイロードのログ記録を避ける
+1. **Webhook URLを保護** — Webhook URLを機密情報として扱う
+2. **HTTPSを使用** — Webhook エンドポイントには常にHTTPSを使用
+3. **署名を検証** — カスタム Webhook に署名検証を実装
+4. **レート制限** — Webhook エンドポイントにレート制限を実装
+5. **機密データをログに記録しない** — 完全な Webhook ペイロードのログ記録を避ける
 
 ## 高度な設定
 
 ### 条件付きWebhook
 
-異なるイベントを異なるwebhookに送信：
+異なるイベントを異なる Webhook に送信：
 
 ```json
 {

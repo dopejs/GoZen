@@ -46,11 +46,9 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          lastVersion: '3.0',
-          versions: {
-            '3.0': {label: 'v3.0', path: '/'},
-          },
-          onlyIncludeVersions: ['3.0'],
+          // Serve the unversioned "current" docs so Docusaurus uses the
+          // existing i18n/*/docusaurus-plugin-content-docs/current/* translations.
+          disableVersioning: true,
         },
         blog: false,
         theme: {

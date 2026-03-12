@@ -1210,6 +1210,14 @@ func TestTransformResponsesAPIToOpenAIChat_Text(t *testing.T) {
 	if !strings.Contains(result, `"chat.completion.chunk"`) {
 		t.Error("should emit chat.completion.chunk objects")
 	}
+	// id should be derived from response.id ("chatcmpl-resp_chat1")
+	if !strings.Contains(result, `chatcmpl-resp_chat1`) {
+		t.Errorf("should use id from response object, got: %s", result)
+	}
+	// model should come from response.model
+	if !strings.Contains(result, `"gpt-5"`) {
+		t.Errorf("should use model from response object, got: %s", result)
+	}
 	if !strings.Contains(result, `"Hello"`) {
 		t.Error("should include first delta text")
 	}
@@ -1229,11 +1237,17 @@ func TestTransformResponsesAPIToOpenAIChat_ToolCall(t *testing.T) {
 		`event: response.created`,
 		`data: {"type":"response.created","response":{"id":"resp_tc1","status":"in_progress","model":"gpt-5","output":[]}}`,
 		``,
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_abc","name":"get_weather"}}`,
+		``,
 		`event: response.function_call_arguments.delta`,
 		`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"{\"loc"}`,
 		``,
+		`event: response.function_call_arguments.delta`,
+		`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":0,"delta":"\":\"NYC\"}"}`,
+		``,
 		`event: response.completed`,
-		`data: {"type":"response.completed","response":{"id":"resp_tc1","status":"completed","model":"gpt-5","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"weather"}]}}`,
+		`data: {"type":"response.completed","response":{"id":"resp_tc1","status":"completed","model":"gpt-5","output":[{"type":"function_call","id":"fc_1","call_id":"call_abc","name":"get_weather"}]}}`,
 		``,
 	}, "\n")
 
@@ -1251,7 +1265,17 @@ func TestTransformResponsesAPIToOpenAIChat_ToolCall(t *testing.T) {
 	if !strings.Contains(result, `"tool_calls"`) {
 		t.Error("should emit tool_calls delta")
 	}
+	// First delta should include call_id and function name
+	if !strings.Contains(result, `"call_abc"`) {
+		t.Errorf("should include tool call id from output_item.added, got: %s", result)
+	}
+	if !strings.Contains(result, `"get_weather"`) {
+		t.Errorf("should include function name from output_item.added, got: %s", result)
+	}
 	if !strings.Contains(result, `"tool_calls"`) || !strings.Contains(result, `"finish_reason"`) {
 		t.Error("should emit finish chunk with tool_calls finish_reason")
+	}
+	if !strings.Contains(result, "data: [DONE]") {
+		t.Error("should emit [DONE] sentinel")
 	}
 }

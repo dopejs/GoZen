@@ -1937,7 +1937,7 @@ func (e *sseUsageExtractor) processChunk(data []byte) {
 		evType, _ := ev["type"].(string)
 		switch evType {
 		case "message_start":
-			// {"type":"message_start","message":{"usage":{"input_tokens":N}}}
+			// Anthropic: {"type":"message_start","message":{"usage":{"input_tokens":N}}}
 			if msg, ok := ev["message"].(map[string]interface{}); ok {
 				if u, ok := msg["usage"].(map[string]interface{}); ok {
 					if v, ok := u["input_tokens"].(float64); ok {
@@ -1946,10 +1946,35 @@ func (e *sseUsageExtractor) processChunk(data []byte) {
 				}
 			}
 		case "message_delta":
-			// {"type":"message_delta","usage":{"output_tokens":N}}
+			// Anthropic: {"type":"message_delta","usage":{"output_tokens":N}}
 			if u, ok := ev["usage"].(map[string]interface{}); ok {
 				if v, ok := u["output_tokens"].(float64); ok {
 					e.outputTok += int(v)
+				}
+			}
+		case "response.completed":
+			// Responses API: {"type":"response.completed","response":{"usage":{...}}}
+			if resp, ok := ev["response"].(map[string]interface{}); ok {
+				if u, ok := resp["usage"].(map[string]interface{}); ok {
+					if v, ok := u["input_tokens"].(float64); ok {
+						e.inputTok += int(v)
+					}
+					if v, ok := u["output_tokens"].(float64); ok {
+						e.outputTok += int(v)
+					}
+				}
+			}
+		default:
+			// OpenAI Chat Completions chunks have no "type" field; usage appears
+			// in the final chunk as top-level {"usage":{"prompt_tokens":N,"completion_tokens":M}}.
+			if evType == "" {
+				if u, ok := ev["usage"].(map[string]interface{}); ok {
+					if v, ok := u["prompt_tokens"].(float64); ok {
+						e.inputTok += int(v)
+					}
+					if v, ok := u["completion_tokens"].(float64); ok {
+						e.outputTok += int(v)
+					}
 				}
 			}
 		}

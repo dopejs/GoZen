@@ -1101,10 +1101,19 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 
 	var currentEvent string
 	var dataBuffer bytes.Buffer
-	// Use a deterministic ID prefix; real responses will come from the event data.
+	// Fallback ID; overwritten from the first response.created event.
 	completionID := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
 	model := st.Model
 	created := time.Now().Unix()
+
+	// Per-tool-call metadata captured from response.output_item.added.
+	// Key = output_index (int), value = {callID, name, headerSent}.
+	type toolMeta struct {
+		callID     string
+		name       string
+		headerSent bool
+	}
+	toolCalls := make(map[int]*toolMeta)
 
 	emitChunk := func(delta map[string]interface{}, finishReason interface{}) {
 		choice := map[string]interface{}{
@@ -1124,6 +1133,27 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 			return
 		}
 		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+
+	processCompleted := func(eventData map[string]interface{}) {
+		finishReason := "stop"
+		if resp, ok := eventData["response"].(map[string]interface{}); ok {
+			if status, ok := resp["status"].(string); ok && status == "incomplete" {
+				finishReason = "length"
+			}
+			if output, ok := resp["output"].([]interface{}); ok {
+				for _, item := range output {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						if itemMap["type"] == "function_call" {
+							finishReason = "tool_calls"
+							break
+						}
+					}
+				}
+			}
+		}
+		emitChunk(map[string]interface{}{}, finishReason)
+		fmt.Fprintf(w, "data: [DONE]\n\n")
 	}
 
 	for scanner.Scan() {
@@ -1155,14 +1185,31 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 
 		switch currentEvent {
 		case "response.created", "response.in_progress":
-			// Emit role delta at stream start
-			if id, ok := eventData["id"].(string); ok {
-				completionID = "chatcmpl-" + id
-			}
-			if m, ok := eventData["model"].(string); ok {
-				model = m
+			// id and model are inside the nested "response" object
+			if resp, ok := eventData["response"].(map[string]interface{}); ok {
+				if id, ok := resp["id"].(string); ok {
+					completionID = "chatcmpl-" + id
+				}
+				if m, ok := resp["model"].(string); ok {
+					model = m
+				}
 			}
 			emitChunk(map[string]interface{}{"role": "assistant", "content": ""}, nil)
+
+		case "response.output_item.added":
+			// Capture function_call metadata so we can emit proper headers later.
+			if item, ok := eventData["item"].(map[string]interface{}); ok {
+				if item["type"] == "function_call" {
+					idx := 0
+					if v, ok := eventData["output_index"].(float64); ok {
+						idx = int(v)
+					}
+					toolCalls[idx] = &toolMeta{
+						callID: fmt.Sprintf("%v", item["call_id"]),
+						name:   fmt.Sprintf("%v", item["name"]),
+					}
+				}
+			}
 
 		case "response.output_text.delta":
 			if delta, ok := eventData["delta"].(string); ok && delta != "" {
@@ -1170,12 +1217,40 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 			}
 
 		case "response.function_call_arguments.delta":
-			// Streaming tool call arguments
-			if delta, ok := eventData["delta"].(string); ok && delta != "" {
+			idx := 0
+			if v, ok := eventData["output_index"].(float64); ok {
+				idx = int(v)
+			}
+			delta, _ := eventData["delta"].(string)
+
+			tc := toolCalls[idx]
+			if tc == nil {
+				tc = &toolMeta{}
+				toolCalls[idx] = tc
+			}
+
+			if !tc.headerSent {
+				// First delta for this tool call: emit id, type, function.name
+				tc.headerSent = true
 				emitChunk(map[string]interface{}{
 					"tool_calls": []interface{}{
 						map[string]interface{}{
-							"index": 0,
+							"index": idx,
+							"id":    tc.callID,
+							"type":  "function",
+							"function": map[string]interface{}{
+								"name":      tc.name,
+								"arguments": delta,
+							},
+						},
+					},
+				}, nil)
+			} else if delta != "" {
+				// Subsequent deltas: arguments only
+				emitChunk(map[string]interface{}{
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"index": idx,
 							"function": map[string]interface{}{
 								"arguments": delta,
 							},
@@ -1185,26 +1260,7 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 			}
 
 		case "response.completed":
-			// Determine finish reason from completed response
-			finishReason := "stop"
-			if resp, ok := eventData["response"].(map[string]interface{}); ok {
-				if status, ok := resp["status"].(string); ok && status == "incomplete" {
-					finishReason = "length"
-				}
-				// Check for tool use in output
-				if output, ok := resp["output"].([]interface{}); ok {
-					for _, item := range output {
-						if itemMap, ok := item.(map[string]interface{}); ok {
-							if itemMap["type"] == "function_call" {
-								finishReason = "tool_calls"
-								break
-							}
-						}
-					}
-				}
-			}
-			emitChunk(map[string]interface{}{}, finishReason)
-			fmt.Fprintf(w, "data: [DONE]\n\n")
+			processCompleted(eventData)
 		}
 
 		currentEvent = ""
@@ -1214,24 +1270,7 @@ func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io
 	if dataBuffer.Len() > 0 && currentEvent == "response.completed" {
 		var eventData map[string]interface{}
 		if json.Unmarshal(dataBuffer.Bytes(), &eventData) == nil {
-			finishReason := "stop"
-			if resp, ok := eventData["response"].(map[string]interface{}); ok {
-				if status, ok := resp["status"].(string); ok && status == "incomplete" {
-					finishReason = "length"
-				}
-				if output, ok := resp["output"].([]interface{}); ok {
-					for _, item := range output {
-						if itemMap, ok := item.(map[string]interface{}); ok {
-							if itemMap["type"] == "function_call" {
-								finishReason = "tool_calls"
-								break
-							}
-						}
-					}
-				}
-			}
-			emitChunk(map[string]interface{}{}, finishReason)
-			fmt.Fprintf(w, "data: [DONE]\n\n")
+			processCompleted(eventData)
 		}
 	}
 

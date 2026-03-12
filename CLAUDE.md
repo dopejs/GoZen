@@ -146,6 +146,7 @@ Background (Light): `#f8fafc` → `#ffffff` → `#f1f5f9` → `#e2e8f0`
 - v1.5.3: Per-binary PID files to avoid multi-binary conflicts
 - v2.0.0: Rename to GoZen (opencc → zen), config migration from ~/.opencc/ to ~/.zen/, non-blocking version update check
 - v3.0.0: Usage tracking & budget control, provider health monitoring, smart load balancing, webhooks, context compression, middleware pipeline, agent infrastructure
+- v3.0.1: Scenario routing redesign (protocol-agnostic normalization, per-scenario RoutePolicy), proxy transform correctness (streaming id/model/tool_calls, multi-format SSE usage tracking)
 
 ## Active Technologies
 - Go 1.21+ + `net/http`, `net/url`, `golang.org/x/net/proxy` (for SOCKS5) (001-provider-proxy)

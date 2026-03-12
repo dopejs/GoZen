@@ -165,6 +165,94 @@ func (ldb *LogDB) GetAllProviderMetrics(since time.Time) (map[string]*ProviderMe
 	return result, nil
 }
 
+// GetProviderLatencyMetrics returns latency metrics for all providers within a time window,
+// limiting to the last N requests per provider and excluding providers with < 10 samples.
+func (ldb *LogDB) GetProviderLatencyMetrics(since time.Time, limit int) (map[string]*ProviderMetrics, error) {
+	if ldb == nil || ldb.db == nil {
+		return make(map[string]*ProviderMetrics), nil
+	}
+
+	if limit <= 0 {
+		return make(map[string]*ProviderMetrics), nil
+	}
+
+	result := make(map[string]*ProviderMetrics)
+
+	// First, get all providers from provider_metrics table
+	sinceStr := since.Format(time.RFC3339Nano)
+	providerRows, err := ldb.db.Query(`
+		SELECT DISTINCT provider
+		FROM provider_metrics
+		WHERE timestamp >= ? AND provider != ''
+		ORDER BY provider
+	`, sinceStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var providers []string
+	for providerRows.Next() {
+		var p string
+		if err := providerRows.Scan(&p); err != nil {
+			continue
+		}
+		providers = append(providers, p)
+	}
+	providerRows.Close()
+
+	// Query each provider separately to enforce per-provider limit
+	for _, provider := range providers {
+		rows, err := ldb.db.Query(`
+			SELECT
+				COUNT(*),
+				SUM(CASE WHEN is_error = 0 THEN 1 ELSE 0 END),
+				SUM(CASE WHEN is_error = 1 THEN 1 ELSE 0 END),
+				SUM(CASE WHEN is_rate_limit = 1 THEN 1 ELSE 0 END),
+				COALESCE(AVG(latency_ms), 0),
+				COALESCE(MIN(latency_ms), 0),
+				COALESCE(MAX(latency_ms), 0)
+			FROM (
+				SELECT latency_ms, is_error, is_rate_limit
+				FROM provider_metrics
+				WHERE provider = ? AND timestamp >= ?
+				ORDER BY timestamp DESC
+				LIMIT ?
+			)
+		`, provider, sinceStr, limit)
+		if err != nil {
+			continue
+		}
+
+		var m ProviderMetrics
+		m.Provider = provider
+		if rows.Next() {
+			if err := rows.Scan(
+				&m.TotalRequests,
+				&m.SuccessCount,
+				&m.ErrorCount,
+				&m.RateLimitCount,
+				&m.AvgLatencyMs,
+				&m.MinLatencyMs,
+				&m.MaxLatencyMs,
+			); err != nil {
+				rows.Close()
+				continue
+			}
+		}
+		rows.Close()
+
+		// Only include providers with >= 10 samples
+		if m.TotalRequests >= 10 {
+			if m.TotalRequests > 0 {
+				m.SuccessRate = float64(m.SuccessCount) / float64(m.TotalRequests) * 100
+			}
+			result[m.Provider] = &m
+		}
+	}
+
+	return result, nil
+}
+
 // GetLatencyHistory returns latency data points for a provider (for charts).
 func (ldb *LogDB) GetLatencyHistory(provider string, since time.Time, bucketMinutes int) ([]LatencyPoint, error) {
 	if ldb == nil || ldb.db == nil {

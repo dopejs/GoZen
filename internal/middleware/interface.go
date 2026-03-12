@@ -58,6 +58,22 @@ type RequestContext struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 
+	// Routing fields (added in v3.0.1 for scenario routing)
+	// RequestFormat is the detected API protocol ("anthropic", "openai_chat", "openai_responses")
+	RequestFormat string `json:"request_format,omitempty"`
+
+	// NormalizedRequest contains the protocol-agnostic request representation
+	// Actual type: *proxy.NormalizedRequest (interface{} to avoid circular dependency)
+	NormalizedRequest interface{} `json:"-"`
+
+	// RoutingDecision is the explicit routing choice (binding, overrides builtin classifier)
+	// Actual type: *proxy.RoutingDecision (interface{} to avoid circular dependency)
+	RoutingDecision interface{} `json:"-"`
+
+	// RoutingHints provides non-binding routing suggestions
+	// Actual type: *proxy.RoutingHints (interface{} to avoid circular dependency)
+	RoutingHints interface{} `json:"-"`
+
 	// Middleware can store data here for use in ProcessResponse
 	Metadata map[string]interface{} `json:"metadata"`
 }

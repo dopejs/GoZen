@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "retro": {
+      "version": "1.0.2",
+      "source": "local",
+      "manifest_hash": "sha256:07a038a57aa8125331ff346c2562976a1f7be5a3f0d6f041c8c4b72fd1ae426e",
+      "enabled": true,
+      "registered_commands": {
+        "claude": [
+          "speckit.retro.analyze",
+          "speckit.retro"
+        ],
+        "copilot": [
+          "speckit.retro.analyze",
+          "speckit.retro"
+        ]
+      },
+      "installed_at": "2026-03-10T11:02:55.438106+00:00"
+    }
+  }
+}

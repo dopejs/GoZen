@@ -1,0 +1,29 @@
+schema_version: "1.0"
+
+extension:
+  id: retro
+  name: Spec Retrospective & Self-Improvement
+  version: 1.0.2
+  description: Analyze completed specs to extract shared constraints and improve constitution, templates, and checklists through self-improvement
+  author: John
+  repository: https://github.com/dopejs/speckit-retro-extension
+  license: MIT
+
+requires:
+  speckit_version: ">=0.1.0"
+
+provides:
+  commands:
+    - name: speckit.retro.analyze
+      file: commands/analyze.md
+      description: Perform retrospective analysis on completed specs to extract patterns and propose improvements
+      aliases:
+        - speckit.retro
+
+tags:
+  - retrospective
+  - self-improvement
+  - constitution
+  - quality
+  - patterns
+  - governance

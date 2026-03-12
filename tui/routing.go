@@ -17,12 +17,12 @@ type switchToRoutingMsg struct {
 // switchToScenarioEditMsg triggers opening a specific scenario editor from fallback.
 type switchToScenarioEditMsg struct {
 	profile  string
-	scenario config.Scenario
+	scenario string
 }
 
 // scenarioEntry represents one scenario row in the routing editor.
 type scenarioEntry struct {
-	scenario   config.Scenario
+	scenario   string
 	label      string
 	configured bool // has an existing route
 }
@@ -41,7 +41,7 @@ type routingModel struct {
 
 // scenarioEditModel edits a single scenario's providers and per-provider models.
 type scenarioEditModel struct {
-	scenario        config.Scenario
+	scenario        string
 	allProviders    []string
 	order           []string          // selected providers for this scenario
 	providerModels  map[string]string // provider name → model override
@@ -53,15 +53,15 @@ type scenarioEditModel struct {
 }
 
 var knownScenarios = []struct {
-	scenario config.Scenario
+	scenario string
 	label    string
 }{
-	{config.ScenarioWebSearch, "webSearch   (requests with web_search tools)"},
-	{config.ScenarioThink, "think       (thinking mode requests)"},
-	{config.ScenarioImage, "image       (requests with images)"},
-	{config.ScenarioLongContext, "longContext (exceeds threshold)"},
-	{config.ScenarioCode, "code        (regular coding requests)"},
-	{config.ScenarioBackground, "background  (haiku model requests)"},
+	{string(config.ScenarioWebSearch), "webSearch   (requests with web_search tools)"},
+	{string(config.ScenarioThink), "think       (thinking mode requests)"},
+	{string(config.ScenarioImage), "image       (requests with images)"},
+	{string(config.ScenarioLongContext), "longContext (exceeds threshold)"},
+	{string(config.ScenarioCode), "code        (regular coding requests)"},
+	{string(config.ScenarioBackground), "background  (haiku model requests)"},
 }
 
 func newRoutingModel(profile string) routingModel {
@@ -73,7 +73,7 @@ func newRoutingModel(profile string) routingModel {
 type routingLoadedMsg struct {
 	scenarios    []scenarioEntry
 	allProviders []string
-	routing      map[config.Scenario]*config.ScenarioRoute
+	routing      map[string]*config.RoutePolicy
 }
 
 func (m routingModel) init() tea.Cmd {
@@ -82,16 +82,20 @@ func (m routingModel) init() tea.Cmd {
 		pc := config.GetProfileConfig(profile)
 		allProviders := config.ProviderNames()
 
-		var routing map[config.Scenario]*config.ScenarioRoute
+		var routing map[string]*config.RoutePolicy
 		if pc != nil {
 			routing = pc.Routing
 		}
 
+		// T086: Support custom scenario keys
 		var scenarios []scenarioEntry
+
+		// First, add all known builtin scenarios
+		knownScenarioMap := make(map[string]bool)
 		for _, ks := range knownScenarios {
 			configured := false
 			if routing != nil {
-				if _, ok := routing[ks.scenario]; ok {
+				if _, ok := routing[string(ks.scenario)]; ok {
 					configured = true
 				}
 			}
@@ -100,6 +104,21 @@ func (m routingModel) init() tea.Cmd {
 				label:      ks.label,
 				configured: configured,
 			})
+			knownScenarioMap[ks.scenario] = true
+		}
+
+		// Then, add any custom scenarios from routing config
+		if routing != nil {
+			for scenarioKey := range routing {
+				if !knownScenarioMap[scenarioKey] {
+					// Custom scenario - add it to the list
+					scenarios = append(scenarios, scenarioEntry{
+						scenario:   scenarioKey,
+						label:      scenarioKey + "     (custom scenario)",
+						configured: true,
+					})
+				}
+			}
 		}
 
 		return routingLoadedMsg{
@@ -159,7 +178,7 @@ func (m routingModel) handleKey(msg tea.KeyMsg) (routingModel, tea.Cmd) {
 			s := m.scenarios[m.cursor]
 			pc := config.GetProfileConfig(m.profile)
 			if pc != nil && pc.Routing != nil {
-				delete(pc.Routing, s.scenario)
+				delete(pc.Routing, string(s.scenario))
 				if len(pc.Routing) == 0 {
 					pc.Routing = nil
 				}
@@ -271,12 +290,12 @@ func (m *routingModel) saveScenarioRoute() {
 		pc = &config.ProfileConfig{Providers: []string{}}
 	}
 	if pc.Routing == nil {
-		pc.Routing = make(map[config.Scenario]*config.ScenarioRoute)
+		pc.Routing = make(map[string]*config.RoutePolicy)
 	}
 
 	if len(em.order) == 0 {
 		// No providers selected — remove the route
-		delete(pc.Routing, em.scenario)
+		delete(pc.Routing, string(em.scenario))
 		if len(pc.Routing) == 0 {
 			pc.Routing = nil
 		}
@@ -291,14 +310,14 @@ func (m *routingModel) saveScenarioRoute() {
 			}
 			providerRoutes = append(providerRoutes, pr)
 		}
-		pc.Routing[em.scenario] = &config.ScenarioRoute{
+		pc.Routing[string(em.scenario)] = &config.RoutePolicy{
 			Providers: providerRoutes,
 		}
 	}
 	config.SetProfileConfig(m.profile, pc)
 }
 
-func newScenarioEditModel(scenario config.Scenario, allProviders []string, profile string) scenarioEditModel {
+func newScenarioEditModel(scenario string, allProviders []string, profile string) scenarioEditModel {
 	em := scenarioEditModel{
 		scenario:       scenario,
 		allProviders:   allProviders,
@@ -308,7 +327,7 @@ func newScenarioEditModel(scenario config.Scenario, allProviders []string, profi
 	// Load existing route data
 	pc := config.GetProfileConfig(profile)
 	if pc != nil && pc.Routing != nil {
-		if route, ok := pc.Routing[scenario]; ok {
+		if route, ok := pc.Routing[string(scenario)]; ok {
 			em.order = route.ProviderNames()
 			for _, pr := range route.Providers {
 				if pr.Model != "" {
@@ -608,11 +627,11 @@ func (w *scenarioEditWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				pc = &config.ProfileConfig{Providers: []string{}}
 			}
 			if pc.Routing == nil {
-				pc.Routing = make(map[config.Scenario]*config.ScenarioRoute)
+				pc.Routing = make(map[string]*config.RoutePolicy)
 			}
 
 			if len(w.edit.order) == 0 {
-				delete(pc.Routing, w.edit.scenario)
+				delete(pc.Routing, string(w.edit.scenario))
 				if len(pc.Routing) == 0 {
 					pc.Routing = nil
 				}
@@ -627,7 +646,7 @@ func (w *scenarioEditWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					providerRoutes = append(providerRoutes, pr)
 				}
-				pc.Routing[w.edit.scenario] = &config.ScenarioRoute{
+				pc.Routing[string(w.edit.scenario)] = &config.RoutePolicy{
 					Providers: providerRoutes,
 				}
 			}

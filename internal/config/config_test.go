@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +17,20 @@ func setTestHome(t *testing.T) string {
 	t.Cleanup(func() { ResetDefaultStore() })
 	return dir
 }
+
+// ensureProviders creates stub providers so that profile configs referencing them pass validation.
+func ensureProviders(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if err := DefaultStore().SetProvider(name, &ProviderConfig{
+			BaseURL:   "https://stub.example.com",
+			AuthToken: "stub-token",
+		}); err != nil {
+			t.Fatalf("ensureProviders: failed to create provider %q: %v", name, err)
+		}
+	}
+}
+
 
 func TestConfigVersion(t *testing.T) {
 	home := setTestHome(t)
@@ -151,8 +166,8 @@ func TestConfigMigrationV11ToV12(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if cfg.Version != 14 {
-		t.Errorf("version after migration = %d, want 14", cfg.Version)
+	if cfg.Version != 15 {
+		t.Errorf("version after migration = %d, want 15", cfg.Version)
 	}
 
 	// Verify new fields exist with default values (nil/empty)
@@ -567,6 +582,7 @@ func TestReadWriteFallbackOrder(t *testing.T) {
 	setTestHome(t)
 
 	names := []string{"yunyi", "cctq", "minimax"}
+	ensureProviders(t, names...)
 	if err := WriteFallbackOrder(names); err != nil {
 		t.Fatalf("WriteFallbackOrder() error: %v", err)
 	}
@@ -618,6 +634,7 @@ func TestWriteFallbackOrderCreatesDir(t *testing.T) {
 	ResetDefaultStore()
 	t.Cleanup(func() { ResetDefaultStore() })
 
+	ensureProviders(t, "a")
 	if err := WriteFallbackOrder([]string{"a"}); err != nil {
 		t.Fatalf("WriteFallbackOrder() error: %v", err)
 	}
@@ -644,6 +661,7 @@ func TestWriteFallbackOrderErrorBadDir(t *testing.T) {
 
 func TestRemoveFromFallbackOrder(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("b"); err != nil {
@@ -666,6 +684,7 @@ func TestRemoveFromFallbackOrderMissingProfile(t *testing.T) {
 
 func TestRemoveFromFallbackOrderNotPresent(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b")
 	WriteFallbackOrder([]string{"a", "b"})
 
 	if err := RemoveFromFallbackOrder("z"); err != nil {
@@ -680,6 +699,7 @@ func TestRemoveFromFallbackOrderNotPresent(t *testing.T) {
 
 func TestRemoveFromFallbackOrderFirst(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("a"); err != nil {
@@ -694,6 +714,7 @@ func TestRemoveFromFallbackOrderFirst(t *testing.T) {
 
 func TestRemoveFromFallbackOrderLast(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "c"})
 
 	if err := RemoveFromFallbackOrder("c"); err != nil {
@@ -708,6 +729,7 @@ func TestRemoveFromFallbackOrderLast(t *testing.T) {
 
 func TestRemoveFromFallbackOrderOnlyItem(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "solo")
 	WriteFallbackOrder([]string{"solo"})
 
 	if err := RemoveFromFallbackOrder("solo"); err != nil {
@@ -722,6 +744,7 @@ func TestRemoveFromFallbackOrderOnlyItem(t *testing.T) {
 
 func TestRemoveFromFallbackOrderDuplicates(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 	WriteFallbackOrder([]string{"a", "b", "a", "c"})
 
 	if err := RemoveFromFallbackOrder("a"); err != nil {
@@ -740,6 +763,9 @@ func TestReadWriteProfileOrder(t *testing.T) {
 	setTestHome(t)
 
 	names := []string{"p1", "p2"}
+	ensureProviders(t, names...)
+	// Create default profile required by validation
+	WriteProfileOrder(DefaultProfileName, names)
 	if err := WriteProfileOrder("work", names); err != nil {
 		t.Fatalf("WriteProfileOrder() error: %v", err)
 	}
@@ -752,15 +778,19 @@ func TestReadWriteProfileOrder(t *testing.T) {
 		t.Errorf("got %v, want [p1 p2]", got)
 	}
 
-	// Default profile should be unaffected
-	_, err = ReadProfileOrder("default")
-	if err == nil {
-		t.Error("expected error for missing default profile")
+	// Default profile should have the names set earlier
+	defaultGot, err := ReadProfileOrder("default")
+	if err != nil {
+		t.Fatalf("ReadProfileOrder(default) error: %v", err)
+	}
+	if len(defaultGot) != 2 {
+		t.Errorf("default profile providers = %v, want 2 items", defaultGot)
 	}
 }
 
 func TestListProfiles(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
 
 	WriteProfileOrder("default", []string{"a"})
 	WriteProfileOrder("work", []string{"b"})
@@ -827,6 +857,8 @@ func TestDeleteProfileEmpty(t *testing.T) {
 
 func TestRemoveFromProfileOrder(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "a", "b", "c")
+	WriteProfileOrder(DefaultProfileName, []string{"a"})
 	WriteProfileOrder("work", []string{"a", "b", "c"})
 
 	if err := RemoveFromProfileOrder("work", "b"); err != nil {
@@ -966,8 +998,15 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 	data := []byte(`{
 		"providers": ["a", "b"],
 		"routing": {
-			"think": {"providers": ["b", "a"], "model": "claude-opus-4-5"},
-			"image": {"providers": ["a"]}
+			"think": {
+				"providers": [
+					{"name": "b", "model": "claude-opus-4-5"},
+					{"name": "a"}
+				]
+			},
+			"image": {
+				"providers": [{"name": "a"}]
+			}
 		}
 	}`)
 	var pc ProfileConfig
@@ -984,7 +1023,7 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 		t.Fatalf("expected 2 routing entries, got %d", len(pc.Routing))
 	}
 
-	thinkRoute := pc.Routing[ScenarioThink]
+	thinkRoute := pc.Routing[string(ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -995,7 +1034,7 @@ func TestProfileConfigUnmarshalNewFormat(t *testing.T) {
 		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
-	imageRoute := pc.Routing[ScenarioImage]
+	imageRoute := pc.Routing[string(ScenarioImage)]
 	if imageRoute == nil {
 		t.Fatal("image route should exist")
 	}
@@ -1024,14 +1063,14 @@ func TestProfileConfigUnmarshalNewFormatNoRouting(t *testing.T) {
 func TestProfileConfigRoundTrip(t *testing.T) {
 	original := ProfileConfig{
 		Providers: []string{"a", "b", "c"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {
 				Providers: []*ProviderRoute{
 					{Name: "c", Model: "claude-opus-4-5"},
 					{Name: "a"},
 				},
 			},
-			ScenarioLongContext: {
+			string(ScenarioLongContext): {
 				Providers: []*ProviderRoute{
 					{Name: "b"},
 				},
@@ -1062,7 +1101,7 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 		t.Fatalf("routing count: got %d, want 2", len(restored.Routing))
 	}
 
-	thinkRoute := restored.Routing[ScenarioThink]
+	thinkRoute := restored.Routing[string(ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -1073,7 +1112,7 @@ func TestProfileConfigRoundTrip(t *testing.T) {
 		t.Errorf("think model = %q", thinkRoute.Providers[0].Model)
 	}
 
-	lcRoute := restored.Routing[ScenarioLongContext]
+	lcRoute := restored.Routing[string(ScenarioLongContext)]
 	if lcRoute == nil || len(lcRoute.Providers) != 1 || lcRoute.Providers[0].Name != "b" {
 		t.Errorf("longContext route not properly round-tripped")
 	}
@@ -1107,12 +1146,14 @@ func TestProfileConfigRoundTripOldFormat(t *testing.T) {
 
 func TestFullConfigRoundTrip(t *testing.T) {
 	setTestHome(t)
+	ensureProviders(t, "p1", "p2")
+	SetProfileConfig(DefaultProfileName, &ProfileConfig{Providers: []string{"p1"}})
 
 	// Write config with routing
 	pc := &ProfileConfig{
 		Providers: []string{"p1", "p2"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []*ProviderRoute{{Name: "p2", Model: "model-x"}}},
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {Providers: []*ProviderRoute{{Name: "p2", Model: "model-x"}}},
 		},
 	}
 	if err := SetProfileConfig("myprofile", pc); err != nil {
@@ -1127,11 +1168,11 @@ func TestFullConfigRoundTrip(t *testing.T) {
 	if len(got.Providers) != 2 {
 		t.Errorf("providers count = %d", len(got.Providers))
 	}
-	if got.Routing == nil || got.Routing[ScenarioThink] == nil {
+	if got.Routing == nil || got.Routing[string(ScenarioThink)] == nil {
 		t.Fatal("routing not preserved")
 	}
-	if got.Routing[ScenarioThink].Providers[0].Model != "model-x" {
-		t.Errorf("model = %q", got.Routing[ScenarioThink].Providers[0].Model)
+	if got.Routing[string(ScenarioThink)].Providers[0].Model != "model-x" {
+		t.Errorf("model = %q", got.Routing[string(ScenarioThink)].Providers[0].Model)
 	}
 }
 
@@ -1145,9 +1186,9 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 
 	pc := &ProfileConfig{
 		Providers: []string{"a", "b"},
-		Routing: map[Scenario]*ScenarioRoute{
-			ScenarioThink: {Providers: []*ProviderRoute{{Name: "a", Model: "m1"}, {Name: "b", Model: "m1"}}},
-			ScenarioImage: {Providers: []*ProviderRoute{{Name: "a"}}},
+		Routing: map[string]*RoutePolicy{
+			string(ScenarioThink): {Providers: []*ProviderRoute{{Name: "a", Model: "m1"}, {Name: "b", Model: "m1"}}},
+			string(ScenarioImage): {Providers: []*ProviderRoute{{Name: "a"}}},
 		},
 	}
 	SetProfileConfig("default", pc)
@@ -1170,7 +1211,7 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 
 	// Check routing
 	if got.Routing != nil {
-		if think := got.Routing[ScenarioThink]; think != nil {
+		if think := got.Routing[string(ScenarioThink)]; think != nil {
 			for _, p := range think.Providers {
 				if p.Name == "a" {
 					t.Error("provider 'a' should have been removed from think route")
@@ -1181,7 +1222,7 @@ func TestDeleteProviderCascadeRouting(t *testing.T) {
 			}
 		}
 		// image route had only "a" — should be removed entirely
-		if image := got.Routing[ScenarioImage]; image != nil {
+		if image := got.Routing[string(ScenarioImage)]; image != nil {
 			t.Error("image route should have been removed (no providers left)")
 		}
 	}
@@ -1312,6 +1353,9 @@ func TestConfigVersionV3Bindings(t *testing.T) {
   },
   "profiles": {
     "default": {
+      "providers": ["main"]
+    },
+    "work": {
       "providers": ["main"]
     }
   },
@@ -1696,6 +1740,7 @@ func TestCompatDefaultProfileAndCLI(t *testing.T) {
 		t.Errorf("GetDefaultProfile() = %q", p)
 	}
 
+	ensureProviders(t, "a")
 	WriteProfileOrder("work", []string{"a"})
 	if err := SetDefaultProfile("work"); err != nil {
 		t.Fatal(err)
@@ -2693,5 +2738,289 @@ func TestConfigMigrationV13ToV14(t *testing.T) {
 	}
 	if m, ok := cfg.DisabledProviders["test"]; !ok || m.Type != MarkingTypePermanent {
 		t.Errorf("round-trip disabled_providers[test] = %+v, want permanent marking", m)
+	}
+}
+
+// T040: Test config validation with custom scenario routes
+func TestValidateRoutingConfig_CustomScenarios(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       *OpenCCConfig
+		profile   string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name: "valid custom scenario with camelCase",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "valid custom scenario with kebab-case",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom-plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "valid custom scenario with snake_case",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom_plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "invalid scenario key with spaces",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"custom plan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "contains spaces",
+		},
+		{
+			name: "invalid empty scenario key",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "empty scenario key",
+		},
+		{
+			name: "invalid non-existent provider",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "nonexistent"},
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "non-existent provider",
+		},
+		{
+			name: "invalid empty providers list",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "empty providers list",
+		},
+		{
+			name: "valid with strategy override",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								Strategy: LoadBalanceRoundRobin,
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: false,
+		},
+		{
+			name: "invalid strategy",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								Strategy: "invalid-strategy",
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "invalid strategy",
+		},
+		{
+			name: "invalid negative weight",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								ProviderWeights: map[string]int{
+									"provider1": -1,
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "negative weight",
+		},
+		{
+			name: "invalid weight for non-existent provider",
+			cfg: &OpenCCConfig{
+				Providers: map[string]*ProviderConfig{
+					"provider1": {Type: ProviderTypeAnthropic},
+				},
+				Profiles: map[string]*ProfileConfig{
+					"default": {
+						Providers: []string{"provider1"},
+						Routing: map[string]*RoutePolicy{
+							"customPlan": {
+								Providers: []*ProviderRoute{
+									{Name: "provider1"},
+								},
+								ProviderWeights: map[string]int{
+									"nonexistent": 10,
+								},
+							},
+						},
+					},
+				},
+			},
+			profile:   "default",
+			wantError: true,
+			errorMsg:  "weight for non-existent provider",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateRoutingConfig(tt.cfg, tt.profile)
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("expected error containing %q, got nil", tt.errorMsg)
+				} else if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("expected no error, got %v", err)
+				}
+			}
+		})
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dopejs/gozen/internal/config"
+	"github.com/dopejs/gozen/internal/proxy/transform"
 )
 
 // TempProfileProvider supplies temporary profile data (from zen pick).
@@ -23,9 +24,15 @@ type TempProfileProvider interface {
 type ProfileProxy struct {
 	Logger       *log.Logger
 	TempProfiles TempProfileProvider // optional, for _tmp_ profiles
+	MetricsRecorder MetricsRecorder   // optional, for recording request metrics
 
 	mu    sync.RWMutex
 	cache map[string]*ProxyServer // profile name -> cached proxy server
+}
+
+// MetricsRecorder is an interface for recording request metrics
+type MetricsRecorder interface {
+	RecordRequest(provider string, latency time.Duration, err error)
 }
 
 // NewProfileProxy creates a new profile-based proxy router.
@@ -67,8 +74,8 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build default providers from config
-	providers, err := pp.buildProviders(profileCfg.providers)
+	// Build default providers from config (apply profile-level weights)
+	providers, err := pp.buildProviders(profileCfg.providers, profileCfg.providerWeights)
 	if err != nil {
 		pp.writeError(w, http.StatusInternalServerError, "provider_error", err.Error())
 		return
@@ -76,10 +83,10 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build routing config if scenario routing is configured
 	var routing *RoutingConfig
-	if profileCfg.routing != nil && len(profileCfg.routing) > 0 {
-		scenarioRoutes := make(map[config.Scenario]*ScenarioProviders)
+	if len(profileCfg.routing) > 0 {
+		scenarioRoutes := make(map[string]*ScenarioProviders)
 		for scenario, sr := range profileCfg.routing {
-			scenarioProviders, err := pp.buildProviders(sr.ProviderNames())
+			scenarioProviders, err := pp.buildProviders(sr.ProviderNames(), profileCfg.providerWeights)
 			if err != nil {
 				pp.Logger.Printf("[routing] warning: failed to build providers for scenario %s: %v", scenario, err)
 				continue
@@ -91,8 +98,12 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			scenarioRoutes[scenario] = &ScenarioProviders{
-				Providers: scenarioProviders,
-				Models:    models,
+				Providers:            scenarioProviders,
+				Models:               models,
+				Strategy:             &sr.Strategy,
+				ProviderWeights:      sr.ProviderWeights,
+				LongContextThreshold: sr.LongContextThreshold,
+				FallbackToDefault:    sr.FallbackToDefault,
 			}
 		}
 		if len(scenarioRoutes) > 0 {
@@ -100,12 +111,13 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				DefaultProviders:     providers,
 				ScenarioRoutes:       scenarioRoutes,
 				LongContextThreshold: profileCfg.longContextThreshold,
+				ScenarioPriority:     profileCfg.scenarioPriority,
 			}
 		}
 	}
 
 	// Get or create a proxy server for this profile
-	srv := pp.getOrCreateProxy(route.Profile, providers, routing)
+	srv := pp.getOrCreateProxy(route.Profile, providers, routing, profileCfg.strategy)
 
 	// Rewrite the request URL to strip profile/session prefix
 	r.URL.Path = route.Remainder
@@ -124,14 +136,23 @@ func (pp *ProfileProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Zen-Client", clientType)
 	}
 
-	srv.ServeHTTP(w, r)
+	// Wrap response writer to capture status code
+	mrw := &metricsResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+	srv.ServeHTTP(mrw, r)
+
+	// Note: Metrics are recorded by the underlying ProxyServer with the correct provider name.
+	// We don't record here to avoid double-counting and incorrect provider attribution.
 }
 
 // profileInfo holds resolved profile data for proxy construction.
 type profileInfo struct {
 	providers            []string
-	routing              map[config.Scenario]*config.ScenarioRoute
+	routing              map[string]*config.RoutePolicy
 	longContextThreshold int
+	strategy             config.LoadBalanceStrategy
+	providerWeights      map[string]int
+	scenarioPriority     []string
 }
 
 // resolveProfileConfig looks up provider names and routing config for a profile.
@@ -160,11 +181,16 @@ func (pp *ProfileProxy) resolveProfileConfig(route *RouteInfo) (*profileInfo, er
 		providers:            pc.Providers,
 		routing:              pc.Routing,
 		longContextThreshold: pc.LongContextThreshold,
+		strategy:             pc.Strategy,
+		providerWeights:      pc.ProviderWeights,
+		scenarioPriority:     pc.ScenarioPriority,
 	}, nil
 }
 
 // buildProviders converts provider names to Provider objects.
-func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
+// profileWeights overrides per-provider Weight when present (profile-level weights
+// take precedence over global provider-level weights).
+func (pp *ProfileProxy) buildProviders(names []string, profileWeights map[string]int) ([]*Provider, error) {
 	store := config.DefaultStore()
 	var providers []*Provider
 
@@ -209,6 +235,14 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			pp.Logger.Printf("[%s] openai provider: using model=%q, skipping Anthropic tier defaults", name, model)
 		}
 
+		// Determine weight: profile-level weights take precedence over provider-level
+		weight := pc.Weight
+		if profileWeights != nil {
+			if pw, ok := profileWeights[name]; ok {
+				weight = pw
+			}
+		}
+
 		p := &Provider{
 			Name:            name,
 			Type:            pc.GetType(),
@@ -224,6 +258,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 			CodexEnvVars:    pc.CodexEnvVars,
 			OpenCodeEnvVars: pc.OpenCodeEnvVars,
 			ProxyURL:        pc.ProxyURL,
+			Weight:          weight,
 			Healthy:         true,
 		}
 
@@ -247,7 +282,7 @@ func (pp *ProfileProxy) buildProviders(names []string) ([]*Provider, error) {
 }
 
 // getOrCreateProxy returns a cached ProxyServer for the profile, or creates one.
-func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig) *ProxyServer {
+func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, routing *RoutingConfig, strategy config.LoadBalanceStrategy) *ProxyServer {
 	pp.mu.RLock()
 	if srv, ok := pp.cache[profile]; ok {
 		pp.mu.RUnlock()
@@ -263,12 +298,20 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 		return srv
 	}
 
+	// Get global load balancer
+	lb := GetGlobalLoadBalancer()
+
 	var srv *ProxyServer
 	if routing != nil {
-		srv = NewProxyServerWithRouting(routing, pp.Logger)
+		srv = NewProxyServerWithRouting(routing, pp.Logger, strategy, lb)
 	} else {
-		srv = NewProxyServer(providers, pp.Logger)
+		srv = NewProxyServer(providers, pp.Logger, strategy, lb)
 	}
+	srv.Profile = profile
+	// Set concurrency limiter (100 concurrent requests as per spec)
+	srv.Limiter = NewLimiter(100)
+	// Pass through metrics recorder from ProfileProxy to ProxyServer
+	srv.MetricsRecorder = pp.MetricsRecorder
 	pp.cache[profile] = srv
 	return srv
 }
@@ -278,7 +321,16 @@ func (pp *ProfileProxy) getOrCreateProxy(profile string, providers []*Provider, 
 func (pp *ProfileProxy) InvalidateCache() {
 	pp.mu.Lock()
 	defer pp.mu.Unlock()
+	for _, srv := range pp.cache {
+		if srv != nil {
+			srv.Close()
+		}
+	}
 	pp.cache = make(map[string]*ProxyServer)
+}
+
+func (pp *ProfileProxy) Close() {
+	pp.InvalidateCache()
 }
 
 func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, message string) {
@@ -293,24 +345,43 @@ func (pp *ProfileProxy) writeError(w http.ResponseWriter, status int, errType, m
 }
 
 // detectClientFormat determines the client API format based on request path and client type.
-// OpenAI clients use /responses or /v1/chat/completions endpoints.
-// Anthropic clients use /v1/messages endpoint.
+// Returns fine-grained format identifiers: anthropic-messages, openai-chat, openai-responses.
 func detectClientFormat(path, clientType string) string {
-	// If client type is explicitly set, use it
-	if clientType == "codex" {
-		return config.ProviderTypeOpenAI
-	}
-
-	// Auto-detect from path
+	// Auto-detect from path first (works for all clients including Codex)
 	// OpenAI Responses API: /responses
 	if strings.HasSuffix(path, "/responses") || strings.Contains(path, "/responses/") {
-		return config.ProviderTypeOpenAI
+		return transform.FormatOpenAIResponses
 	}
 	// OpenAI Chat Completions API: /v1/chat/completions
 	if strings.HasSuffix(path, "/chat/completions") {
-		return config.ProviderTypeOpenAI
+		return transform.FormatOpenAIChat
 	}
 
-	// Default to Anthropic
-	return config.ProviderTypeAnthropic
+	// If client type is explicitly set to codex and no path match, default to chat
+	if clientType == "codex" {
+		return transform.FormatOpenAIChat
+	}
+
+	// Default to Anthropic Messages API
+	return transform.FormatAnthropicMessages
+}
+
+// metricsResponseWriter wraps http.ResponseWriter to capture status code
+type metricsResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (m *metricsResponseWriter) WriteHeader(code int) {
+	m.statusCode = code
+	m.ResponseWriter.WriteHeader(code)
+}
+
+// metricsError represents an error for metrics recording
+type metricsError struct {
+	statusCode int
+}
+
+func (e *metricsError) Error() string {
+	return fmt.Sprintf("HTTP %d", e.statusCode)
 }

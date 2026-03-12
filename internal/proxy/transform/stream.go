@@ -18,10 +18,37 @@ type StreamTransformer struct {
 	Model          string
 }
 
+// writeStreamError emits a protocol-native error event based on client format
+func (st *StreamTransformer) writeStreamError(w io.Writer, err error) {
+	normalizedClient := NormalizeFormat(st.ClientFormat)
+
+	if normalizedClient == "openai" {
+		// OpenAI formats use error event
+		if st.ClientFormat == FormatOpenAIChat {
+			// Chat Completions format
+			fmt.Fprintf(w, "data: {\"error\":{\"message\":\"%s\",\"type\":\"stream_error\"}}\n\n", err.Error())
+		} else {
+			// Responses API format
+			fmt.Fprintf(w, "event: error\ndata: {\"type\":\"error\",\"error\":{\"message\":\"%s\",\"type\":\"stream_error\"}}\n\n", err.Error())
+		}
+	} else {
+		// Anthropic format uses error event
+		fmt.Fprintf(w, "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"stream_error\",\"message\":\"%s\"}}\n\n", err.Error())
+	}
+}
+
 // TransformSSEStream transforms SSE streams between API formats.
 // Returns a reader that produces the appropriate SSE events.
 func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
-	if st.ClientFormat == st.ProviderFormat {
+	// Normalize formats for comparison
+	normalizedClient := NormalizeFormat(st.ClientFormat)
+	normalizedProvider := NormalizeFormat(st.ProviderFormat)
+
+	// Short-circuit only when formats are truly identical (including fine-grained).
+	// openai-responses → openai-chat still needs transformation even though both
+	// normalize to "openai".
+	crossOpenAI := st.ProviderFormat == FormatOpenAIResponses && st.ClientFormat == FormatOpenAIChat
+	if normalizedClient == normalizedProvider && !crossOpenAI {
 		return r
 	}
 
@@ -29,20 +56,32 @@ func (st *StreamTransformer) TransformSSEStream(r io.Reader) io.Reader {
 
 	go func() {
 		defer pw.Close()
-		if st.ProviderFormat == "anthropic" && st.ClientFormat == "openai" {
-			st.transformAnthropicToOpenAI(r, pw)
-		} else if st.ProviderFormat == "openai" && st.ClientFormat == "anthropic" {
-			st.transformOpenAIToAnthropic(r, pw)
-		} else if st.ProviderFormat == "openai-responses" && st.ClientFormat == "anthropic" {
+		// Responses API → OpenAI Chat Completions SSE
+		if st.ProviderFormat == FormatOpenAIResponses && st.ClientFormat == FormatOpenAIChat {
+			st.transformResponsesAPIToOpenAIChat(r, pw)
+		// Check specific format first before normalized comparison
+		} else if st.ProviderFormat == FormatOpenAIResponses && normalizedClient == "anthropic" {
 			st.transformResponsesAPIToAnthropic(r, pw)
+		} else if normalizedProvider == "anthropic" && normalizedClient == "openai" {
+			// Provider is Anthropic, client expects OpenAI
+			// Distinguish between openai-chat and openai-responses
+			// Default to Responses API for backward compatibility with legacy "openai"
+			if st.ClientFormat == FormatOpenAIChat {
+				st.transformAnthropicToOpenAIChat(r, pw)
+			} else {
+				// FormatOpenAIResponses or legacy "openai" → Responses API
+				st.transformAnthropicToOpenAIResponses(r, pw)
+			}
+		} else if normalizedProvider == "openai" && normalizedClient == "anthropic" {
+			st.transformOpenAIToAnthropic(r, pw)
 		}
 	}()
 
 	return pr
 }
 
-// transformAnthropicToOpenAI converts Anthropic SSE events to OpenAI Responses API format.
-func (st *StreamTransformer) transformAnthropicToOpenAI(r io.Reader, w io.Writer) {
+// transformAnthropicToOpenAIResponses converts Anthropic SSE events to OpenAI Responses API format.
+func (st *StreamTransformer) transformAnthropicToOpenAIResponses(r io.Reader, w io.Writer) {
 	scanner := bufio.NewScanner(r)
 	// Increase buffer size for large events
 	buf := make([]byte, 64*1024)
@@ -91,8 +130,148 @@ func (st *StreamTransformer) transformAnthropicToOpenAI(r io.Reader, w io.Writer
 		}
 	}
 
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
+
 	// Send response.completed
 	st.writeResponseCompleted(w, created, fullText.String(), inputTokens, outputTokens)
+}
+
+// transformAnthropicToOpenAIChat converts Anthropic SSE events to OpenAI Chat Completions format.
+func (st *StreamTransformer) transformAnthropicToOpenAIChat(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		// Empty line = end of event
+		if line == "" && dataBuffer.Len() > 0 {
+			data := dataBuffer.String()
+			dataBuffer.Reset()
+
+			// Transform Anthropic event to OpenAI Chat Completions chunk
+			chunk := st.transformAnthropicEventToChat(currentEvent, data)
+			if chunk != "" {
+				fmt.Fprintf(w, "data: %s\n\n", chunk)
+			}
+			currentEvent = ""
+		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
+
+	// Send [DONE]
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+}
+
+// transformAnthropicEventToChat transforms a single Anthropic event to OpenAI Chat Completions format.
+func (st *StreamTransformer) transformAnthropicEventToChat(eventType, data string) string {
+	var eventData map[string]interface{}
+	if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+		return ""
+	}
+
+	chunk := map[string]interface{}{
+		"id":      st.MessageID,
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"model":   st.Model,
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"delta": map[string]interface{}{},
+			},
+		},
+	}
+
+	delta := chunk["choices"].([]map[string]interface{})[0]["delta"].(map[string]interface{})
+
+	switch eventType {
+	case "message_start":
+		delta["role"] = "assistant"
+		delta["content"] = ""
+
+	case "content_block_start":
+		// Handle tool_use block start
+		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
+			if contentBlock["type"] == "tool_use" {
+				toolCall := map[string]interface{}{
+					"index": eventData["index"],
+					"id":    contentBlock["id"],
+					"type":  "function",
+					"function": map[string]interface{}{
+						"name":      contentBlock["name"],
+						"arguments": "",
+					},
+				}
+				delta["tool_calls"] = []interface{}{toolCall}
+			}
+		}
+
+	case "content_block_delta":
+		if deltaData, ok := eventData["delta"].(map[string]interface{}); ok {
+			if text, ok := deltaData["text"].(string); ok {
+				delta["content"] = text
+			} else if deltaData["type"] == "input_json_delta" {
+				// Tool use arguments delta
+				if partialJSON, ok := deltaData["partial_json"].(string); ok {
+					index := 0
+					if idx, ok := eventData["index"].(float64); ok {
+						index = int(idx)
+					}
+					toolCall := map[string]interface{}{
+						"index": index,
+						"function": map[string]interface{}{
+							"arguments": partialJSON,
+						},
+					}
+					delta["tool_calls"] = []interface{}{toolCall}
+				}
+			}
+		}
+
+	case "message_delta":
+		if stopReason, ok := eventData["delta"].(map[string]interface{})["stop_reason"].(string); ok {
+			finishReason := "stop"
+			if stopReason == "max_tokens" {
+				finishReason = "length"
+			} else if stopReason == "tool_use" {
+				finishReason = "tool_calls"
+			}
+			chunk["choices"].([]map[string]interface{})[0]["finish_reason"] = finishReason
+		}
+
+	case "message_stop":
+		return "" // Skip, handled by message_delta
+
+	default:
+		return ""
+	}
+
+	result, _ := json.Marshal(chunk)
+	return string(result)
 }
 
 // transformEventToResponses transforms a single Anthropic event to OpenAI Responses API format.
@@ -124,7 +303,7 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 			}
 		}
 
-		// Send response.created
+		// Send response.created on message_start
 		if !*responseCreated {
 			events = append(events, st.createResponseCreated(created))
 			// Send response.in_progress
@@ -136,13 +315,45 @@ func (st *StreamTransformer) transformEventToResponses(eventType, data string, c
 			*responseCreated = true
 		}
 
+	case "content_block_start":
+		// Handle content block start (text or tool_use)
+		if contentBlock, ok := eventData["content_block"].(map[string]interface{}); ok {
+			if contentBlock["type"] == "tool_use" {
+				// Tool use block - emit function_call_output.added
+				toolID := contentBlock["id"].(string)
+				toolName := contentBlock["name"].(string)
+				event := map[string]interface{}{
+					"type":         "response.function_call_arguments.added",
+					"item_id":      toolID,
+					"output_index": *outputIndex,
+					"call_id":      toolID,
+					"name":         toolName,
+					"arguments":    "",
+				}
+				events = append(events, formatSSEEvent("response.function_call_arguments.added", event))
+			}
+		}
+
 	case "content_block_delta":
-		// Extract text delta
+		// Extract text delta or tool input delta
 		if delta, ok := eventData["delta"].(map[string]interface{}); ok {
-			if deltaType, ok := delta["type"].(string); ok && deltaType == "text_delta" {
-				if text, ok := delta["text"].(string); ok {
-					fullText.WriteString(text)
-					events = append(events, st.createOutputTextDelta(created, *outputIndex, itemID, *contentIndex, text))
+			if deltaType, ok := delta["type"].(string); ok {
+				if deltaType == "text_delta" {
+					if text, ok := delta["text"].(string); ok {
+						fullText.WriteString(text)
+						events = append(events, st.createOutputTextDelta(created, *outputIndex, itemID, *contentIndex, text))
+					}
+				} else if deltaType == "input_json_delta" {
+					// Tool arguments delta
+					if partialJSON, ok := delta["partial_json"].(string); ok {
+						event := map[string]interface{}{
+							"type":       "response.function_call_arguments.delta",
+							"item_id":    itemID,
+							"output_index": *outputIndex,
+							"delta":      partialJSON,
+						}
+						events = append(events, formatSSEEvent("response.function_call_arguments.delta", event))
+					}
 				}
 			}
 		}
@@ -314,8 +525,20 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 	scanner.Buffer(buf, 1024*1024)
 
 	var messageStarted bool
-	var contentBlockStarted bool
 	var inputTokens, outputTokens int
+	var finalStopReason string
+	var messageStopped bool
+
+	// Track content blocks: map OpenAI tool_call index to Anthropic content block index
+	type blockState struct {
+		started          bool
+		anthropicIndex   int    // Anthropic content array index
+		typ              string // "text" or "tool_use"
+	}
+	// Map OpenAI tool_call index to block state
+	toolBlocksByOpenAIIndex := make(map[int]*blockState)
+	var textBlock *blockState
+	nextAnthropicIndex := 0 // Global counter for Anthropic content block indices
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -334,30 +557,48 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Handle [DONE] signal
 		if data == "[DONE]" {
-			// Send content_block_stop if we started a content block
-			if contentBlockStarted {
-				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
-					"type":  "content_block_stop",
-					"index": 0,
+			// Only send termination if we haven't already sent it via finish_reason
+			if !messageStopped {
+				// Send content_block_stop for all open blocks
+				if textBlock != nil && textBlock.started {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": textBlock.anthropicIndex,
+					}))
+				}
+				for _, block := range toolBlocksByOpenAIIndex {
+					if block.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": block.anthropicIndex,
+						}))
+					}
+				}
+
+				// Use finalStopReason if set, otherwise default to end_turn
+				stopReason := finalStopReason
+				if stopReason == "" {
+					stopReason = "end_turn"
+				}
+
+				// Send message_delta with stop_reason
+				fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
+					"type": "message_delta",
+					"delta": map[string]interface{}{
+						"stop_reason":   stopReason,
+						"stop_sequence": nil,
+					},
+					"usage": map[string]interface{}{
+						"output_tokens": outputTokens,
+					},
 				}))
+
+				// Send message_stop
+				fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
+					"type": "message_stop",
+				}))
+				messageStopped = true
 			}
-
-			// Send message_delta with stop_reason
-			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
-				"type": "message_delta",
-				"delta": map[string]interface{}{
-					"stop_reason":   "end_turn",
-					"stop_sequence": nil,
-				},
-				"usage": map[string]interface{}{
-					"output_tokens": outputTokens,
-				},
-			}))
-
-			// Send message_stop
-			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
-				"type": "message_stop",
-			}))
 			continue
 		}
 
@@ -422,25 +663,143 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			continue
 		}
 
+		// Check for tool_calls delta
+		if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+			for _, tc := range toolCalls {
+				toolCall, ok := tc.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				// OpenAI tool_call index (for parallel tool calls)
+				openaiToolIndex := 0
+				if idx, ok := toolCall["index"].(float64); ok {
+					openaiToolIndex = int(idx)
+				}
+
+				// Check if this is a new tool call (has id)
+				if id, ok := toolCall["id"].(string); ok && id != "" {
+					// Close text block if it's open (switching from text to tool)
+					if textBlock != nil && textBlock.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": textBlock.anthropicIndex,
+						}))
+						textBlock.started = false
+					}
+
+					// Close ALL open tool blocks (strict sequential lifecycle)
+					// This ensures only one block is open at a time, even for parallel tool calls
+					for idx, block := range toolBlocksByOpenAIIndex {
+						if block.started {
+							fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+								"type":  "content_block_stop",
+								"index": block.anthropicIndex,
+							}))
+							// Remove from map to prevent sending deltas to closed blocks
+							delete(toolBlocksByOpenAIIndex, idx)
+						}
+					}
+
+					// Get function name
+					var functionName string
+					if function, ok := toolCall["function"].(map[string]interface{}); ok {
+						if name, ok := function["name"].(string); ok {
+							functionName = name
+						}
+					}
+
+					// Allocate new Anthropic content block index
+					anthropicIndex := nextAnthropicIndex
+					nextAnthropicIndex++
+
+					// Send content_block_start for tool_use
+					fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
+						"type":  "content_block_start",
+						"index": anthropicIndex,
+						"content_block": map[string]interface{}{
+							"type":  "tool_use",
+							"id":    id,
+							"name":  functionName,
+							"input": map[string]interface{}{},
+						},
+					}))
+					toolBlocksByOpenAIIndex[openaiToolIndex] = &blockState{
+						started:        true,
+						anthropicIndex: anthropicIndex,
+						typ:            "tool_use",
+					}
+				}
+
+				// Check for function arguments delta
+				if function, ok := toolCall["function"].(map[string]interface{}); ok {
+					if args, ok := function["arguments"].(string); ok && args != "" {
+						// Get the block for this OpenAI tool index
+						if block, exists := toolBlocksByOpenAIIndex[openaiToolIndex]; exists && block.started {
+							// Only send delta if block is still open
+							// Skip if block was closed (e.g., by switching to text)
+							fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
+								"type":  "content_block_delta",
+								"index": block.anthropicIndex,
+								"delta": map[string]interface{}{
+									"type":         "input_json_delta",
+									"partial_json": args,
+								},
+							}))
+						}
+					}
+				}
+			}
+			continue
+		}
+
 		// Check for content delta
 		if content, ok := delta["content"].(string); ok && content != "" {
-			// Start content block if not started
-			if !contentBlockStarted {
+			// Start text block if not started
+			if textBlock == nil || !textBlock.started {
+				// Close all open tool blocks (switching from tool to text)
+				for _, block := range toolBlocksByOpenAIIndex {
+					if block.started {
+						fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+							"type":  "content_block_stop",
+							"index": block.anthropicIndex,
+						}))
+						block.started = false
+					}
+				}
+
+				// Close previous text block if it exists
+				if textBlock != nil && textBlock.started {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": textBlock.anthropicIndex,
+					}))
+				}
+
+				// Allocate new Anthropic content block index for text
+				anthropicIndex := nextAnthropicIndex
+				nextAnthropicIndex++
+
+				// Start new text block
 				fmt.Fprint(w, formatSSEEvent("content_block_start", map[string]interface{}{
 					"type":  "content_block_start",
-					"index": 0,
+					"index": anthropicIndex,
 					"content_block": map[string]interface{}{
 						"type": "text",
 						"text": "",
 					},
 				}))
-				contentBlockStarted = true
+				textBlock = &blockState{
+					started:        true,
+					anthropicIndex: anthropicIndex,
+					typ:            "text",
+				}
 			}
 
 			// Send content_block_delta
 			fmt.Fprint(w, formatSSEEvent("content_block_delta", map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": 0,
+				"index": textBlock.anthropicIndex,
 				"delta": map[string]interface{}{
 					"type": "text_delta",
 					"text": content,
@@ -450,13 +809,22 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 
 		// Check for finish_reason
 		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			// Send content_block_stop if we started a content block
-			if contentBlockStarted {
+			// Close all open content blocks
+			if textBlock != nil && textBlock.started {
 				fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
 					"type":  "content_block_stop",
-					"index": 0,
+					"index": textBlock.anthropicIndex,
 				}))
-				contentBlockStarted = false
+				textBlock.started = false
+			}
+			for _, block := range toolBlocksByOpenAIIndex {
+				if block.started {
+					fmt.Fprint(w, formatSSEEvent("content_block_stop", map[string]interface{}{
+						"type":  "content_block_stop",
+						"index": block.anthropicIndex,
+					}))
+					block.started = false
+				}
 			}
 
 			// Map finish_reason to stop_reason
@@ -469,6 +837,9 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			case "content_filter":
 				stopReason = "end_turn"
 			}
+
+			// Store the stop reason for potential [DONE] handling
+			finalStopReason = stopReason
 
 			// Send message_delta with stop_reason
 			fmt.Fprint(w, formatSSEEvent("message_delta", map[string]interface{}{
@@ -486,7 +857,14 @@ func (st *StreamTransformer) transformOpenAIToAnthropic(r io.Reader, w io.Writer
 			fmt.Fprint(w, formatSSEEvent("message_stop", map[string]interface{}{
 				"type": "message_stop",
 			}))
+			messageStopped = true
 		}
+	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
 	}
 }
 
@@ -704,5 +1082,205 @@ func (st *StreamTransformer) transformResponsesAPIToAnthropic(r io.Reader, w io.
 			}
 		}
 	}
+
+	// Check for scanner errors
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+		return
+	}
+
 	_ = inputTokens
+}
+
+// transformResponsesAPIToOpenAIChat converts OpenAI Responses API SSE events
+// to OpenAI Chat Completions SSE format (data: {...}\n\n with "delta" chunks).
+func (st *StreamTransformer) transformResponsesAPIToOpenAIChat(r io.Reader, w io.Writer) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	var currentEvent string
+	var dataBuffer bytes.Buffer
+	// Fallback ID; overwritten from the first response.created event.
+	completionID := fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano())
+	model := st.Model
+	created := time.Now().Unix()
+
+	// Per-tool-call metadata captured from response.output_item.added.
+	// Key = output_index (int), value = {callID, name, headerSent}.
+	type toolMeta struct {
+		callID     string
+		name       string
+		headerSent bool
+	}
+	toolCalls := make(map[int]*toolMeta)
+	// Guard against duplicate role chunks when both response.created and
+	// response.in_progress arrive for the same stream.
+	roleSent := false
+
+	emitChunk := func(delta map[string]interface{}, finishReason interface{}) {
+		choice := map[string]interface{}{
+			"index":         0,
+			"delta":         delta,
+			"finish_reason": finishReason,
+		}
+		chunk := map[string]interface{}{
+			"id":      completionID,
+			"object":  "chat.completion.chunk",
+			"created": created,
+			"model":   model,
+			"choices": []interface{}{choice},
+		}
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "data: %s\n\n", data)
+	}
+
+	processCompleted := func(eventData map[string]interface{}) {
+		finishReason := "stop"
+		if resp, ok := eventData["response"].(map[string]interface{}); ok {
+			if status, ok := resp["status"].(string); ok && status == "incomplete" {
+				finishReason = "length"
+			}
+			if output, ok := resp["output"].([]interface{}); ok {
+				for _, item := range output {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						if itemMap["type"] == "function_call" {
+							finishReason = "tool_calls"
+							break
+						}
+					}
+				}
+			}
+		}
+		emitChunk(map[string]interface{}{}, finishReason)
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+	}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			dataBuffer.WriteString(strings.TrimPrefix(line, "data: "))
+			continue
+		}
+
+		if line != "" || dataBuffer.Len() == 0 {
+			continue
+		}
+
+		// Empty line = end of event
+		data := dataBuffer.String()
+		dataBuffer.Reset()
+
+		var eventData map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &eventData); err != nil {
+			currentEvent = ""
+			continue
+		}
+
+		switch currentEvent {
+		case "response.created", "response.in_progress":
+			// id and model are inside the nested "response" object
+			if resp, ok := eventData["response"].(map[string]interface{}); ok {
+				if id, ok := resp["id"].(string); ok {
+					completionID = "chatcmpl-" + id
+				}
+				if m, ok := resp["model"].(string); ok {
+					model = m
+				}
+			}
+			if !roleSent {
+				roleSent = true
+				emitChunk(map[string]interface{}{"role": "assistant", "content": ""}, nil)
+			}
+
+		case "response.output_item.added":
+			// Capture function_call metadata so we can emit proper headers later.
+			if item, ok := eventData["item"].(map[string]interface{}); ok {
+				if item["type"] == "function_call" {
+					idx := 0
+					if v, ok := eventData["output_index"].(float64); ok {
+						idx = int(v)
+					}
+					toolCalls[idx] = &toolMeta{
+						callID: fmt.Sprintf("%v", item["call_id"]),
+						name:   fmt.Sprintf("%v", item["name"]),
+					}
+				}
+			}
+
+		case "response.output_text.delta":
+			if delta, ok := eventData["delta"].(string); ok && delta != "" {
+				emitChunk(map[string]interface{}{"content": delta}, nil)
+			}
+
+		case "response.function_call_arguments.delta":
+			idx := 0
+			if v, ok := eventData["output_index"].(float64); ok {
+				idx = int(v)
+			}
+			delta, _ := eventData["delta"].(string)
+
+			tc := toolCalls[idx]
+			if tc == nil {
+				tc = &toolMeta{}
+				toolCalls[idx] = tc
+			}
+
+			if !tc.headerSent {
+				// First delta for this tool call: emit id, type, function.name
+				tc.headerSent = true
+				emitChunk(map[string]interface{}{
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"index": idx,
+							"id":    tc.callID,
+							"type":  "function",
+							"function": map[string]interface{}{
+								"name":      tc.name,
+								"arguments": delta,
+							},
+						},
+					},
+				}, nil)
+			} else if delta != "" {
+				// Subsequent deltas: arguments only
+				emitChunk(map[string]interface{}{
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"index": idx,
+							"function": map[string]interface{}{
+								"arguments": delta,
+							},
+						},
+					},
+				}, nil)
+			}
+
+		case "response.completed":
+			processCompleted(eventData)
+		}
+
+		currentEvent = ""
+	}
+
+	// Process remaining buffered data (stream may end without trailing blank line)
+	if dataBuffer.Len() > 0 && currentEvent == "response.completed" {
+		var eventData map[string]interface{}
+		if json.Unmarshal(dataBuffer.Bytes(), &eventData) == nil {
+			processCompleted(eventData)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		st.writeStreamError(w, err)
+	}
 }

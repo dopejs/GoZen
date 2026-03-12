@@ -16,25 +16,32 @@ type providerRouteResponse struct {
 
 // scenarioRouteResponse is the JSON shape for a scenario route.
 type scenarioRouteResponse struct {
-	Providers []*providerRouteResponse `json:"providers"`
+	Providers            []*providerRouteResponse `json:"providers"`
+	Strategy             *string                  `json:"strategy,omitempty"`
+	ProviderWeights      map[string]int           `json:"provider_weights,omitempty"`
+	LongContextThreshold *int                     `json:"long_context_threshold,omitempty"`
+	FallbackToDefault    *bool                    `json:"fallback_to_default,omitempty"`
 }
 
 // profileResponse is the JSON shape returned for a single profile.
 type profileResponse struct {
-	Name      string                                    `json:"name"`
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name             string                             `json:"name"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 type createProfileRequest struct {
-	Name      string                                    `json:"name"`
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Name             string                             `json:"name"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 type updateProfileRequest struct {
-	Providers []string                                  `json:"providers"`
-	Routing   map[config.Scenario]*scenarioRouteResponse `json:"routing,omitempty"`
+	Providers        []string                           `json:"providers"`
+	Routing          map[string]*scenarioRouteResponse `json:"routing,omitempty"`
+	ScenarioPriority []string                           `json:"scenario_priority,omitempty"`
 }
 
 // profileConfigToResponse converts a ProfileConfig to a profileResponse.
@@ -44,11 +51,12 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 		providers = []string{}
 	}
 	resp := profileResponse{
-		Name:      name,
-		Providers: providers,
+		Name:             name,
+		Providers:        providers,
+		ScenarioPriority: pc.ScenarioPriority,
 	}
 	if len(pc.Routing) > 0 {
-		resp.Routing = make(map[config.Scenario]*scenarioRouteResponse)
+		resp.Routing = make(map[string]*scenarioRouteResponse)
 		for scenario, route := range pc.Routing {
 			var providerRoutes []*providerRouteResponse
 			for _, pr := range route.Providers {
@@ -57,20 +65,44 @@ func profileConfigToResponse(name string, pc *config.ProfileConfig) profileRespo
 					Model: pr.Model,
 				})
 			}
-			resp.Routing[scenario] = &scenarioRouteResponse{
+
+			scenarioResp := &scenarioRouteResponse{
 				Providers: providerRoutes,
 			}
+
+			// Serialize strategy (convert LoadBalanceStrategy to string)
+			if route.Strategy != "" {
+				strategyStr := string(route.Strategy)
+				scenarioResp.Strategy = &strategyStr
+			}
+
+			// Serialize provider weights
+			if len(route.ProviderWeights) > 0 {
+				scenarioResp.ProviderWeights = route.ProviderWeights
+			}
+
+			// Serialize long context threshold
+			if route.LongContextThreshold != nil {
+				scenarioResp.LongContextThreshold = route.LongContextThreshold
+			}
+
+			// Serialize fallback to default
+			if route.FallbackToDefault != nil {
+				scenarioResp.FallbackToDefault = route.FallbackToDefault
+			}
+
+			resp.Routing[scenario] = scenarioResp
 		}
 	}
 	return resp
 }
 
-// routingResponseToConfig converts routing response data to config ScenarioRoutes.
-func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse) map[config.Scenario]*config.ScenarioRoute {
+// routingResponseToConfig converts routing response data to config RoutePolicy map.
+func routingResponseToConfig(routing map[string]*scenarioRouteResponse) map[string]*config.RoutePolicy {
 	if len(routing) == 0 {
 		return nil
 	}
-	result := make(map[config.Scenario]*config.ScenarioRoute)
+	result := make(map[string]*config.RoutePolicy)
 	for scenario, route := range routing {
 		if len(route.Providers) > 0 {
 			var providerRoutes []*config.ProviderRoute
@@ -80,9 +112,32 @@ func routingResponseToConfig(routing map[config.Scenario]*scenarioRouteResponse)
 					Model: pr.Model,
 				})
 			}
-			result[scenario] = &config.ScenarioRoute{
+
+			policy := &config.RoutePolicy{
 				Providers: providerRoutes,
 			}
+
+			// Deserialize strategy (convert string to LoadBalanceStrategy)
+			if route.Strategy != nil && *route.Strategy != "" {
+				policy.Strategy = config.LoadBalanceStrategy(*route.Strategy)
+			}
+
+			// Deserialize provider weights
+			if len(route.ProviderWeights) > 0 {
+				policy.ProviderWeights = route.ProviderWeights
+			}
+
+			// Deserialize long context threshold
+			if route.LongContextThreshold != nil {
+				policy.LongContextThreshold = route.LongContextThreshold
+			}
+
+			// Deserialize fallback to default
+			if route.FallbackToDefault != nil {
+				policy.FallbackToDefault = route.FallbackToDefault
+			}
+
+			result[scenario] = policy
 		}
 	}
 	if len(result) == 0 {
@@ -171,8 +226,9 @@ func (s *Server) createProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pc := &config.ProfileConfig{
-		Providers: providers,
-		Routing:   routingResponseToConfig(req.Routing),
+		Providers:        providers,
+		Routing:          routingResponseToConfig(req.Routing),
+		ScenarioPriority: req.ScenarioPriority,
 	}
 
 	if err := store.SetProfileConfig(req.Name, pc); err != nil {
@@ -203,6 +259,7 @@ func (s *Server) updateProfile(w http.ResponseWriter, r *http.Request, name stri
 
 	existing.Providers = providers
 	existing.Routing = routingResponseToConfig(req.Routing)
+	existing.ScenarioPriority = req.ScenarioPriority
 
 	if err := store.SetProfileConfig(name, existing); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

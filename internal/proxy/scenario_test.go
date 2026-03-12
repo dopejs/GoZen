@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -33,8 +34,8 @@ func TestDetectScenarioThink(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioThink {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioThink)
+	if got != string(config.ScenarioThink) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioThink))
 	}
 }
 
@@ -47,8 +48,8 @@ func TestDetectScenarioThinkDisabled(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioCode))
 	}
 }
 
@@ -62,8 +63,8 @@ func TestDetectScenarioThinkEmptyMap(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() = %q, want %q (empty thinking map should not trigger think)", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() = %q, want %q (empty thinking map should not trigger think)", got, string(config.ScenarioCode))
 	}
 }
 
@@ -79,8 +80,8 @@ func TestDetectScenarioThinkMapWithBudget(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() = %q, want %q (thinking map without type key should not trigger think)", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() = %q, want %q (thinking map without type key should not trigger think)", got, string(config.ScenarioCode))
 	}
 }
 
@@ -93,8 +94,8 @@ func TestDetectScenarioThinkBoolTrue(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioThink {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioThink)
+	if got != string(config.ScenarioThink) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioThink))
 	}
 }
 
@@ -107,8 +108,8 @@ func TestDetectScenarioThinkBoolFalse(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioCode))
 	}
 }
 
@@ -133,8 +134,8 @@ func TestDetectScenarioImage(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioImage {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioImage)
+	if got != string(config.ScenarioImage) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioImage))
 	}
 }
 
@@ -149,8 +150,8 @@ func TestDetectScenarioLongContext(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioLongContext {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioLongContext))
 	}
 }
 
@@ -168,8 +169,8 @@ func TestDetectScenarioLongContextFromBlocks(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioLongContext {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioLongContext))
 	}
 }
 
@@ -183,8 +184,8 @@ func TestDetectScenarioLongContextFromSystem(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioLongContext {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioLongContext))
 	}
 }
 
@@ -199,8 +200,8 @@ func TestDetectScenarioDefault(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioCode))
 	}
 }
 
@@ -218,8 +219,8 @@ func TestDetectScenarioPriority_ThinkOverImage(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioThink {
-		t.Errorf("DetectScenario() = %q, want %q (think takes priority over image)", got, config.ScenarioThink)
+	if got != string(config.ScenarioThink) {
+		t.Errorf("DetectScenario() = %q, want %q (think takes priority over image)", got, string(config.ScenarioThink))
 	}
 }
 
@@ -238,16 +239,16 @@ func TestDetectScenarioPriority_ImageOverLongContext(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioImage {
-		t.Errorf("DetectScenario() = %q, want %q (image takes priority over longContext)", got, config.ScenarioImage)
+	if got != string(config.ScenarioImage) {
+		t.Errorf("DetectScenario() = %q, want %q (image takes priority over longContext)", got, string(config.ScenarioImage))
 	}
 }
 
 func TestDetectScenarioFromJSON(t *testing.T) {
 	data := []byte(`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`)
 	scenario, body := DetectScenarioFromJSON(data, 0, "")
-	if scenario != config.ScenarioThink {
-		t.Errorf("scenario = %q, want %q", scenario, config.ScenarioThink)
+	if scenario != string(config.ScenarioThink) {
+		t.Errorf("scenario = %q, want %q", scenario, string(config.ScenarioThink))
 	}
 	if body == nil {
 		t.Error("body should not be nil")
@@ -256,8 +257,8 @@ func TestDetectScenarioFromJSON(t *testing.T) {
 
 func TestDetectScenarioFromJSONInvalid(t *testing.T) {
 	scenario, body := DetectScenarioFromJSON([]byte("not json"), 0, "")
-	if scenario != config.ScenarioDefault {
-		t.Errorf("scenario = %q, want %q for invalid JSON", scenario, config.ScenarioDefault)
+	if scenario != string(config.ScenarioDefault) {
+		t.Errorf("scenario = %q, want %q for invalid JSON", scenario, string(config.ScenarioDefault))
 	}
 	if body != nil {
 		t.Error("body should be nil for invalid JSON")
@@ -292,8 +293,8 @@ func TestIsLongContextMultipleMessages(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioLongContext {
-		t.Errorf("DetectScenario() = %q, want %q for multiple messages totaling > threshold", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("DetectScenario() = %q, want %q for multiple messages totaling > threshold", got, string(config.ScenarioLongContext))
 	}
 }
 
@@ -311,8 +312,8 @@ func TestDetectScenarioWebSearch(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioWebSearch {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioWebSearch)
+	if got != string(config.ScenarioWebSearch) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioWebSearch))
 	}
 }
 
@@ -324,8 +325,8 @@ func TestDetectScenarioBackground(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioBackground {
-		t.Errorf("DetectScenario() = %q, want %q", got, config.ScenarioBackground)
+	if got != string(config.ScenarioBackground) {
+		t.Errorf("DetectScenario() = %q, want %q", got, string(config.ScenarioBackground))
 	}
 }
 
@@ -341,8 +342,8 @@ func TestDetectScenarioPriority_WebSearchOverThink(t *testing.T) {
 		},
 	}
 	got := DetectScenario(body, 0, "")
-	if got != config.ScenarioWebSearch {
-		t.Errorf("DetectScenario() = %q, want %q (webSearch takes priority over think)", got, config.ScenarioWebSearch)
+	if got != string(config.ScenarioWebSearch) {
+		t.Errorf("DetectScenario() = %q, want %q (webSearch takes priority over think)", got, string(config.ScenarioWebSearch))
 	}
 }
 
@@ -356,13 +357,13 @@ func TestDetectScenarioCustomThreshold(t *testing.T) {
 	}
 	// With custom threshold of 5000, should be longContext
 	got := DetectScenario(body, 5000, "")
-	if got != config.ScenarioLongContext {
-		t.Errorf("DetectScenario() with threshold 5000 = %q, want %q", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("DetectScenario() with threshold 5000 = %q, want %q", got, string(config.ScenarioLongContext))
 	}
 	// With custom threshold of 20000, should be code (not longContext)
 	got = DetectScenario(body, 20000, "")
-	if got != config.ScenarioCode {
-		t.Errorf("DetectScenario() with threshold 20000 = %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("DetectScenario() with threshold 20000 = %q, want %q", got, string(config.ScenarioCode))
 	}
 }
 
@@ -380,8 +381,8 @@ func TestSessionCacheIntegration(t *testing.T) {
 
 	// First request: should be code (below threshold of 30000, non-specialized)
 	got := DetectScenario(body, 30000, sessionID)
-	if got != config.ScenarioCode {
-		t.Errorf("first request: got %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("first request: got %q, want %q", got, string(config.ScenarioCode))
 	}
 
 	// Simulate a large previous request
@@ -393,8 +394,8 @@ func TestSessionCacheIntegration(t *testing.T) {
 	// Second request: should be longContext due to session history
 	// (current request > 20000 tokens and last request > threshold)
 	got = DetectScenario(body, 30000, sessionID)
-	if got != config.ScenarioLongContext {
-		t.Errorf("second request with session history: got %q, want %q", got, config.ScenarioLongContext)
+	if got != string(config.ScenarioLongContext) {
+		t.Errorf("second request with session history: got %q, want %q", got, string(config.ScenarioLongContext))
 	}
 
 	// Third request with small content: should be code
@@ -406,8 +407,8 @@ func TestSessionCacheIntegration(t *testing.T) {
 		},
 	}
 	got = DetectScenario(smallBody, 30000, sessionID)
-	if got != config.ScenarioCode {
-		t.Errorf("small request with session history: got %q, want %q", got, config.ScenarioCode)
+	if got != string(config.ScenarioCode) {
+		t.Errorf("small request with session history: got %q, want %q", got, string(config.ScenarioCode))
 	}
 }
 
@@ -679,10 +680,15 @@ func TestUpdateSessionUsageEdgeCases(t *testing.T) {
 }
 
 func TestSessionCacheEviction(t *testing.T) {
-	// Store more sessions than maxSize to trigger eviction
-	oldMax := globalSessionCache.maxSize
+	// Store more sessions than maxSize to trigger eviction.
+	// Reset cache state first to avoid interference from other tests
+	// that may have inserted sessions via ServeHTTP → UpdateSessionUsage.
 	globalSessionCache.mu.Lock()
+	oldMax := globalSessionCache.maxSize
 	globalSessionCache.maxSize = 3
+	// Clear all existing entries so eviction is deterministic
+	globalSessionCache.data = sync.Map{}
+	globalSessionCache.keyOrder = nil
 	globalSessionCache.mu.Unlock()
 	defer func() {
 		globalSessionCache.mu.Lock()
@@ -782,7 +788,7 @@ func TestDetectScenarioCode(t *testing.T) {
 	tests := []struct {
 		name string
 		body map[string]interface{}
-		want config.Scenario
+		want string
 	}{
 		{
 			name: "regular request returns code",
@@ -792,7 +798,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					map[string]interface{}{"role": "user", "content": "Write a function"},
 				},
 			},
-			want: config.ScenarioCode,
+			want: string(config.ScenarioCode),
 		},
 		{
 			name: "haiku request returns background not code",
@@ -802,7 +808,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					map[string]interface{}{"role": "user", "content": "quick task"},
 				},
 			},
-			want: config.ScenarioBackground,
+			want: string(config.ScenarioBackground),
 		},
 		{
 			name: "thinking request returns think not code",
@@ -813,7 +819,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					map[string]interface{}{"role": "user", "content": "analyze this"},
 				},
 			},
-			want: config.ScenarioThink,
+			want: string(config.ScenarioThink),
 		},
 		{
 			name: "image request returns image not code",
@@ -828,7 +834,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					},
 				},
 			},
-			want: config.ScenarioImage,
+			want: string(config.ScenarioImage),
 		},
 		{
 			name: "web search request returns webSearch not code",
@@ -841,7 +847,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					map[string]interface{}{"role": "user", "content": "search for X"},
 				},
 			},
-			want: config.ScenarioWebSearch,
+			want: string(config.ScenarioWebSearch),
 		},
 		{
 			name: "regular request with tool_use returns code",
@@ -860,7 +866,7 @@ func TestDetectScenarioCode(t *testing.T) {
 					map[string]interface{}{"role": "user", "content": "read file.go"},
 				},
 			},
-			want: config.ScenarioCode,
+			want: string(config.ScenarioCode),
 		},
 	}
 

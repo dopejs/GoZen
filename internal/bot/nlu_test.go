@@ -249,7 +249,7 @@ func TestNLUParser_Parse_DirectMessage(t *testing.T) {
 	msg := &Message{Content: "help", IsMention: false, IsDirectMsg: true}
 	result := parser.Parse(msg, true)
 	if result == nil {
-		t.Error("Parse should not return nil for direct messages even when mention required")
+		t.Fatal("Parse should not return nil for direct messages even when mention required")
 	}
 	if result.Intent != IntentChat {
 		t.Errorf("Parse(help) = %v, want %v", result.Intent, IntentChat)

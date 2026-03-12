@@ -144,11 +144,14 @@ func TestBuildProvidersMissingConfig(t *testing.T) {
 
 func TestBuildProvidersMissingURL(t *testing.T) {
 	setTestHome(t)
-	writeTestEnv(t, "bad", "ANTHROPIC_AUTH_TOKEN=tok\n")
 
-	_, err := buildProviders([]string{"bad"})
+	// With save-time validation, SetProvider rejects a provider missing base_url.
+	err := config.SetProvider("bad", &config.ProviderConfig{AuthToken: "tok"})
 	if err == nil {
-		t.Error("expected error for missing ANTHROPIC_BASE_URL")
+		t.Error("expected error for missing base_url")
+	}
+	if err != nil && !strings.Contains(err.Error(), "base_url is required") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

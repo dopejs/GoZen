@@ -116,6 +116,25 @@ func TestHealthMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRecoveryMiddleware(t *testing.T) {
+	s := setupTestServer(t)
+	s.HandleFunc("/api/v1/panic", func(w http.ResponseWriter, r *http.Request) {
+		panic("boom")
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/panic", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	w := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "internal server error") {
+		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
 // --- Security Headers ---
 
 func TestSecurityHeaders(t *testing.T) {
@@ -516,14 +535,14 @@ func TestCreateProfileWithRouting(t *testing.T) {
 	body := createProfileRequest{
 		Name:      "routed",
 		Providers: []string{"test-provider", "backup"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {
 				Providers: []*providerRouteResponse{
 					{Name: "backup", Model: "claude-opus-4-5"},
 					{Name: "test-provider"},
 				},
 			},
-			config.ScenarioImage: {
+			string(config.ScenarioImage): {
 				Providers: []*providerRouteResponse{
 					{Name: "test-provider"},
 				},
@@ -546,7 +565,7 @@ func TestCreateProfileWithRouting(t *testing.T) {
 		t.Fatalf("expected 2 routes, got %d", len(resp.Routing))
 	}
 
-	thinkRoute := resp.Routing[config.ScenarioThink]
+	thinkRoute := resp.Routing[string(config.ScenarioThink)]
 	if thinkRoute == nil {
 		t.Fatal("think route should exist")
 	}
@@ -575,8 +594,8 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 	// Update work profile to add routing
 	body := updateProfileRequest{
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioLongContext: {
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioLongContext): {
 				Providers: []*providerRouteResponse{
 					{Name: "backup", Model: "claude-haiku-4-5"},
 				},
@@ -594,7 +613,7 @@ func TestUpdateProfileWithRouting(t *testing.T) {
 	if resp.Routing == nil {
 		t.Fatal("routing should not be nil")
 	}
-	lcRoute := resp.Routing[config.ScenarioLongContext]
+	lcRoute := resp.Routing[string(config.ScenarioLongContext)]
 	if lcRoute == nil {
 		t.Fatal("longContext route should exist")
 	}
@@ -612,8 +631,8 @@ func TestUpdateProfileClearRouting(t *testing.T) {
 	// First add routing
 	body1 := updateProfileRequest{
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup"}}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{{Name: "backup"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/work", body1)
@@ -641,8 +660,8 @@ func TestListProfilesWithRouting(t *testing.T) {
 	// Add routing to default
 	body := updateProfileRequest{
 		Providers: []string{"test-provider", "backup"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{{Name: "backup", Model: "opus"}}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{{Name: "backup", Model: "opus"}}},
 		},
 	}
 	doRequest(s, "PUT", "/api/v1/profiles/default", body)
@@ -677,8 +696,8 @@ func TestCreateProfileWithEmptyRouting(t *testing.T) {
 	body := createProfileRequest{
 		Name:      "empty-routes",
 		Providers: []string{"test-provider"},
-		Routing: map[config.Scenario]*scenarioRouteResponse{
-			config.ScenarioThink: {Providers: []*providerRouteResponse{}},
+		Routing: map[string]*scenarioRouteResponse{
+			string(config.ScenarioThink): {Providers: []*providerRouteResponse{}},
 		},
 	}
 	w := doRequest(s, "POST", "/api/v1/profiles", body)
@@ -706,8 +725,8 @@ func TestCreateProviderWithEnvVars(t *testing.T) {
 			Model:     "claude-sonnet-4-5",
 			EnvVars: map[string]string{
 				"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
-				"MAX_THINKING_TOKENS":            "50000",
-				"MY_CUSTOM_VAR":                  "custom_value",
+				"MAX_THINKING_TOKENS":           "50000",
+				"MY_CUSTOM_VAR":                 "custom_value",
 			},
 		},
 	}
@@ -1221,12 +1240,12 @@ func TestSyncConfigPutAndGet(t *testing.T) {
 	s := setupTestServer(t)
 
 	body := config.SyncConfig{
-		Backend:    "webdav",
-		Endpoint:   "https://dav.example.com/zen-sync.json",
-		Username:   "user",
-		Token:      "pass123456789",
-		Passphrase: "my-secret",
-		AutoPull:   true,
+		Backend:      "webdav",
+		Endpoint:     "https://dav.example.com/zen-sync.json",
+		Username:     "user",
+		Token:        "pass123456789",
+		Passphrase:   "my-secret",
+		AutoPull:     true,
 		PullInterval: 300,
 	}
 	w := doRequest(s, "PUT", "/api/v1/sync/config", body)
@@ -1534,4 +1553,3 @@ func TestSPAFallback(t *testing.T) {
 		t.Errorf("expected Content-Type text/html, got %s", contentType)
 	}
 }
-

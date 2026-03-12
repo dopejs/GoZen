@@ -7,6 +7,18 @@ import (
 	"github.com/dopejs/gozen/internal/config"
 )
 
+// NOTE: This file contains legacy scenario detection functions that are still used
+// by the new routing system (routing_classifier.go). These functions provide the
+// builtin classification logic for protocol-agnostic routing.
+//
+// The new routing architecture (020-scenario-routing-redesign) uses:
+// - routing_normalize.go: Protocol normalization
+// - routing_classifier.go: Builtin classifier (uses functions from this file)
+// - routing_resolver.go: Decision resolution
+//
+// This file is NOT deprecated - it provides the core detection logic that works
+// across Anthropic Messages, OpenAI Chat, and OpenAI Responses protocols.
+
 const (
 	defaultLongContextThreshold = 32000
 	// Minimum token count for current request when using session history
@@ -19,33 +31,33 @@ const (
 
 // DetectScenario examines a parsed request body and returns the matching scenario.
 // Priority: webSearch > think > image > longContext > code > background > default.
-func DetectScenario(body map[string]interface{}, threshold int, sessionID string) config.Scenario {
+func DetectScenario(body map[string]interface{}, threshold int, sessionID string) string {
 	if hasWebSearchTool(body) {
-		return config.ScenarioWebSearch
+		return string(config.ScenarioWebSearch)
 	}
 	if hasThinkingEnabled(body) {
-		return config.ScenarioThink
+		return string(config.ScenarioThink)
 	}
 	if hasImageContent(body) {
-		return config.ScenarioImage
+		return string(config.ScenarioImage)
 	}
 	if isLongContext(body, threshold, sessionID) {
-		return config.ScenarioLongContext
+		return string(config.ScenarioLongContext)
 	}
 	if !isBackgroundRequest(body) {
-		return config.ScenarioCode
+		return string(config.ScenarioCode)
 	}
 	if isBackgroundRequest(body) {
-		return config.ScenarioBackground
+		return string(config.ScenarioBackground)
 	}
-	return config.ScenarioDefault
+	return string(config.ScenarioDefault)
 }
 
 // DetectScenarioFromJSON parses raw JSON and detects the scenario.
-func DetectScenarioFromJSON(data []byte, threshold int, sessionID string) (config.Scenario, map[string]interface{}) {
+func DetectScenarioFromJSON(data []byte, threshold int, sessionID string) (string, map[string]interface{}) {
 	var body map[string]interface{}
 	if err := json.Unmarshal(data, &body); err != nil {
-		return config.ScenarioDefault, nil
+		return string(config.ScenarioDefault), nil
 	}
 	return DetectScenario(body, threshold, sessionID), body
 }

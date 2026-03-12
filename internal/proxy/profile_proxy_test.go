@@ -2,11 +2,14 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dopejs/gozen/internal/config"
@@ -116,8 +119,16 @@ func TestProfileProxyInvalidateCache(t *testing.T) {
 	logger := log.New(os.Stderr, "[test] ", 0)
 	pp := NewProfileProxy(logger)
 
-	// Manually populate cache
-	pp.cache["test"] = &ProxyServer{}
+	sharedTransport := &trackingTransport{}
+	providerTransport := &trackingTransport{}
+
+	pp.cache["test"] = &ProxyServer{
+		Client: &http.Client{Transport: sharedTransport},
+		Providers: []*Provider{{
+			Name:   "provider-a",
+			Client: &http.Client{Transport: providerTransport},
+		}},
+	}
 	if len(pp.cache) != 1 {
 		t.Fatal("cache should have 1 entry")
 	}
@@ -125,6 +136,12 @@ func TestProfileProxyInvalidateCache(t *testing.T) {
 	pp.InvalidateCache()
 	if len(pp.cache) != 0 {
 		t.Error("cache should be empty after InvalidateCache")
+	}
+	if !sharedTransport.closed {
+		t.Error("expected shared proxy client idle connections to be closed")
+	}
+	if !providerTransport.closed {
+		t.Error("expected provider proxy client idle connections to be closed")
 	}
 }
 
@@ -162,19 +179,19 @@ func TestProfileProxyGetOrCreateProxy(t *testing.T) {
 	}
 
 	// First call creates
-	srv1 := pp.getOrCreateProxy("prof1", providers, nil)
+	srv1 := pp.getOrCreateProxy("prof1", providers, nil, config.LoadBalanceFailover)
 	if srv1 == nil {
 		t.Fatal("expected non-nil proxy server")
 	}
 
 	// Second call returns cached
-	srv2 := pp.getOrCreateProxy("prof1", providers, nil)
+	srv2 := pp.getOrCreateProxy("prof1", providers, nil, config.LoadBalanceFailover)
 	if srv1 != srv2 {
 		t.Error("expected same cached proxy server")
 	}
 
 	// Different profile creates new
-	srv3 := pp.getOrCreateProxy("prof2", providers, nil)
+	srv3 := pp.getOrCreateProxy("prof2", providers, nil, config.LoadBalanceFailover)
 	if srv3 == srv1 {
 		t.Error("expected different proxy server for different profile")
 	}
@@ -193,14 +210,14 @@ func TestProfileProxyGetOrCreateProxyWithRouting(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: defaultProviders,
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: thinkProviders,
 			},
 		},
 	}
 
-	srv := pp.getOrCreateProxy("routed", defaultProviders, routing)
+	srv := pp.getOrCreateProxy("routed", defaultProviders, routing, config.LoadBalanceFailover)
 	if srv == nil {
 		t.Fatal("expected non-nil proxy server")
 	}
@@ -210,7 +227,7 @@ func TestProfileProxyGetOrCreateProxyWithRouting(t *testing.T) {
 	if len(srv.Routing.ScenarioRoutes) != 1 {
 		t.Errorf("expected 1 scenario route, got %d", len(srv.Routing.ScenarioRoutes))
 	}
-	if sp, ok := srv.Routing.ScenarioRoutes[config.ScenarioThink]; !ok {
+	if sp, ok := srv.Routing.ScenarioRoutes["think"]; !ok {
 		t.Error("expected think scenario route")
 	} else if len(sp.Providers) != 1 || sp.Providers[0].Name != "thinker" {
 		t.Error("think scenario should route to thinker provider")
@@ -243,8 +260,8 @@ func TestResolveProfileConfigWithRouting(t *testing.T) {
 	// Set up profile with routing
 	config.SetProfileConfig("routed", &config.ProfileConfig{
 		Providers: []string{"standard"},
-		Routing: map[config.Scenario]*config.ScenarioRoute{
-			config.ScenarioThink: {
+		Routing: map[string]*config.RoutePolicy{
+			"think": {
 				Providers: []*config.ProviderRoute{
 					{Name: "thinker", Model: "custom-think-model"},
 				},
@@ -267,7 +284,7 @@ func TestResolveProfileConfigWithRouting(t *testing.T) {
 	if info.routing == nil {
 		t.Fatal("expected routing config")
 	}
-	thinkRoute, ok := info.routing[config.ScenarioThink]
+	thinkRoute, ok := info.routing["think"]
 	if !ok {
 		t.Fatal("expected think scenario route")
 	}
@@ -303,7 +320,7 @@ func TestBuildProvidersProxyURL(t *testing.T) {
 
 	logger := log.New(os.Stderr, "[test] ", 0)
 	pp := NewProfileProxy(logger)
-	providers, err := pp.buildProviders([]string{"with-proxy", "no-proxy"})
+	providers, err := pp.buildProviders([]string{"with-proxy", "no-proxy"}, nil)
 	if err != nil {
 		t.Fatalf("buildProviders() error: %v", err)
 	}
@@ -352,7 +369,7 @@ func TestBuildProvidersModelDefaults(t *testing.T) {
 
 	logger := log.New(os.Stderr, "[test] ", 0)
 	pp := NewProfileProxy(logger)
-	providers, err := pp.buildProviders([]string{"defaults", "explicit"})
+	providers, err := pp.buildProviders([]string{"defaults", "explicit"}, nil)
 	if err != nil {
 		t.Fatalf("buildProviders() error: %v", err)
 	}
@@ -385,5 +402,816 @@ func TestBuildProvidersModelDefaults(t *testing.T) {
 	}
 	if p2.SonnetModel != "custom-sonnet" {
 		t.Errorf("SonnetModel = %q, want custom-sonnet", p2.SonnetModel)
+	}
+}
+
+func TestDetectClientFormat(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		clientType string
+		want       string
+	}{
+		{
+			name:       "chat completions path",
+			path:       "/v1/chat/completions",
+			clientType: "",
+			want:       "openai-chat",
+		},
+		{
+			name:       "responses api path",
+			path:       "/responses",
+			clientType: "",
+			want:       "openai-responses",
+		},
+		{
+			name:       "responses api with prefix",
+			path:       "/v1/responses",
+			clientType: "",
+			want:       "openai-responses",
+		},
+		{
+			name:       "anthropic messages path",
+			path:       "/v1/messages",
+			clientType: "",
+			want:       "anthropic-messages",
+		},
+		{
+			name:       "codex client type",
+			path:       "/v1/messages",
+			clientType: "codex",
+			want:       "openai-chat",
+		},
+		{
+			name:       "unknown path defaults to anthropic",
+			path:       "/unknown",
+			clientType: "",
+			want:       "anthropic-messages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := detectClientFormat(tt.path, tt.clientType)
+			if got != tt.want {
+				t.Errorf("detectClientFormat(%q, %q) = %q, want %q", tt.path, tt.clientType, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test detectClientFormat with Codex client type
+func TestDetectClientFormat_Codex(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		clientType string
+		expected   string
+	}{
+		{
+			name:       "codex with responses path",
+			path:       "/v1/responses",
+			clientType: "codex",
+			expected:   "openai-responses",
+		},
+		{
+			name:       "codex with chat completions path",
+			path:       "/v1/chat/completions",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+		{
+			name:       "codex with unknown path defaults to chat",
+			path:       "/v1/unknown",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+		{
+			name:       "codex with messages path defaults to chat",
+			path:       "/v1/messages",
+			clientType: "codex",
+			expected:   "openai-chat",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectClientFormat(tt.path, tt.clientType)
+			if result != tt.expected {
+				t.Errorf("detectClientFormat(%q, %q) = %q, want %q",
+					tt.path, tt.clientType, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestProfileProxyLeastLatencyRouting tests end-to-end profile → strategy → provider selection
+// for least-latency strategy (T012 - User Story 1 integration test)
+func TestProfileProxyLeastLatencyRouting(t *testing.T) {
+	// Setup: Create temp config directory
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Setup: Create LogDB with latency metrics
+	db, err := OpenLogDB(configDir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	// Insert metrics: provider-a=100ms, provider-b=50ms, provider-c=200ms (all 15 samples)
+	for i := 0; i < 15; i++ {
+		db.RecordMetric("provider-a", 100, 200, false, false)
+		db.RecordMetric("provider-b", 50, 200, false, false)
+		db.RecordMetric("provider-c", 200, 200, false, false)
+	}
+
+	// Initialize global LoadBalancer with the test DB
+	InitGlobalLoadBalancer(db)
+
+	// Setup: Create mock providers
+	providerA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_a","type":"message","role":"assistant","content":[{"type":"text","text":"response from A"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerA.Close()
+
+	providerB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_b","type":"message","role":"assistant","content":[{"type":"text","text":"response from B"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerB.Close()
+
+	providerC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_c","type":"message","role":"assistant","content":[{"type":"text","text":"response from C"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerC.Close()
+
+	// Setup: Configure providers in config store
+	config.SetProvider("provider-a", &config.ProviderConfig{
+		BaseURL:   providerA.URL,
+		AuthToken: "token-a",
+		Model:     "claude-sonnet-4-5",
+	})
+	config.SetProvider("provider-b", &config.ProviderConfig{
+		BaseURL:   providerB.URL,
+		AuthToken: "token-b",
+		Model:     "claude-sonnet-4-5",
+	})
+	config.SetProvider("provider-c", &config.ProviderConfig{
+		BaseURL:   providerC.URL,
+		AuthToken: "token-c",
+		Model:     "claude-sonnet-4-5",
+	})
+
+	// Setup: Create profile with least-latency strategy
+	config.SetProfileConfig("test-profile", &config.ProfileConfig{
+		Providers: []string{"provider-a", "provider-b", "provider-c"},
+		Strategy:  config.LoadBalanceLeastLatency,
+	})
+
+	// Create ProfileProxy
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	// Create test request
+	reqBody := `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/test-profile/session123/v1/messages", strings.NewReader(reqBody))
+	r.Header.Set("Content-Type", "application/json")
+
+	// Execute request
+	pp.ServeHTTP(w, r)
+
+	// Verify: Response should be from provider-b (lowest latency: 50ms)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Check that response is from provider-b
+	if id, ok := resp["id"].(string); !ok || id != "msg_b" {
+		t.Errorf("expected response from provider-b (msg_b), got id=%v", resp["id"])
+	}
+
+	content := resp["content"].([]interface{})[0].(map[string]interface{})
+	text := content["text"].(string)
+	if text != "response from B" {
+		t.Errorf("expected 'response from B', got %q", text)
+	}
+}
+
+// TestProfileProxyLeastCostRouting tests end-to-end profile → strategy → provider selection
+// for least-cost strategy (T021 - User Story 2 integration test)
+func TestProfileProxyLeastCostRouting(t *testing.T) {
+	// Setup: Create temp config directory
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Setup: Create LogDB (not needed for cost routing, but required for LoadBalancer)
+	db, err := OpenLogDB(configDir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize global LoadBalancer
+	InitGlobalLoadBalancer(db)
+
+	// Setup: Create mock providers
+	// Provider A: Opus (most expensive)
+	providerA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_a","type":"message","role":"assistant","content":[{"type":"text","text":"response from A (Opus)"}],"model":"claude-3-opus-20240229","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerA.Close()
+
+	// Provider B: Haiku (cheapest)
+	providerB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_b","type":"message","role":"assistant","content":[{"type":"text","text":"response from B (Haiku)"}],"model":"claude-3-5-haiku-20241022","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerB.Close()
+
+	// Provider C: Sonnet (mid-range)
+	providerC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_c","type":"message","role":"assistant","content":[{"type":"text","text":"response from C (Sonnet)"}],"model":"claude-3-5-sonnet-20241022","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerC.Close()
+
+	// Setup: Configure providers with different models (different costs)
+	config.SetProvider("provider-opus", &config.ProviderConfig{
+		BaseURL:   providerA.URL,
+		AuthToken: "token-a",
+		Model:     "claude-3-opus-20240229", // Most expensive
+	})
+	config.SetProvider("provider-haiku", &config.ProviderConfig{
+		BaseURL:   providerB.URL,
+		AuthToken: "token-b",
+		Model:     "claude-3-5-haiku-20241022", // Cheapest
+	})
+	config.SetProvider("provider-sonnet", &config.ProviderConfig{
+		BaseURL:   providerC.URL,
+		AuthToken: "token-c",
+		Model:     "claude-3-5-sonnet-20241022", // Mid-range
+	})
+
+	// Setup: Create profile with least-cost strategy
+	config.SetProfileConfig("cost-profile", &config.ProfileConfig{
+		Providers: []string{"provider-opus", "provider-haiku", "provider-sonnet"},
+		Strategy:  config.LoadBalanceLeastCost,
+	})
+
+	// Create ProfileProxy
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	// Create test request
+	reqBody := `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/cost-profile/session456/v1/messages", strings.NewReader(reqBody))
+	r.Header.Set("Content-Type", "application/json")
+
+	// Execute request
+	pp.ServeHTTP(w, r)
+
+	// Verify: Response should be from provider-haiku (lowest cost)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Check that response is from provider-haiku
+	if id, ok := resp["id"].(string); !ok || id != "msg_b" {
+		t.Errorf("expected response from provider-haiku (msg_b), got id=%v", resp["id"])
+	}
+
+	content := resp["content"].([]interface{})[0].(map[string]interface{})
+	text := content["text"].(string)
+	if text != "response from B (Haiku)" {
+		t.Errorf("expected 'response from B (Haiku)', got %q", text)
+	}
+}
+
+// TestProfileProxyRoundRobinRouting tests end-to-end profile → strategy → provider selection
+// for round-robin strategy (T029 - User Story 3 integration test)
+func TestProfileProxyRoundRobinRouting(t *testing.T) {
+	// Setup: Create temp config directory
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Setup: Create LogDB (required for LoadBalancer)
+	db, err := OpenLogDB(configDir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize global LoadBalancer
+	InitGlobalLoadBalancer(db)
+
+	// Setup: Create mock providers that return their name in response
+	createMockProvider := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			response := fmt.Sprintf(`{"id":"msg_%s","type":"message","role":"assistant","content":[{"type":"text","text":"response from %s"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`, name, name)
+			w.Write([]byte(response))
+		}))
+	}
+
+	providerA := createMockProvider("A")
+	defer providerA.Close()
+	providerB := createMockProvider("B")
+	defer providerB.Close()
+	providerC := createMockProvider("C")
+	defer providerC.Close()
+
+	// Setup: Configure providers
+	config.SetProvider("provider-a", &config.ProviderConfig{
+		BaseURL:   providerA.URL,
+		AuthToken: "token-a",
+		Model:     "claude-sonnet-4-5",
+	})
+	config.SetProvider("provider-b", &config.ProviderConfig{
+		BaseURL:   providerB.URL,
+		AuthToken: "token-b",
+		Model:     "claude-sonnet-4-5",
+	})
+	config.SetProvider("provider-c", &config.ProviderConfig{
+		BaseURL:   providerC.URL,
+		AuthToken: "token-c",
+		Model:     "claude-sonnet-4-5",
+	})
+
+	// Setup: Create profile with round-robin strategy
+	config.SetProfileConfig("rr-profile", &config.ProfileConfig{
+		Providers: []string{"provider-a", "provider-b", "provider-c"},
+		Strategy:  config.LoadBalanceRoundRobin,
+	})
+
+	// Create ProfileProxy
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	// Make 9 requests and track which provider responds
+	reqBody := `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`
+	selections := make([]string, 9)
+
+	for i := 0; i < 9; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", fmt.Sprintf("/rr-profile/session%d/v1/messages", i), strings.NewReader(reqBody))
+		r.Header.Set("Content-Type", "application/json")
+
+		pp.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d: %s", i, w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("request %d: failed to decode response: %v", i, err)
+		}
+
+		// Extract provider name from response ID
+		id := resp["id"].(string)
+		if strings.HasPrefix(id, "msg_A") {
+			selections[i] = "provider-a"
+		} else if strings.HasPrefix(id, "msg_B") {
+			selections[i] = "provider-b"
+		} else if strings.HasPrefix(id, "msg_C") {
+			selections[i] = "provider-c"
+		} else {
+			t.Fatalf("request %d: unexpected response id: %s", i, id)
+		}
+	}
+
+	// Count selections
+	counts := make(map[string]int)
+	for _, name := range selections {
+		counts[name]++
+	}
+
+	// Verify even distribution: each provider should be selected exactly 3 times
+	for _, provider := range []string{"provider-a", "provider-b", "provider-c"} {
+		if counts[provider] != 3 {
+			t.Errorf("provider %s selected %d times, want 3 (selections: %v)", provider, counts[provider], selections)
+		}
+	}
+}
+
+// TestProfileProxyWeightedRouting tests end-to-end profile → strategy → provider selection
+// for weighted strategy (T037 - User Story 4 integration test)
+func TestProfileProxyWeightedRouting(t *testing.T) {
+	// Setup: Create temp config directory
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Setup: Create LogDB (required for LoadBalancer)
+	db, err := OpenLogDB(configDir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+
+	// Initialize global LoadBalancer
+	InitGlobalLoadBalancer(db)
+
+	// Setup: Create mock providers that return their name in response
+	createMockProvider := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			response := fmt.Sprintf(`{"id":"msg_%s","type":"message","role":"assistant","content":[{"type":"text","text":"response from %s"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`, name, name)
+			w.Write([]byte(response))
+		}))
+	}
+
+	providerA := createMockProvider("A")
+	defer providerA.Close()
+	providerB := createMockProvider("B")
+	defer providerB.Close()
+	providerC := createMockProvider("C")
+	defer providerC.Close()
+
+	// Setup: Configure providers with weights (A:70, B:20, C:10)
+	config.SetProvider("provider-a", &config.ProviderConfig{
+		BaseURL:   providerA.URL,
+		AuthToken: "token-a",
+		Model:     "claude-sonnet-4-5",
+		Weight:    70,
+	})
+	config.SetProvider("provider-b", &config.ProviderConfig{
+		BaseURL:   providerB.URL,
+		AuthToken: "token-b",
+		Model:     "claude-sonnet-4-5",
+		Weight:    20,
+	})
+	config.SetProvider("provider-c", &config.ProviderConfig{
+		BaseURL:   providerC.URL,
+		AuthToken: "token-c",
+		Model:     "claude-sonnet-4-5",
+		Weight:    10,
+	})
+
+	// Setup: Create profile with weighted strategy
+	config.SetProfileConfig("weighted-profile", &config.ProfileConfig{
+		Providers: []string{"provider-a", "provider-b", "provider-c"},
+		Strategy:  config.LoadBalanceWeighted,
+	})
+
+	// Create ProfileProxy
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	// Make 100 requests and track which provider responds
+	reqBody := `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"test"}],"max_tokens":100}`
+	const numRequests = 100
+	selections := make([]string, numRequests)
+
+	for i := 0; i < numRequests; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", fmt.Sprintf("/weighted-profile/session%d/v1/messages", i), strings.NewReader(reqBody))
+		r.Header.Set("Content-Type", "application/json")
+
+		pp.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d: %s", i, w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("request %d: failed to decode response: %v", i, err)
+		}
+
+		// Extract provider name from response ID
+		id := resp["id"].(string)
+		if strings.HasPrefix(id, "msg_A") {
+			selections[i] = "provider-a"
+		} else if strings.HasPrefix(id, "msg_B") {
+			selections[i] = "provider-b"
+		} else if strings.HasPrefix(id, "msg_C") {
+			selections[i] = "provider-c"
+		} else {
+			t.Fatalf("request %d: unexpected response id: %s", i, id)
+		}
+	}
+
+	// Count selections
+	counts := make(map[string]int)
+	for _, name := range selections {
+		counts[name]++
+	}
+
+	// Verify distribution matches weights within 15% variance
+	// Expected: A=70, B=20, C=10
+	expectedA := 70
+	expectedB := 20
+	expectedC := 10
+	tolerance := 15 // 15%
+
+	if counts["provider-a"] < expectedA-tolerance || counts["provider-a"] > expectedA+tolerance {
+		t.Errorf("provider-a selected %d times, want %d±%d (70%%) (distribution: %v)", counts["provider-a"], expectedA, tolerance, counts)
+	}
+	if counts["provider-b"] < expectedB-tolerance || counts["provider-b"] > expectedB+tolerance {
+		t.Errorf("provider-b selected %d times, want %d±%d (20%%) (distribution: %v)", counts["provider-b"], expectedB, tolerance, counts)
+	}
+	if counts["provider-c"] < expectedC-tolerance || counts["provider-c"] > expectedC+tolerance {
+		t.Errorf("provider-c selected %d times, want %d±%d (10%%) (distribution: %v)", counts["provider-c"], expectedC, tolerance, counts)
+	}
+}
+
+// T048: Backward compatibility - empty strategy defaults to failover
+func TestProfileProxyDefaultFailoverStrategy(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	db, err := OpenLogDB(configDir)
+	if err != nil {
+		t.Fatalf("OpenLogDB: %v", err)
+	}
+	defer db.Close()
+	InitGlobalLoadBalancer(db)
+
+	// Provider A returns 200, Provider B returns 200
+	providerA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_a","type":"message","role":"assistant","content":[{"type":"text","text":"A"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerA.Close()
+
+	providerB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"msg_b","type":"message","role":"assistant","content":[{"type":"text","text":"B"}],"model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":20}}`))
+	}))
+	defer providerB.Close()
+
+	config.SetProvider("pa", &config.ProviderConfig{
+		BaseURL: providerA.URL, AuthToken: "t", Model: "claude-sonnet-4-5",
+	})
+	config.SetProvider("pb", &config.ProviderConfig{
+		BaseURL: providerB.URL, AuthToken: "t", Model: "claude-sonnet-4-5",
+	})
+
+	// Profile with NO strategy set (empty string = default failover)
+	config.SetProfileConfig("default-profile", &config.ProfileConfig{
+		Providers: []string{"pa", "pb"},
+		// Strategy intentionally omitted
+	})
+
+	logger := log.New(os.Stderr, "[test] ", 0)
+	pp := NewProfileProxy(logger)
+
+	// All requests should go to provider A (failover = first healthy)
+	for i := 0; i < 3; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST",
+			fmt.Sprintf("/default-profile/s%d/v1/messages", i),
+			strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":10}`))
+		r.Header.Set("Content-Type", "application/json")
+		pp.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("req %d: got %d", i, w.Code)
+		}
+
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		if resp["id"] != "msg_a" {
+			t.Errorf("req %d: expected failover to provider-a (msg_a), got %v", i, resp["id"])
+		}
+	}
+}
+
+// TestProfileProxyWeightedWithProfileWeights verifies that profile-level ProviderWeights
+// override provider-level weights, so the same provider can have different weights
+// in different profiles.
+func TestProfileProxyWeightedWithProfileWeights(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Create two mock providers
+	mockA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "msg_a", "type": "message", "role": "assistant",
+			"content": []map[string]string{{"type": "text", "text": "a"}},
+		})
+	}))
+	defer mockA.Close()
+
+	mockB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "msg_b", "type": "message", "role": "assistant",
+			"content": []map[string]string{{"type": "text", "text": "b"}},
+		})
+	}))
+	defer mockB.Close()
+
+	// Set up providers — global weight is 0 for both
+	config.SetProvider("provider-a", &config.ProviderConfig{
+		BaseURL:   mockA.URL,
+		AuthToken: "key-a",
+		Weight:    0,
+	})
+	config.SetProvider("provider-b", &config.ProviderConfig{
+		BaseURL:   mockB.URL,
+		AuthToken: "key-b",
+		Weight:    0,
+	})
+
+	// Set up profile with ProviderWeights: provider-a=100, provider-b=0
+	// This should cause provider-a to be selected every time
+	store := config.DefaultStore()
+	store.SetProfileConfig("weighted-profile", &config.ProfileConfig{
+		Providers: []string{"provider-a", "provider-b"},
+		Strategy:  config.LoadBalanceWeighted,
+		ProviderWeights: map[string]int{
+			"provider-a": 100,
+			"provider-b": 0,
+		},
+	})
+
+	InitGlobalLoadBalancer(nil)
+	pp := NewProfileProxy(log.New(io.Discard, "", 0))
+
+	// Send 10 requests — all should go to provider-a since weight=100 vs 0
+	aCount := 0
+	for i := 0; i < 10; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST",
+			fmt.Sprintf("/weighted-profile/s%d/v1/messages", i),
+			strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":10}`))
+		r.Header.Set("Content-Type", "application/json")
+		pp.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("req %d: got %d", i, w.Code)
+		}
+
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		if resp["id"] == "msg_a" {
+			aCount++
+		}
+	}
+
+	// With weight 100 vs 0, provider-a should get all requests
+	if aCount != 10 {
+		t.Errorf("provider-a got %d/10 requests, expected all 10 (weight=100 vs 0)", aCount)
+	}
+}
+
+// TestProfileProxyDisabledProviderExcludedFromStrategy verifies that disabled providers
+// are filtered out BEFORE strategy selection, so they don't pollute round-robin counters
+// or weighted distribution.
+func TestProfileProxyDisabledProviderExcludedFromStrategy(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	configDir := filepath.Join(tmpDir, ".zen")
+	os.MkdirAll(configDir, 0755)
+	config.ResetDefaultStore()
+
+	// Create three mock providers with identifiable responses
+	mockA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "msg_a", "type": "message", "role": "assistant",
+			"content": []map[string]string{{"type": "text", "text": "a"}},
+		})
+	}))
+	defer mockA.Close()
+
+	mockB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "msg_b", "type": "message", "role": "assistant",
+			"content": []map[string]string{{"type": "text", "text": "b"}},
+		})
+	}))
+	defer mockB.Close()
+
+	mockC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "msg_c", "type": "message", "role": "assistant",
+			"content": []map[string]string{{"type": "text", "text": "c"}},
+		})
+	}))
+	defer mockC.Close()
+
+	config.SetProvider("pa", &config.ProviderConfig{BaseURL: mockA.URL, AuthToken: "key-a"})
+	config.SetProvider("pb", &config.ProviderConfig{BaseURL: mockB.URL, AuthToken: "key-b"})
+	config.SetProvider("pc", &config.ProviderConfig{BaseURL: mockC.URL, AuthToken: "key-c"})
+
+	store := config.DefaultStore()
+	store.SetProfileConfig(config.DefaultProfileName, &config.ProfileConfig{
+		Providers: []string{"pa"},
+	})
+	store.SetProfileConfig("rr-profile", &config.ProfileConfig{
+		Providers: []string{"pa", "pb", "pc"},
+		Strategy:  config.LoadBalanceRoundRobin,
+	})
+
+	// Disable provider pb
+	if err := config.DisableProvider("pb", "permanent"); err != nil {
+		t.Fatalf("DisableProvider() error: %v", err)
+	}
+
+	InitGlobalLoadBalancer(nil)
+	pp := NewProfileProxy(log.New(io.Discard, "", 0))
+
+	// With pb disabled, round-robin should only cycle between pa and pc
+	results := make(map[string]int)
+	for i := 0; i < 6; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST",
+			fmt.Sprintf("/rr-profile/s%d/v1/messages", i),
+			strings.NewReader(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":10}`))
+		r.Header.Set("Content-Type", "application/json")
+		pp.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("req %d: got %d, body: %s", i, w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		if id, ok := resp["id"].(string); ok {
+			results[id]++
+		}
+	}
+
+	// pb should never be selected (it's disabled)
+	if results["msg_b"] > 0 {
+		t.Errorf("disabled provider pb was selected %d times, expected 0", results["msg_b"])
+	}
+
+	// pa and pc should share the load
+	if results["msg_a"] == 0 {
+		t.Error("provider pa was never selected")
+	}
+	if results["msg_c"] == 0 {
+		t.Error("provider pc was never selected")
 	}
 }

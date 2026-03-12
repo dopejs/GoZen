@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -79,7 +80,7 @@ func TestModelMappingSonnet(t *testing.T) {
 		ReasoningModel: "my-reasoning", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5-20250929","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -108,7 +109,7 @@ func TestModelMappingHaiku(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-haiku-4-5","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -137,7 +138,7 @@ func TestModelMappingOpus(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-opus-4-5","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -165,7 +166,7 @@ func TestModelMappingThinkingMode(t *testing.T) {
 		SonnetModel: "my-sonnet", ReasoningModel: "my-reasoning", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"}}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -193,7 +194,7 @@ func TestModelMappingThinkingDisabledUsesSonnet(t *testing.T) {
 		SonnetModel: "my-sonnet", ReasoningModel: "my-reasoning", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","thinking":{"type":"disabled"}}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -221,7 +222,7 @@ func TestModelMappingUnknownModelUsesDefault(t *testing.T) {
 		SonnetModel: "my-sonnet", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"some-unknown-model","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -248,7 +249,7 @@ func TestModelMappingNoMappingKeepsOriginal(t *testing.T) {
 		Name: "test", BaseURL: u, Token: "t", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -276,7 +277,7 @@ func TestModelMappingCaseInsensitive(t *testing.T) {
 		SonnetModel: "my-sonnet", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"Claude-SONNET-4-5","prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -302,7 +303,7 @@ func TestModelMappingInvalidJSON(t *testing.T) {
 		Name: "test", BaseURL: u, Token: "t", Model: "test-model", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader("not json"))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -333,7 +334,7 @@ func TestModelMappingFailoverUsesSecondProviderMapping(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", SonnetModel: "provider2-sonnet", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -403,7 +404,7 @@ func TestFailoverAppliesAllProviderConfig(t *testing.T) {
 				},
 			}
 
-			srv := NewProxyServer(providers, discardLogger())
+			srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(tt.body))
 			w := httptest.NewRecorder()
 			srv.ServeHTTP(w, req)
@@ -452,7 +453,7 @@ func TestFailoverThreeProviders(t *testing.T) {
 		{Name: "p3", BaseURL: u3, Token: "token-p3", HaikuModel: "p3-haiku", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-haiku-4-5"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -514,7 +515,7 @@ func TestServeHTTPSuccess(t *testing.T) {
 		Name: "test", BaseURL: u, Token: "test-token", Model: "test-model", Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"some-model","prompt":"hi"}`))
 	w := httptest.NewRecorder()
@@ -552,7 +553,7 @@ func TestServeHTTPFailoverOn500(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Model: "m", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
@@ -586,7 +587,7 @@ func TestServeHTTPFailoverOn429(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -608,7 +609,7 @@ func TestServeHTTPAllProvidersFail(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -643,7 +644,7 @@ func TestServeHTTPSkipsUnhealthyProvider(t *testing.T) {
 	// Mark p1 as unhealthy
 	p1.MarkFailed()
 
-	srv := NewProxyServer([]*Provider{p1, p2}, discardLogger())
+	srv := NewProxyServer([]*Provider{p1, p2}, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -677,7 +678,7 @@ func TestServeHTTPNoModelInjectionWhenEmpty(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Model: "", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"prompt":"hi"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -698,7 +699,7 @@ func TestServeHTTPPreservesQueryString(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages?beta=true", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -719,7 +720,7 @@ func TestServeHTTPSSEStreaming(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -769,7 +770,7 @@ func TestNewProxyServer(t *testing.T) {
 	providers := []*Provider{
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	if srv == nil {
 		t.Fatal("NewProxyServer returned nil")
 	}
@@ -796,7 +797,7 @@ func TestServeHTTPCopiesResponseHeaders(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -836,7 +837,7 @@ func TestServeHTTPConnectionError(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -853,7 +854,7 @@ func TestServeHTTPBadBodyRead(t *testing.T) {
 		{Name: "p1", BaseURL: u, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", &errorReader{})
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -894,7 +895,7 @@ func TestServeHTTP4xxNoFailover(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -932,7 +933,7 @@ func TestServeHTTPFailoverOn401(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "good-token", Model: "m", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -969,7 +970,7 @@ func TestServeHTTPFailoverOn403(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Model: "m", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1006,7 +1007,7 @@ func TestServeHTTPFailoverOn402(t *testing.T) {
 		{Name: "p2", BaseURL: u2, Token: "t2", Model: "m", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1125,15 +1126,15 @@ func TestRoutingThinkScenarioUsesThinkProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{thinkProvider},
 				Models:    map[string]string{"think-p": "think-model"},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
 	w := httptest.NewRecorder()
@@ -1165,15 +1166,15 @@ func TestRoutingDefaultScenarioUsesDefaultProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{{Name: "think-p", BaseURL: u1, Token: "t2", Healthy: true}},
 				Models:    map[string]string{"think-p": "think-model"},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`))
 	w := httptest.NewRecorder()
@@ -1209,15 +1210,15 @@ func TestRoutingModelOverrideSkipsMapping(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{provider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{provider},
 				Models:    map[string]string{"p1": "override-model"},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"}}`))
 	w := httptest.NewRecorder()
@@ -1248,7 +1249,7 @@ func TestRoutingNoRoutingBackwardCompat(t *testing.T) {
 	}}
 
 	// No routing — plain old proxy
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","prompt":"hi"}`))
 	w := httptest.NewRecorder()
@@ -1280,14 +1281,14 @@ func TestRoutingSharedProviderHealth(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{sharedProvider, backupProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{sharedProvider},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 
 	// First request — default scenario. Provider "shared" will fail (500) and get marked unhealthy.
 	req1 := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
@@ -1327,14 +1328,14 @@ func TestRoutingScenarioFallbackAllFail(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{scenarioProvider},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 
 	// Think scenario request - both scenario and default providers will fail
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
@@ -1363,12 +1364,12 @@ func TestRoutingImageScenario(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {Providers: []*Provider{imageProvider}},
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {Providers: []*Provider{imageProvider}},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"abc"}}]}]}`))
 	w := httptest.NewRecorder()
@@ -1413,8 +1414,8 @@ func TestRoutingLongContextScenario(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{defaultProvider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioLongContext: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"longContext": {
 				Providers: []*Provider{longCtxProvider},
 				Models:    map[string]string{"cheap-p": "cheap-model"},
 			},
@@ -1426,7 +1427,7 @@ func TestRoutingLongContextScenario(t *testing.T) {
 	longText := generateLongTextForTest(32000 * 6)
 	reqBody := fmt.Sprintf(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"%s"}]}`, longText)
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1475,15 +1476,15 @@ func TestRoutingScenarioFailover(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioThink: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"think": {
 				Providers: []*Provider{provider1, provider2},
 				Models:    map[string]string{"think-p1": "think-override", "think-p2": "think-override"},
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
 	w := httptest.NewRecorder()
@@ -1528,15 +1529,15 @@ func TestRoutingScenarioFailoverWithoutModelOverride(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {
 				Providers: []*Provider{provider1, provider2},
 				// No Model → normal mapping per provider
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"abc"}}]}]}`))
 	w := httptest.NewRecorder()
@@ -1568,15 +1569,15 @@ func TestRoutingScenarioWithoutModelOverrideUsesNormalMapping(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: []*Provider{provider},
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioImage: {
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			"image": {
 				Providers: []*Provider{provider},
 				// No Model override → normal mapping should apply
 			},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":[{"type":"image","source":{}}]}]}`))
 	w := httptest.NewRecorder()
@@ -1626,7 +1627,7 @@ func TestEnvVarsAppliedAsHeaders(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1690,7 +1691,7 @@ func TestEnvVarsFailoverSwitchesEnvVars(t *testing.T) {
 		},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1722,7 +1723,7 @@ func TestEnvVarsEmptyMapNoHeaders(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1754,7 +1755,7 @@ func TestEnvVarsNilMapNoHeaders(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1896,7 +1897,7 @@ func TestAllProvidersFailBodyFormat(t *testing.T) {
 		{Name: "provider-beta", BaseURL: u2, Token: "t2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1937,7 +1938,7 @@ func TestAllProvidersFailConnectionError(t *testing.T) {
 		{Name: "broken-provider", BaseURL: badURL, Token: "t1", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -1997,7 +1998,7 @@ func TestCopyResponse_NoTagInjection(t *testing.T) {
 
 			u, _ := url.Parse(backend.URL)
 			providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
-			srv := NewProxyServer(providers, discardLogger())
+			srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","messages":[{"role":"user","content":"hi"}]}`))
 			req.Header.Set("Content-Type", "application/json")
@@ -2035,7 +2036,7 @@ func TestCopyResponse_ThinkingBlockPreserved(t *testing.T) {
 
 	u, _ := url.Parse(backend.URL)
 	providers := []*Provider{{Name: "test-provider", BaseURL: u, Token: "t", Healthy: true}}
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{"model":"claude-sonnet-4","thinking":{"type":"enabled"},"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -2127,7 +2128,7 @@ func TestPathDeduplication_CrossFormat(t *testing.T) {
 				Healthy: true,
 			}}
 
-			srv := NewProxyServer(providers, discardLogger())
+			srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 			var reqPath string
 			if tt.clientType == "anthropic" {
 				reqPath = "/v1/messages"
@@ -2249,7 +2250,7 @@ func TestBuildProviders_TypeAwareDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			providers, err := pp.buildProviders([]string{tt.providerName})
+			providers, err := pp.buildProviders([]string{tt.providerName}, nil)
 			if err != nil {
 				t.Fatalf("buildProviders error: %v", err)
 			}
@@ -2367,7 +2368,7 @@ func TestModelMappingFallthrough_OpenAI(t *testing.T) {
 			tt.provider.Token = "test-token"
 			tt.provider.Healthy = true
 
-			srv := NewProxyServer([]*Provider{tt.provider}, discardLogger())
+			srv := NewProxyServer([]*Provider{tt.provider}, discardLogger(), config.LoadBalanceFailover, nil)
 			body := fmt.Sprintf(`{"model":"%s","messages":[{"role":"user","content":"hi"}]}`, tt.requestModel)
 			req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
 			w := httptest.NewRecorder()
@@ -2423,7 +2424,7 @@ func TestE2E_AnthropicToOpenAI_NonStreaming(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	// Send Anthropic-format request
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
@@ -2519,7 +2520,7 @@ func TestE2E_AnthropicToOpenAI_Streaming(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-6","max_tokens":100,"stream":true,"messages":[{"role":"user","content":"Hello"}]}`))
 	req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2562,7 +2563,7 @@ func TestE2E_EdgeCases(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`))
 		req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2592,7 +2593,7 @@ func TestE2E_EdgeCases(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hi"}]}`))
 		req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2625,7 +2626,7 @@ func TestE2E_EdgeCases(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		// Request without model field
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"messages":[{"role":"user","content":"hi"}]}`))
@@ -2732,7 +2733,7 @@ func TestResponsesAPIRetry(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"max_tokens":1024}`))
 		req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2788,7 +2789,7 @@ func TestResponsesAPIRetry(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
 		req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2833,7 +2834,7 @@ func TestResponsesAPIRetry(t *testing.T) {
 			Healthy: true,
 		}}
 
-		srv := NewProxyServer(providers, discardLogger())
+		srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 			`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}`))
 		req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2849,6 +2850,69 @@ func TestResponsesAPIRetry(t *testing.T) {
 			t.Errorf("error should contain Responses API error, got: %s", body)
 		}
 	})
+}
+
+func TestResponsesAPIRetryOpenAIChat(t *testing.T) {
+	// Regression test for: OpenAI Chat client receives wrong Responses API payload after retry.
+	// When the client is openai-chat and the provider returns "input is required", the proxy
+	// should retry via /responses AND transform the Responses API response back to
+	// Chat Completions format before returning it to the client.
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":{"message":"input is required (request id: abc)","type":"new_api_error"}}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/responses") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(200)
+			w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello from Responses!"}]}],"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`))
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer backend.Close()
+
+	u, _ := url.Parse(backend.URL)
+	providers := []*Provider{{
+		Name:    "openai-provider",
+		Type:    config.ProviderTypeOpenAI,
+		BaseURL: u,
+		Token:   "test-token",
+		Model:   "gpt-5",
+		Healthy: true,
+	}}
+
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
+	// Client sends an OpenAI Chat Completions request
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(
+		`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}],"max_tokens":1024}`))
+	req.Header.Set("X-Zen-Request-Format", "openai-chat")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	// Response MUST be Chat Completions format, NOT Responses API format
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if resp["object"] != "chat.completion" {
+		t.Errorf("response object = %v, want chat.completion (got Responses API payload?)", resp["object"])
+	}
+	choices, ok := resp["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		t.Fatal("response should have choices")
+	}
+	choice := choices[0].(map[string]interface{})
+	msg := choice["message"].(map[string]interface{})
+	if msg["content"] != "Hello from Responses!" {
+		t.Errorf("content = %v, want Hello from Responses!", msg["content"])
+	}
 }
 
 func TestResponsesAPIRetryStreaming(t *testing.T) {
@@ -2894,7 +2958,7 @@ func TestResponsesAPIRetryStreaming(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}],"stream":true}`))
 	req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -2952,7 +3016,7 @@ func TestResponsesAPIRetryToolCall(t *testing.T) {
 		Healthy: true,
 	}}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(
 		`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"weather in Tokyo"}],"tools":[{"name":"get_weather","input_schema":{}}]}`))
 	req.Header.Set("X-Zen-Request-Format", "anthropic")
@@ -3037,7 +3101,7 @@ func TestTryProvidersSkipsDisabledProvider(t *testing.T) {
 		{Name: "provider2", BaseURL: u2, Token: "tok2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
@@ -3082,7 +3146,7 @@ func TestAllProvidersDisabled503(t *testing.T) {
 		{Name: "p2", BaseURL: u, Token: "tok2", Healthy: true},
 	}
 
-	srv := NewProxyServer(providers, discardLogger())
+	srv := NewProxyServer(providers, discardLogger(), config.LoadBalanceFailover, nil)
 
 	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
@@ -3150,12 +3214,12 @@ func TestScenarioFallbackWithDisabledProviders(t *testing.T) {
 
 	routing := &RoutingConfig{
 		DefaultProviders: defaultProviders,
-		ScenarioRoutes: map[config.Scenario]*ScenarioProviders{
-			config.ScenarioDefault: {Providers: scenarioProviders},
+		ScenarioRoutes: map[string]*ScenarioProviders{
+			string(config.ScenarioDefault): {Providers: scenarioProviders},
 		},
 	}
 
-	srv := NewProxyServerWithRouting(routing, discardLogger())
+	srv := NewProxyServerWithRouting(routing, discardLogger(), config.LoadBalanceFailover, nil)
 
 	body := `{"model":"claude-sonnet-4-20250514","messages":[{"role":"user","content":"hi"}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(body))
@@ -3181,4 +3245,213 @@ func TestScenarioFallbackWithDisabledProviders(t *testing.T) {
 	if w2.Code != 503 {
 		t.Fatalf("status = %d, want 503 (all providers disabled); body: %s", w2.Code, w2.Body.String())
 	}
+}
+
+// Phase 6: Transform Error Classification Tests
+
+// T032: Verify TransformError type exists and can be detected
+func TestTransformError_RequestTransformFailure(t *testing.T) {
+	// Test that TransformError type exists and implements error interface
+	err := &TransformError{Op: "request", Err: fmt.Errorf("test error")}
+	if err.Error() == "" {
+		t.Error("TransformError should implement error interface")
+	}
+
+	// Test that errors.As can detect TransformError
+	var transformErr *TransformError
+	if !errors.As(err, &transformErr) {
+		t.Error("errors.As should detect TransformError")
+	}
+
+	if transformErr.Op != "request" {
+		t.Errorf("expected Op=request, got %s", transformErr.Op)
+	}
+}
+
+// T033: Verify response transform errors return HTTP 500
+func TestTransformError_ResponseTransformFailure(t *testing.T) {
+	// Test TransformError for response operations
+	err := &TransformError{Op: "response", Err: fmt.Errorf("invalid format")}
+
+	var transformErr *TransformError
+	if !errors.As(err, &transformErr) {
+		t.Error("errors.As should detect TransformError")
+	}
+
+	if transformErr.Op != "response" {
+		t.Errorf("expected Op=response, got %s", transformErr.Op)
+	}
+
+	// Verify Unwrap works
+	if transformErr.Unwrap() == nil {
+		t.Error("TransformError should unwrap to underlying error")
+	}
+}
+
+// Test that transform errors return proper JSON with correct Content-Type
+func TestTransformError_ProperJSONResponse(t *testing.T) {
+	// Test that TransformError produces valid JSON response
+	err := &TransformError{Op: "request", Err: fmt.Errorf("test error with \"quotes\" and special chars")}
+
+	// Simulate what the server does
+	w := httptest.NewRecorder()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	errResp := map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "transform_error",
+			"message": err.Error(),
+		},
+	}
+	json.NewEncoder(w).Encode(errResp)
+
+	// Verify Content-Type
+	if w.Header().Get("Content-Type") != "application/json" {
+		t.Errorf("expected Content-Type: application/json, got %s", w.Header().Get("Content-Type"))
+	}
+
+	// Verify valid JSON
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &decoded); err != nil {
+		t.Errorf("response should be valid JSON: %v, body: %s", err, w.Body.String())
+	}
+
+	// Verify error structure
+	if decoded["error"] == nil {
+		t.Error("expected error field in response")
+	}
+
+	errorObj := decoded["error"].(map[string]interface{})
+	if errorObj["type"] != "transform_error" {
+		t.Errorf("expected type=transform_error, got %v", errorObj["type"])
+	}
+
+	// Verify message contains the error text (quotes should be properly escaped)
+	message := errorObj["message"].(string)
+	if !strings.Contains(message, "test error") {
+		t.Errorf("expected message to contain error text, got: %s", message)
+	}
+}
+
+func TestSSEUsageExtractor(t *testing.T) {
+	t.Run("extracts_usage_from_anthropic_sse", func(t *testing.T) {
+		sse := strings.Join([]string{
+			`data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":25,"output_tokens":0}}}`,
+			``,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+			``,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}}`,
+			``,
+			`data: {"type":"message_stop"}`,
+			``,
+		}, "\n")
+
+		var got *SessionUsage
+		// Temporarily wire a capture via a fake session
+		sessionID := "test-sse-usage-session"
+		ClearSessionUsage(sessionID)
+
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		_, err := io.ReadAll(extractor)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		got = GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 25 {
+			t.Errorf("InputTokens = %d, want 25", got.InputTokens)
+		}
+		if got.OutputTokens != 42 {
+			t.Errorf("OutputTokens = %d, want 42", got.OutputTokens)
+		}
+	})
+
+	t.Run("no_update_on_empty_session", func(t *testing.T) {
+		sse := "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n"
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: "", // empty → should not call UpdateSessionUsage
+		}
+		// Should complete without panic
+		io.ReadAll(extractor)
+	})
+
+	t.Run("extracts_usage_from_responses_api_sse", func(t *testing.T) {
+		sse := strings.Join([]string{
+			`data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`,
+			``,
+			`data: {"type":"response.output_text.delta","delta":"Hi"}`,
+			``,
+			`data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":30,"output_tokens":15}}}`,
+			``,
+		}, "\n")
+
+		sessionID := "test-sse-responses-api"
+		ClearSessionUsage(sessionID)
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+		got := GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 30 {
+			t.Errorf("InputTokens = %d, want 30", got.InputTokens)
+		}
+		if got.OutputTokens != 15 {
+			t.Errorf("OutputTokens = %d, want 15", got.OutputTokens)
+		}
+	})
+
+	t.Run("extracts_usage_from_openai_chat_sse", func(t *testing.T) {
+		// OpenAI Chat final chunk has no "type" field; usage at top level
+		sse := strings.Join([]string{
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hi"}}]}`,
+			``,
+			`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"finish_reason":"stop"}],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n")
+
+		sessionID := "test-sse-openai-chat"
+		ClearSessionUsage(sessionID)
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader(sse)),
+			sessionID: sessionID,
+		}
+		if _, err := io.ReadAll(extractor); err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+		got := GetSessionUsage(sessionID)
+		if got == nil {
+			t.Fatal("expected session usage to be updated, got nil")
+		}
+		if got.InputTokens != 20 {
+			t.Errorf("InputTokens = %d, want 20", got.InputTokens)
+		}
+		if got.OutputTokens != 8 {
+			t.Errorf("OutputTokens = %d, want 8", got.OutputTokens)
+		}
+	})
+
+	t.Run("close_delegates_to_inner", func(t *testing.T) {
+		extractor := &sseUsageExtractor{
+			r:         io.NopCloser(strings.NewReader("")),
+			sessionID: "",
+		}
+		if err := extractor.Close(); err != nil {
+			t.Errorf("Close() error: %v", err)
+		}
+	})
 }

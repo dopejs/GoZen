@@ -1,29 +1,13 @@
 package transform
 
 import (
-	"log"
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"strings"
 )
 
 // AnthropicTransformer handles Anthropic Messages API format.
 // This is the default format used by Claude Code.
 type AnthropicTransformer struct{}
-
-var debugLogger *log.Logger
-
-func init() {
-	// Write debug logs to a file
-	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".zen-dev", "transform.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		debugLogger = log.New(os.Stderr, "[transform] ", log.LstdFlags)
-	} else {
-		debugLogger = log.New(f, "[transform] ", log.LstdFlags)
-	}
-}
 
 func (t *AnthropicTransformer) Name() string {
 	return "anthropic"
@@ -33,13 +17,12 @@ func (t *AnthropicTransformer) Name() string {
 // If the client is already using Anthropic format, no transformation is needed.
 // If the client is using OpenAI format, convert to Anthropic format.
 func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "" || clientFormat == "anthropic" {
-		// No transformation needed
+	// Normalize format
+	normalized := NormalizeFormat(clientFormat)
+	if normalized == "anthropic" || normalized == "" {
+		// No transformation needed (empty defaults to anthropic)
 		return body, nil
 	}
-
-	// Debug: log incoming request
-	debugLogger.Printf("OpenAI request body: %s", string(body))
 
 	// OpenAI → Anthropic transformation
 	data, err := parseJSON(body)
@@ -48,24 +31,26 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 	}
 
 	// Handle OpenAI Responses API format (uses "input" instead of "messages")
-	if input, ok := data["input"]; ok {
-		// Convert input to messages format
-		messages := convertInputToMessages(input)
-		if len(messages) > 0 {
-			// Check for _system marker in first message
-			if first, ok := messages[0].(map[string]interface{}); ok {
-				if sysContent, ok := first["_system"].(string); ok {
-					// Extract system content and remove marker
-					if existing, ok := data["system"].(string); ok && existing != "" {
-						data["system"] = existing + "\n\n" + sysContent
-					} else {
-						data["system"] = sysContent
+	if clientFormat == FormatOpenAIResponses || (clientFormat == "openai" && data["input"] != nil) {
+		if input, ok := data["input"]; ok {
+			// Convert input to messages format
+			messages := convertInputToMessages(input)
+			if len(messages) > 0 {
+				// Check for _system marker in first message
+				if first, ok := messages[0].(map[string]interface{}); ok {
+					if sysContent, ok := first["_system"].(string); ok {
+						// Extract system content and remove marker
+						if existing, ok := data["system"].(string); ok && existing != "" {
+							data["system"] = existing + "\n\n" + sysContent
+						} else {
+							data["system"] = sysContent
+						}
+						messages = messages[1:] // Remove the marker
 					}
-					messages = messages[1:] // Remove the marker
 				}
+				data["messages"] = messages
+				delete(data, "input")
 			}
-			data["messages"] = messages
-			delete(data, "input")
 		}
 	}
 
@@ -139,23 +124,171 @@ func (t *AnthropicTransformer) TransformRequest(body []byte, clientFormat string
 		}
 	}
 
+	// Transform OpenAI messages to Anthropic format
+	if messages, ok := data["messages"].([]interface{}); ok {
+		transformedMessages, systemPrompt := t.transformOpenAIMessagesToAnthropic(messages)
+		data["messages"] = transformedMessages
+
+		// Merge system prompt if extracted from messages
+		if systemPrompt != "" {
+			if existing, ok := data["system"].(string); ok && existing != "" {
+				data["system"] = existing + "\n\n" + systemPrompt
+			} else {
+				data["system"] = systemPrompt
+			}
+		}
+	}
+
 	result, err := toJSON(data)
 	if err != nil {
 		return body, err
 	}
 
-	// Debug: log transformed request
-	debugLogger.Printf("Anthropic request body: %s", string(result))
-
 	return result, nil
+}
+
+// transformOpenAIMessagesToAnthropic converts OpenAI messages array to Anthropic format.
+// Returns transformed messages and extracted system prompt.
+func (t *AnthropicTransformer) transformOpenAIMessagesToAnthropic(messages []interface{}) ([]interface{}, string) {
+	var systemPrompt string
+	var anthropicMessages []interface{}
+
+	// Track consecutive tool messages to merge them
+	var pendingToolResults []interface{}
+
+	flushToolResults := func() {
+		if len(pendingToolResults) > 0 {
+			// Merge all pending tool results into a single user message
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "user",
+				"content": pendingToolResults,
+			})
+			pendingToolResults = nil
+		}
+	}
+
+	for _, msg := range messages {
+		msgMap, ok := msg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role, _ := msgMap["role"].(string)
+
+		switch role {
+		case "system":
+			// Extract system message
+			if content, ok := msgMap["content"].(string); ok {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n" + content
+				} else {
+					systemPrompt = content
+				}
+			}
+
+		case "assistant":
+			// Flush any pending tool results before assistant message
+			flushToolResults()
+			// Transform assistant message with potential tool_calls
+			anthropicMessages = append(anthropicMessages, t.transformOpenAIAssistantMessage(msgMap))
+
+		case "tool":
+			// Accumulate tool result blocks for merging
+			toolCallID, _ := msgMap["tool_call_id"].(string)
+			content := msgMap["content"]
+
+			// Create tool_result block
+			toolResult := map[string]interface{}{
+				"type":        "tool_result",
+				"tool_use_id": toolCallID,
+			}
+
+			// Handle content (can be string or structured)
+			if contentStr, ok := content.(string); ok {
+				toolResult["content"] = contentStr
+			} else {
+				toolResult["content"] = content
+			}
+
+			pendingToolResults = append(pendingToolResults, toolResult)
+
+		case "user":
+			// Flush any pending tool results before user message
+			flushToolResults()
+			// Regular user message
+			content := msgMap["content"]
+			anthropicMessages = append(anthropicMessages, map[string]interface{}{
+				"role":    "user",
+				"content": content,
+			})
+		}
+	}
+
+	// Flush any remaining tool results
+	flushToolResults()
+
+	return anthropicMessages, systemPrompt
+}
+
+// transformOpenAIAssistantMessage converts OpenAI assistant message to Anthropic format.
+func (t *AnthropicTransformer) transformOpenAIAssistantMessage(msg map[string]interface{}) map[string]interface{} {
+	var contentBlocks []interface{}
+
+	// Add text content if present
+	if content, ok := msg["content"].(string); ok && content != "" {
+		contentBlocks = append(contentBlocks, map[string]interface{}{
+			"type": "text",
+			"text": content,
+		})
+	}
+
+	// Transform tool_calls to tool_use blocks
+	if toolCalls, ok := msg["tool_calls"].([]interface{}); ok {
+		for _, tc := range toolCalls {
+			toolCall, ok := tc.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			if function, ok := toolCall["function"].(map[string]interface{}); ok {
+				// Parse arguments JSON string to object
+				var input interface{}
+				if argsStr, ok := function["arguments"].(string); ok {
+					json.Unmarshal([]byte(argsStr), &input)
+				}
+
+				contentBlocks = append(contentBlocks, map[string]interface{}{
+					"type":  "tool_use",
+					"id":    toolCall["id"],
+					"name":  function["name"],
+					"input": input,
+				})
+			}
+		}
+	}
+
+	// If no content blocks, add empty text block
+	if len(contentBlocks) == 0 {
+		contentBlocks = append(contentBlocks, map[string]interface{}{
+			"type": "text",
+			"text": "",
+		})
+	}
+
+	return map[string]interface{}{
+		"role":    "assistant",
+		"content": contentBlocks,
+	}
 }
 
 // TransformResponse transforms a response from Anthropic format.
 // If the client expects Anthropic format, no transformation is needed.
 // If the client expects OpenAI format, convert from Anthropic format.
 func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat string) ([]byte, error) {
-	if clientFormat == "" || clientFormat == "anthropic" {
-		// No transformation needed
+	// Normalize format
+	normalized := NormalizeFormat(clientFormat)
+	if normalized == "anthropic" || normalized == "" {
+		// No transformation needed (empty defaults to anthropic)
 		return body, nil
 	}
 
@@ -165,6 +298,17 @@ func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat strin
 		return body, nil
 	}
 
+	// Determine target format: Chat Completions or Responses API
+	if clientFormat == FormatOpenAIResponses {
+		return t.transformToResponsesAPI(data)
+	}
+
+	// Default: Transform to Chat Completions format
+	return t.transformToChatCompletions(data)
+}
+
+// transformToChatCompletions transforms Anthropic response to OpenAI Chat Completions format.
+func (t *AnthropicTransformer) transformToChatCompletions(data map[string]interface{}) ([]byte, error) {
 	// Transform Anthropic response to OpenAI format
 	// Anthropic: { id, type, role, content: [{type, text}], model, stop_reason, usage }
 	// OpenAI: { id, object, created, model, choices: [{index, message, finish_reason}], usage }
@@ -178,14 +322,31 @@ func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat strin
 
 	// Transform content to choices
 	var messageContent string
+	var toolCalls []interface{}
 	if content, ok := data["content"].([]interface{}); ok {
 		for _, c := range content {
 			if cMap, ok := c.(map[string]interface{}); ok {
 				if cMap["type"] == "text" {
 					if text, ok := cMap["text"].(string); ok {
 						messageContent = text
-						break
 					}
+				} else if cMap["type"] == "tool_use" {
+					// Transform Anthropic tool_use to OpenAI tool_calls
+					toolCall := map[string]interface{}{
+						"id":   cMap["id"],
+						"type": "function",
+						"function": map[string]interface{}{
+							"name":      cMap["name"],
+							"arguments": "",
+						},
+					}
+					// Serialize input as JSON string
+					if input, ok := cMap["input"]; ok {
+						if inputJSON, err := json.Marshal(input); err == nil {
+							toolCall["function"].(map[string]interface{})["arguments"] = string(inputJSON)
+						}
+					}
+					toolCalls = append(toolCalls, toolCall)
 				}
 			}
 		}
@@ -217,6 +378,13 @@ func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat strin
 		},
 	}
 
+	// Add tool_calls to message if present
+	if len(toolCalls) > 0 {
+		choice := openAIResponse["choices"].([]interface{})[0].(map[string]interface{})
+		message := choice["message"].(map[string]interface{})
+		message["tool_calls"] = toolCalls
+	}
+
 	// Transform usage
 	if usage, ok := data["usage"].(map[string]interface{}); ok {
 		openAIResponse["usage"] = map[string]interface{}{
@@ -231,6 +399,46 @@ func (t *AnthropicTransformer) TransformResponse(body []byte, clientFormat strin
 	}
 
 	return toJSON(openAIResponse)
+}
+
+// transformToResponsesAPI transforms Anthropic response to OpenAI Responses API format.
+func (t *AnthropicTransformer) transformToResponsesAPI(data map[string]interface{}) ([]byte, error) {
+	// Anthropic: { id, type, role, content: [{type, text}], model, stop_reason, usage }
+	// Responses API: { id, object, status, output: [{type, content}], usage }
+
+	responsesAPIResponse := map[string]interface{}{
+		"id":     data["id"],
+		"object": "response",
+		"status": "completed",
+		"model":  data["model"],
+	}
+
+	// Transform content to output
+	var output []interface{}
+	if content, ok := data["content"].([]interface{}); ok {
+		for _, c := range content {
+			if cMap, ok := c.(map[string]interface{}); ok {
+				if cMap["type"] == "text" {
+					output = append(output, map[string]interface{}{
+						"type":    "message",
+						"role":    "assistant",
+						"content": []interface{}{cMap},
+					})
+				}
+			}
+		}
+	}
+	responsesAPIResponse["output"] = output
+
+	// Transform usage
+	if usage, ok := data["usage"].(map[string]interface{}); ok {
+		responsesAPIResponse["usage"] = map[string]interface{}{
+			"input_tokens":  usage["input_tokens"],
+			"output_tokens": usage["output_tokens"],
+		}
+	}
+
+	return toJSON(responsesAPIResponse)
 }
 
 // convertInputToMessages converts OpenAI Responses API "input" field to Anthropic messages format.

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -104,49 +105,138 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	return startDaemonBackground()
 }
 
-// runDaemonForeground runs the zend daemon in the foreground.
+// runDaemonForeground runs the zend daemon in the foreground with auto-restart.
 func runDaemonForeground() error {
 	logFile, logger := setupDaemonLogger()
 	if logFile != nil {
 		defer logFile.Close()
 	}
 
-	d := daemon.NewDaemon(Version, logger)
+	// Create structured logger for daemon events
+	structuredLog := daemon.NewStructuredLogger(os.Stderr)
 
-	// Clean up legacy web daemon PID files from v2.0 and earlier
-	daemon.CleanupLegacyPidFiles()
+	// Auto-restart wrapper with exponential backoff
+	const maxRestarts = 5
+	restartCount := 0
+	backoff := 1 * time.Second
 
-	// Write PID file
-	daemon.WriteDaemonPid(os.Getpid())
-
-	// Graceful shutdown on signals or API request
+	// Signal handling outside the loop (shared across restarts)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	shutdownDone := make(chan struct{})
-	go func() {
+	defer signal.Stop(sigCh)
+
+	for {
+		d := daemon.NewDaemon(Version, logger)
+
+		// Clean up legacy web daemon PID files from v2.0 and earlier
+		daemon.CleanupLegacyPidFiles()
+
+		// Write PID file
+		daemon.WriteDaemonPid(os.Getpid())
+
+		// Graceful shutdown on signals or API request
+		shutdownDone := make(chan struct{})
+		intentionalShutdown := false
+		shutdownMu := sync.Mutex{}
+
+		// Create a context for this daemon instance to cancel the shutdown goroutine
+		instanceCtx, instanceCancel := context.WithCancel(context.Background())
+
+		go func() {
+			select {
+			case <-sigCh:
+				shutdownMu.Lock()
+				intentionalShutdown = true
+				shutdownMu.Unlock()
+			case <-d.ShutdownCh():
+				shutdownMu.Lock()
+				intentionalShutdown = true
+				shutdownMu.Unlock()
+			case <-instanceCtx.Done():
+				// Instance cancelled, exit goroutine without shutdown
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			d.Shutdown(ctx)
+			close(shutdownDone)
+		}()
+
+		err := d.Start()
+
+		// If Start() returned due to shutdown signal, wait for cleanup to complete
+		// Use a short timeout to avoid hanging if shutdown wasn't triggered
 		select {
-		case <-sigCh:
-		case <-d.ShutdownCh():
+		case <-shutdownDone:
+			// Shutdown completed, PID file should be removed
+		case <-time.After(100 * time.Millisecond):
+			// Start returned for other reason (error), clean up PID file
+			daemon.RemoveDaemonPid()
+			// Cancel the shutdown goroutine to prevent it from leaking
+			instanceCancel()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		d.Shutdown(ctx)
-		close(shutdownDone)
-	}()
 
-	err := d.Start()
+		// Check if shutdown was intentional
+		shutdownMu.Lock()
+		wasIntentional := intentionalShutdown
+		shutdownMu.Unlock()
 
-	// If Start() returned due to shutdown signal, wait for cleanup to complete
-	// Use a short timeout to avoid hanging if shutdown wasn't triggered
-	select {
-	case <-shutdownDone:
-		// Shutdown completed, PID file should be removed
-	case <-time.After(100 * time.Millisecond):
-		// Start returned for other reason (error), clean up PID file
-		daemon.RemoveDaemonPid()
+		// If shutdown was intentional (signal or API), exit without restart
+		if wasIntentional {
+			instanceCancel()
+			return err
+		}
+
+		// If daemon crashed, attempt restart with exponential backoff
+		if err != nil {
+			// Fatal errors (like port conflicts) should not trigger restart
+			if daemon.IsFatalError(err) {
+				logger.Printf("[daemon] fatal error, cannot restart: %v", err)
+				instanceCancel()
+				return err
+			}
+
+			// Recoverable errors trigger restart with exponential backoff
+			restartCount++
+			if restartCount >= maxRestarts {
+				logger.Printf("[daemon] exceeded max restart attempts (%d), giving up: %v", maxRestarts, err)
+				instanceCancel()
+				return fmt.Errorf("daemon crashed after %d restart attempts: %w", maxRestarts, err)
+			}
+
+			logger.Printf("[daemon] daemon crashed (attempt %d/%d), restarting in %v: %v",
+				restartCount, maxRestarts, backoff, err)
+
+			// Log structured event
+			structuredLog.Error("daemon_crashed_restarting", map[string]interface{}{
+				"restart_count":     restartCount,
+				"max_restarts":      maxRestarts,
+				"backoff_seconds":   backoff.Seconds(),
+				"error":             err.Error(),
+			})
+
+			// Cancel the previous instance's goroutine before restarting
+			instanceCancel()
+
+			time.Sleep(backoff)
+
+			// Exponential backoff with 30s cap
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			continue
+		}
+
+		// Clean exit without error - this shouldn't happen in normal operation
+		// Log it and restart anyway
+		logger.Printf("[daemon] daemon exited cleanly (unexpected), restarting...")
+
+		// Cancel the previous instance's goroutine before restarting
+		instanceCancel()
+
+		time.Sleep(1 * time.Second)
 	}
-
-	return err
 }
 
 // startDaemonBackground forks a child process to run the daemon.
@@ -169,6 +259,7 @@ func startDaemonBackground() error {
 			fmt.Println("zend is now running (started by another process).")
 			return nil
 		}
+		return fmt.Errorf("daemon failed to start (concurrent startup attempt failed, please retry)")
 	} else if err != nil {
 		return fmt.Errorf("cannot acquire daemon lock: %w", err)
 	}

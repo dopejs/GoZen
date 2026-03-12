@@ -32,7 +32,7 @@ import (
 // stdinReader is the reader used for interactive prompts. Tests can replace it.
 var stdinReader io.Reader = os.Stdin
 
-var Version = "3.0.0"
+var Version = "3.0.1"
 
 var updateChecker *update.Checker
 
@@ -701,7 +701,7 @@ func buildRoutingConfig(pc *config.ProfileConfig, defaultProviders []*proxy.Prov
 	}
 
 	// Build scenario routes
-	scenarioRoutes := make(map[config.Scenario]*proxy.ScenarioProviders)
+	scenarioRoutes := make(map[string]*proxy.ScenarioProviders)
 	for scenario, route := range pc.Routing {
 		var chain []*proxy.Provider
 		models := make(map[string]string)

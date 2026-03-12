@@ -19,11 +19,11 @@ type fallbackModel struct {
 	standalone bool     // true = standalone CLI mode (no routing section)
 
 	// Routing section
-	section         int                                 // 0=default providers, 1=routing scenarios
-	routingCursor   int                                 // cursor in routing scenarios
-	routingExpanded map[config.Scenario]bool            // which scenarios are expanded
-	routingOrder    map[config.Scenario][]string        // provider order per scenario
-	routingModels   map[config.Scenario]map[string]string // per-provider models per scenario
+	section         int                       // 0=default providers, 1=routing scenarios
+	routingCursor   int                       // cursor in routing scenarios
+	routingExpanded map[string]bool           // which scenarios are expanded
+	routingOrder    map[string][]string       // provider order per scenario
+	routingModels   map[string]map[string]string // per-provider models per scenario
 
 	status string
 	saved  bool // true = save succeeded, waiting to exit
@@ -35,16 +35,16 @@ func newFallbackModel(profile string) fallbackModel {
 	}
 	return fallbackModel{
 		profile:         profile,
-		routingExpanded: make(map[config.Scenario]bool),
-		routingOrder:    make(map[config.Scenario][]string),
-		routingModels:   make(map[config.Scenario]map[string]string),
+		routingExpanded: make(map[string]bool),
+		routingOrder:    make(map[string][]string),
+		routingModels:   make(map[string]map[string]string),
 	}
 }
 
 type fallbackLoadedMsg struct {
 	allConfigs []string
 	order      []string
-	routing    map[config.Scenario]*config.ScenarioRoute
+	routing    map[string]*config.RoutePolicy
 }
 
 func (m fallbackModel) init() tea.Cmd {
@@ -53,7 +53,7 @@ func (m fallbackModel) init() tea.Cmd {
 		names := config.ProviderNames()
 		pc := config.GetProfileConfig(profile)
 		var order []string
-		var routing map[config.Scenario]*config.ScenarioRoute
+		var routing map[string]*config.RoutePolicy
 		if pc != nil {
 			order = pc.Providers
 			routing = pc.Routing
@@ -185,7 +185,7 @@ func (m fallbackModel) handleKey(msg tea.KeyMsg) (fallbackModel, tea.Cmd) {
 				return m, func() tea.Msg {
 					return switchToScenarioEditMsg{
 						profile:  m.profile,
-						scenario: scenario,
+						scenario: string(scenario),
 					}
 				}
 			}
@@ -203,7 +203,7 @@ func (m fallbackModel) saveAndExit() (fallbackModel, tea.Cmd) {
 
 	// Build routing config
 	if len(m.routingOrder) > 0 {
-		pc.Routing = make(map[config.Scenario]*config.ScenarioRoute)
+		pc.Routing = make(map[string]*config.RoutePolicy)
 		for scenario, providerNames := range m.routingOrder {
 			if len(providerNames) == 0 {
 				continue
@@ -218,7 +218,7 @@ func (m fallbackModel) saveAndExit() (fallbackModel, tea.Cmd) {
 				}
 				providerRoutes = append(providerRoutes, pr)
 			}
-			pc.Routing[scenario] = &config.ScenarioRoute{Providers: providerRoutes}
+			pc.Routing[scenario] = &config.RoutePolicy{Providers: providerRoutes}
 		}
 	}
 
@@ -687,7 +687,7 @@ func (m fallbackModel) view(width, height int) string {
 
 			// Check if configured
 			providerCount := 0
-			if order, ok := m.routingOrder[ks.scenario]; ok && len(order) > 0 {
+			if order, ok := m.routingOrder[string(ks.scenario)]; ok && len(order) > 0 {
 				providerCount = len(order)
 			}
 

@@ -133,7 +133,12 @@
     "scenarioProviders": "场景服务商",
     "modelOverride": "模型覆盖",
     "addScenarioProvider": "添加服务商",
-    "inheritFromProfile": "继承自配置文件"
+    "inheritFromProfile": "继承自配置文件",
+    "customScenario": "自定义",
+    "addCustomScenario": "添加自定义场景",
+    "customScenarioName": "场景名称（例如：plan、research）",
+    "customScenarioHint": "自定义场景可以通过中间件或路由提示触发",
+    "scenarioAlreadyExists": "场景已存在"
   },
   "logs": {
     "title": "日志",

@@ -1,0 +1,59 @@
+/*
+ * Global shell for the React site. The palette keeps the values the Docusaurus
+ * theme used, so the ported home page and docs look unchanged; the `--zen-*`
+ * variables the home components rely on are re-declared here.
+ */
+:root {
+  color-scheme: dark;
+
+  --gz-bg: #0f1117;
+  --gz-surface: #181a24;
+  --gz-surface-2: #1f2230;
+  --gz-line: #2a2e3d;
+  --gz-fg: #e2e8f0;
+  --gz-muted: #94a3b8;
+  --gz-accent: #5eead4;
+
+  --zen-teal: #5eead4;
+  --zen-teal-dim: rgb(94 234 212 / 12%);
+  --zen-lavender: #c4b5fd;
+  --zen-sage: #86efac;
+  --zen-red: #fb7185;
+  --zen-amber: #fbbf24;
+  --zen-blue: #93c5fd;
+  --zen-bg-base: #0f1117;
+  --zen-bg-surface: #181a24;
+  --zen-bg-elevated: #1f2230;
+  --zen-text-primary: #e2e8f0;
+  --zen-text-secondary: #94a3b8;
+  --zen-text-muted: #64748b;
+  --zen-border: #2a2e3d;
+
+  --ifm-color-primary: #5eead4;
+  --ifm-background-color: #0f1117;
+  --ifm-background-surface-color: #181a24;
+  --ifm-font-color-base: #e2e8f0;
+  --ifm-font-color-secondary: #94a3b8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--gz-bg);
+  color: var(--gz-fg);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Hiragino Kaku Gothic ProN', 'Malgun Gothic', 'Noto Sans Arabic', 'Noto Sans Hebrew', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--gz-accent); }
+
+code, pre {
+  font-family: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gz-accent);
+  outline-offset: 3px;
+}

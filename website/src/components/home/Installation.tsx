@@ -1,5 +1,4 @@
-import {translate} from '@docusaurus/Translate';
-import CodeBlock from '@theme/CodeBlock';
+import type {UIKey} from '../../locales';
 import styles from './Installation.module.scss';
 
 const steps = [
@@ -17,12 +16,12 @@ const stepDefaults: Record<string, {title: string; desc: string}> = {
   step3: {title: 'Launch', desc: 'Start CLI with default configuration'},
 };
 
-export function Installation() {
+export function Installation({t}: {readonly t: (key: UIKey) => string}) {
   return (
     <section className={styles.section}>
       <div className={styles.container}>
         <h2 className={styles.heading}>
-          {translate({id: 'install.title', message: 'Quick Start'})}
+          {t('install.title')}
         </h2>
         <div className={styles.steps}>
           {steps.map((step, i) => (
@@ -33,12 +32,12 @@ export function Installation() {
               </div>
               <div className={styles.stepContent}>
                 <h3 className={styles.stepTitle}>
-                  {translate({id: `install.${step.key}.title`, message: stepDefaults[step.key].title})}
+                  {t(`install.${step.key}.title` as UIKey)}
                 </h3>
                 <p className={styles.stepDesc}>
-                  {translate({id: `install.${step.key}.desc`, message: stepDefaults[step.key].desc})}
+                  {t(`install.${step.key}.desc` as UIKey)}
                 </p>
-                <CodeBlock language="bash">{step.code}</CodeBlock>
+                <pre><code>{step.code}</code></pre>
               </div>
             </div>
           ))}

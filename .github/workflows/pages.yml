@@ -33,11 +33,14 @@ jobs:
           version: 10
       - run: pnpm install --frozen-lockfile
         working-directory: website
+      - run: pnpm run typecheck
+        working-directory: website
+
       - run: pnpm run build
         working-directory: website
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website/build
+          path: website/dist
       - id: deployment
         uses: actions/deploy-pages@v4

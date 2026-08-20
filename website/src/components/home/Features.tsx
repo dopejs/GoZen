@@ -1,4 +1,4 @@
-import {translate} from '@docusaurus/Translate';
+import type {UIKey} from '../../locales';
 import {
   Terminal, Settings, Shield, GitBranch, FolderSymlink,
   Variable, Globe, RefreshCw, Sparkles, Server, Lock,
@@ -31,22 +31,22 @@ const featureDefaults: Record<string, {title: string; desc: string}> = {
   configSync: {title: 'Config Sync', desc: 'Sync providers, profiles, and settings across devices with AES-256-GCM encryption'},
 };
 
-export function Features() {
+export function Features({t}: {readonly t: (key: UIKey) => string}) {
   return (
     <section className={styles.section}>
       <div className={styles.container}>
         <h2 className={styles.heading}>
-          {translate({id: 'features.title', message: 'Features'})}
+          {t('features.title')}
         </h2>
         <div className={styles.grid}>
           {featureKeys.map(({key, icon: Icon}) => (
             <div key={key} className={styles.card}>
               <div className={styles.iconBox}><Icon size={20} /></div>
               <h3 className={styles.cardTitle}>
-                {translate({id: `features.${key}.title`, message: featureDefaults[key].title})}
+                {t(`features.${key}.title` as UIKey)}
               </h3>
               <p className={styles.cardDesc}>
-                {translate({id: `features.${key}.desc`, message: featureDefaults[key].desc})}
+                {t(`features.${key}.desc` as UIKey)}
               </p>
             </div>
           ))}
@@ -54,7 +54,7 @@ export function Features() {
             <div>
               <div className={styles.comingSoonIcon}><Sparkles size={20} /></div>
               <p className={styles.comingSoonText}>
-                {translate({id: 'features.comingSoon', message: 'More features coming soon, stay tuned!'})}
+                {t('features.comingSoon')}
               </p>
             </div>
           </div>

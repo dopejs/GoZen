@@ -1,4 +1,4 @@
-import {translate} from '@docusaurus/Translate';
+import type {UIKey} from '../../locales';
 import styles from './Commands.module.scss';
 
 const commands = [
@@ -61,25 +61,25 @@ const cmdDefaults: Record<string, string> = {
   completion: 'Generate shell completion (zsh/bash/fish)',
 };
 
-export function Commands() {
+export function Commands({t}: {readonly t: (key: UIKey) => string}) {
   return (
     <section className={styles.section}>
       <div className={styles.container}>
         <h2 className={styles.heading}>
-          {translate({id: 'commands.title', message: 'Commands'})}
+          {t('commands.title')}
         </h2>
         <div className={styles.tableWrap}>
           <div className={styles.tableInner}>
             <div className={styles.tableHeader}>
-              <span>{translate({id: 'commands.command', message: 'Command'})}</span>
-              <span>{translate({id: 'commands.description', message: 'Description'})}</span>
+              <span>{t('commands.command')}</span>
+              <span>{t('commands.description')}</span>
             </div>
             <div className={styles.tableBody}>
               {commands.map((item) => (
                 <div key={item.key} className={styles.tableRow}>
                   <code className={styles.cmdCode}>{item.cmd}</code>
                   <span className={styles.cmdDesc}>
-                    {translate({id: `commands.items.${item.key}`, message: cmdDefaults[item.key]})}
+                    {t(`commands.items.${item.key}` as UIKey)}
                   </span>
                 </div>
               ))}

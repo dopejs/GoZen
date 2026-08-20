@@ -1,12 +1,9 @@
 # Dependencies
 /node_modules
 
-# Production
-/build
-
-# Generated files
-.docusaurus
-.cache-loader
+# Build output
+dist
+.ssr
 
 # Misc
 .DS_Store
@@ -18,5 +15,3 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-dist
-.ssr

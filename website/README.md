@@ -1,41 +1,61 @@
-# Website
+# GoZen website
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+The project site for [gozen.dev](https://gozen.dev): a home page and the
+documentation, in eleven languages.
 
-## Installation
+Built with React 19 and Vite, on the same architecture as the other dopejs
+sites. Routes are language-neutral and pre-rendered to static HTML; every
+translation ships in the page payload and the visitor's language is resolved on
+the client.
 
-```bash
-yarn
-```
+## Develop
 
-## Local Development
-
-```bash
-yarn start
-```
-
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
+Prerequisites: Node.js 22+, pnpm 10+.
 
 ```bash
-yarn build
+pnpm install
+pnpm dev        # http://localhost:5173
+pnpm typecheck  # must stay at zero errors
+pnpm build      # static output in dist/
+pnpm preview
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+`pnpm build` runs the client build, then an SSR build, then renders each route
+to static HTML with its payload embedded, and finally writes the sitemap.
 
-## Deployment
+## Content
 
-Using SSH:
+Documents live in `content/`: English at the root, every other locale in
+`content/<locale>/`. Order and grouping in the sidebar come from
+`src/sidebar.ts`, not from the file system. Markdown is compiled by
+`content.mjs` with markdown-it, and code fences are highlighted at build time by
+Shiki, so no highlighter is shipped to the browser.
+
+Interface strings live in `src/i18n/<locale>.json`, keyed the same way across
+locales; English is the source and any missing key falls back to it.
+
+To translate a document, use the helper rather than editing by hand:
 
 ```bash
-USE_SSH=true yarn deploy
+python3 tools/translate-doc.py <slug> <locale> <map.json>
 ```
 
-Not using SSH:
+It copies code fences verbatim and fails if any prose line is missing from the
+map, so a file cannot ship half-translated by accident.
 
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
+> Translations are machine-generated and have not been reviewed by native
+> speakers. Replacing any file under `content/<locale>/` with a reviewed
+> translation needs no code change.
 
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+## Language preference
+
+There are no per-language URLs. `src/language-preference.ts` resolves the
+language from `localStorage["dopejs.locale"]`, then the `dopejs_locale` cookie,
+then `navigator.languages`. The module is shared with the dopejs.com sites, but
+gozen.dev is a different registrable domain, so the cookie stays host-only here
+and the preference does not follow visitors between the two.
+
+## Deploy
+
+Pushing to `main` runs `.github/workflows/pages.yml`, which type-checks, builds
+and publishes `dist/` to GitHub Pages.

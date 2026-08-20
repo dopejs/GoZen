@@ -47,7 +47,7 @@ export function DocPage({ locale, payload, document }: Props) {
       </aside>
 
       <main className={styles.main}>
-        <article className={styles.content} dangerouslySetInnerHTML={{ __html: document.html }} />
+        <article className={`${styles.content} doc-content`} dangerouslySetInnerHTML={{ __html: document.html }} />
 
         <nav className={styles.pagination}>
           {previous !== undefined ? (

@@ -57,3 +57,39 @@ code, pre {
   outline: 2px solid var(--gz-accent);
   outline-offset: 3px;
 }
+
+/*
+ * Code blocks are highlighted by Shiki at build time, so these rules only frame
+ * the output. The class is global because the HTML comes from markdown, not
+ * from a component that could carry a CSS-module class.
+ */
+.doc-content .shiki {
+  overflow-x: auto;
+  margin: 1.1rem 0;
+  border: 1px solid var(--gz-line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  font-size: 0.86rem;
+  line-height: 1.65;
+  direction: ltr;
+  text-align: start;
+  background: #0b0d12 !important;
+}
+
+.doc-content .shiki code {
+  display: block;
+  counter-reset: shiki-line;
+  padding: 0;
+  background: none;
+}
+
+.doc-content .shiki[data-multiline] .line::before {
+  counter-increment: shiki-line;
+  content: counter(shiki-line);
+  display: inline-block;
+  width: 2ch;
+  margin-inline-end: 1.15rem;
+  text-align: end;
+  color: var(--zen-text-muted);
+  user-select: none;
+}

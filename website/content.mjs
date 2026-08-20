@@ -5,11 +5,22 @@ import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import MarkdownIt from 'markdown-it';
 import anchor from 'markdown-it-anchor';
+import { createHighlighter } from 'shiki';
 
 const contentRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), 'content');
 
 /** Locale directory names; the default locale lives at the content root. */
 export const CONTENT_LOCALES = ['zh-Hans', 'zh-Hant', 'es', 'fr', 'de', 'ru', 'he', 'ar', 'ja', 'ko'];
+
+// Highlighting happens at build time, so the pages carry no highlighter at
+// runtime. Shiki wraps each line in <span class="line">, which is also what the
+// line-number counter in the stylesheet hangs off.
+const highlighter = await createHighlighter({
+  themes: ['github-dark-default'],
+  langs: ['bash', 'json', 'go', 'javascript', 'typescript', 'yaml', 'toml', 'ini', 'text'],
+});
+
+const HIGHLIGHT_LANGS = new Set(highlighter.getLoadedLanguages());
 
 const markdown = new MarkdownIt({ html: true, linkify: true }).use(anchor, {
   slugify: (title) =>
@@ -32,6 +43,14 @@ function tableOfContents(tokens) {
   });
   return items;
 }
+
+markdown.options.highlight = (code, language) => {
+  const lang = HIGHLIGHT_LANGS.has(language) ? language : 'text';
+  const html = highlighter.codeToHtml(code, { lang, theme: 'github-dark-default' });
+  // Line numbers only earn their space in multi-line blocks; a one-line install
+  // command reads worse with a "1" next to it.
+  return code.trimEnd().includes('\n') ? html.replace('<pre ', '<pre data-multiline ') : html;
+};
 
 async function readDocument(file) {
   const source = await readFile(file, 'utf8');

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Github, Globe, Menu } from 'lucide-react';
+import { Github, Globe, Moon, Sun } from 'lucide-react';
 
 import { SITE_LOCALES, translator, type SiteLocale } from '../../locales';
 import styles from './Header.module.scss';
@@ -7,13 +7,17 @@ import styles from './Header.module.scss';
 interface Props {
   readonly locale: SiteLocale;
   readonly onLocaleChange: (path: string) => void;
-  readonly onToggleSidebar?: () => void;
 }
 
-export function Header({ locale, onLocaleChange, onToggleSidebar }: Props) {
+export function Header({ locale, onLocaleChange }: Props) {
   const t = translator(locale);
   const [open, setOpen] = useState(false);
+  const [dark, setDark] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDark(document.documentElement.dataset.theme === 'dark');
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -30,24 +34,32 @@ export function Header({ locale, onLocaleChange, onToggleSidebar }: Props) {
     };
   }, [open]);
 
+  const toggleTheme = (): void => {
+    const next = !dark;
+    document.documentElement.dataset.theme = next ? 'dark' : 'light';
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+      'content',
+      next ? '#0b1112' : '#fbfcff',
+    );
+    try {
+      localStorage.setItem('gozen-theme', next ? 'dark' : 'light');
+    } catch {
+      // Theme switching still works when persistence is blocked.
+    }
+    setDark(next);
+  };
+
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
-        {onToggleSidebar !== undefined && (
-          <button type="button" className={styles.menuButton} onClick={onToggleSidebar} aria-label="Menu">
-            <Menu size={18} />
-          </button>
-        )}
         <a href="/" className={styles.brand}>
-          <img src="/logo.svg" alt="" aria-hidden="true" width={26} height={26} />
+          <img src="/logo.svg" alt="" aria-hidden="true" width={30} height={30} />
           <span>GoZen</span>
+          <small>OSS</small>
         </a>
 
         <nav className={styles.nav}>
-          <a href="/docs/getting-started/">{t('hero.getDocs')}</a>
-          <a href="https://github.com/dopejs/GoZen" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
-            <Github size={18} />
-          </a>
+          <a className={styles.docsLink} href="/docs/getting-started/">{t('hero.getDocs')}</a>
           <div className={styles.language} ref={root}>
             <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
               <Globe size={15} />
@@ -74,6 +86,18 @@ export function Header({ locale, onLocaleChange, onToggleSidebar }: Props) {
               </ul>
             )}
           </div>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={toggleTheme}
+            aria-label={dark ? 'Use light theme' : 'Use dark theme'}
+            title={dark ? 'Light theme' : 'Dark theme'}
+          >
+            {dark ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <a className={styles.iconButton} href="https://github.com/dopejs/GoZen" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+            <Github size={16} />
+          </a>
         </nav>
       </div>
     </header>

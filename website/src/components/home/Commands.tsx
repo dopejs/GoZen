@@ -31,36 +31,6 @@ const commands = [
   {cmd: 'zen completion <shell>', key: 'completion'},
 ];
 
-const cmdDefaults: Record<string, string> = {
-  start: 'Start CLI (uses project binding or default config)',
-  profile: 'Start with specified profile',
-  profilePick: 'Interactively select profile',
-  cli: 'Use specified CLI (claude/codex/opencode)',
-  yes: 'Auto-approve CLI permissions (claude --permission-mode acceptEdits, codex -a never)',
-  use: 'Use specified provider directly (no proxy)',
-  pick: 'Interactively select provider to start',
-  list: 'List all providers and profiles',
-  configAddProvider: 'Add a new provider',
-  configAddProfile: 'Add a new profile',
-  configDefaultClient: 'Set the default CLI client',
-  configDefaultProfile: 'Set the default profile',
-  configResetPassword: 'Reset the Web UI access password',
-  configSync: 'Pull config from remote sync backend',
-  daemonStart: 'Start the zend daemon',
-  daemonStop: 'Stop the daemon',
-  daemonStatus: 'Show daemon status',
-  daemonEnable: 'Install daemon as system service',
-  daemonDisable: 'Uninstall daemon system service',
-  bind: 'Bind current directory to profile',
-  bindCli: 'Bind current directory to specified CLI',
-  unbind: 'Unbind current directory',
-  status: 'Show current directory binding status',
-  web: 'Open Web UI in browser (auto-starts daemon)',
-  upgrade: 'Upgrade to latest version',
-  version: 'Show version',
-  completion: 'Generate shell completion (zsh/bash/fish)',
-};
-
 export function Commands({t}: {readonly t: (key: UIKey) => string}) {
   return (
     <section className={styles.section}>

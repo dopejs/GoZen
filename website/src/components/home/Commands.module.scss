@@ -1,5 +1,5 @@
 .section {
-  padding: 5rem 0;
+  padding: 4.5rem 0 6rem;
 }
 
 .container {
@@ -13,17 +13,16 @@
 }
 
 .heading {
-  margin-bottom: 3rem;
-  text-align: center;
-  font-size: 1.875rem;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  margin: 0 0 2rem;
+  font-size: clamp(1.65rem, 4vw, 2.25rem);
+  font-weight: 740;
+  letter-spacing: -0.035em;
   color: var(--zen-text-primary);
 }
 
 .tableWrap {
   overflow-x: auto;
-  border-radius: 0.75rem;
+  border-radius: 14px;
   border: 1px solid var(--zen-border);
   background: var(--zen-bg-surface);
   -webkit-overflow-scrolling: touch;
@@ -72,10 +71,14 @@
 .cmdCode {
   white-space: nowrap;
   font-size: 0.875rem;
-  color: var(--zen-teal);
+  color: var(--zen-teal-strong);
   background: none;
   border: none;
   padding: 0;
+}
+
+@media (max-width: 600px) {
+  .section { padding: 3.5rem 0 4.5rem; }
 }
 
 .cmdDesc {

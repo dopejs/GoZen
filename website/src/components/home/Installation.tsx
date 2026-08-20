@@ -10,12 +10,6 @@ const steps = [
   {key: 'step3', code: 'zen'},
 ];
 
-const stepDefaults: Record<string, {title: string; desc: string}> = {
-  step1: {title: 'Install GoZen', desc: 'One-line install script'},
-  step2: {title: 'Configure Provider', desc: 'Add your first API provider'},
-  step3: {title: 'Launch', desc: 'Start CLI with default configuration'},
-};
-
 export function Installation({t}: {readonly t: (key: UIKey) => string}) {
   return (
     <section className={styles.section}>

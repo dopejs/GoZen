@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 import { DOC_ORDER, SIDEBAR } from '../../sidebar';
 import { translator, type SiteLocale } from '../../locales';
 import type { PagePayload, SiteDocument } from '../../types';
@@ -18,14 +16,13 @@ function titleFor(payload: PagePayload, slug: string, localePath: string): strin
 
 export function DocPage({ locale, payload, document }: Props) {
   const t = translator(locale);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const index = DOC_ORDER.indexOf(document.slug);
   const previous = index > 0 ? DOC_ORDER[index - 1] : undefined;
   const next = index >= 0 && index < DOC_ORDER.length - 1 ? DOC_ORDER[index + 1] : undefined;
 
   return (
     <div className={styles.layout}>
-      <aside className={sidebarOpen ? `${styles.sidebar} ${styles.sidebarOpen}` : styles.sidebar}>
+      <aside className={styles.sidebar}>
         {SIDEBAR.map((group, groupIndex) => (
           <div key={group.category ?? `group-${String(groupIndex)}`} className={styles.group}>
             {group.category !== undefined && <p className={styles.groupLabel}>{t('features.title')}</p>}
@@ -35,7 +32,6 @@ export function DocPage({ locale, payload, document }: Props) {
                   <a
                     href={`/docs/${slug}/`}
                     className={slug === document.slug ? styles.current : undefined}
-                    onClick={() => setSidebarOpen(false)}
                   >
                     {titleFor(payload, slug, locale.path)}
                   </a>

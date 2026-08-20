@@ -1,51 +1,89 @@
-/*
- * Global shell for the React site. The palette keeps the values the Docusaurus
- * theme used, so the ported home page and docs look unchanged; the `--zen-*`
- * variables the home components rely on are re-declared here.
- */
 :root {
+  color-scheme: light;
+  --header-height: 64px;
+
+  --gz-bg: #fbfcff;
+  --gz-surface: #ffffff;
+  --gz-surface-2: #f1f5f8;
+  --gz-line: #dce4e8;
+  --gz-fg: #17211f;
+  --gz-muted: #5c6b68;
+  --gz-accent: #0f8d7d;
+
+  --zen-teal: #2dd4bf;
+  --zen-teal-strong: #0f8d7d;
+  --zen-teal-dim: rgb(45 212 191 / 12%);
+  --zen-lavender: #7967d8;
+  --zen-sage: #33a768;
+  --zen-red: #d85868;
+  --zen-amber: #b98414;
+  --zen-blue: #4f72dc;
+  --zen-bg-base: #fbfcff;
+  --zen-bg-surface: #ffffff;
+  --zen-bg-elevated: #f3f7f8;
+  --zen-code: #0c1517;
+  --zen-text-primary: #17211f;
+  --zen-text-secondary: #5c6b68;
+  --zen-text-muted: #879590;
+  --zen-border: #dce4e8;
+  --zen-border-strong: #bdcbc8;
+
+  --ifm-color-primary: var(--zen-teal-strong);
+  --ifm-background-color: var(--zen-bg-base);
+  --ifm-background-surface-color: var(--zen-bg-surface);
+  --ifm-font-color-base: var(--zen-text-primary);
+  --ifm-font-color-secondary: var(--zen-text-secondary);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
 
-  --gz-bg: #0f1117;
-  --gz-surface: #181a24;
-  --gz-surface-2: #1f2230;
-  --gz-line: #2a2e3d;
-  --gz-fg: #e2e8f0;
-  --gz-muted: #94a3b8;
+  --gz-bg: #0b1112;
+  --gz-surface: #121a1c;
+  --gz-surface-2: #192326;
+  --gz-line: #273438;
+  --gz-fg: #ecf5f3;
+  --gz-muted: #a5b4b1;
   --gz-accent: #5eead4;
 
   --zen-teal: #5eead4;
+  --zen-teal-strong: #5eead4;
   --zen-teal-dim: rgb(94 234 212 / 12%);
-  --zen-lavender: #c4b5fd;
-  --zen-sage: #86efac;
-  --zen-red: #fb7185;
-  --zen-amber: #fbbf24;
-  --zen-blue: #93c5fd;
-  --zen-bg-base: #0f1117;
-  --zen-bg-surface: #181a24;
-  --zen-bg-elevated: #1f2230;
-  --zen-text-primary: #e2e8f0;
-  --zen-text-secondary: #94a3b8;
-  --zen-text-muted: #64748b;
-  --zen-border: #2a2e3d;
-
-  --ifm-color-primary: #5eead4;
-  --ifm-background-color: #0f1117;
-  --ifm-background-surface-color: #181a24;
-  --ifm-font-color-base: #e2e8f0;
-  --ifm-font-color-secondary: #94a3b8;
+  --zen-blue: #8ca4ff;
+  --zen-bg-base: #0b1112;
+  --zen-bg-surface: #121a1c;
+  --zen-bg-elevated: #192326;
+  --zen-code: #070c0d;
+  --zen-text-primary: #ecf5f3;
+  --zen-text-secondary: #a5b4b1;
+  --zen-text-muted: #71817d;
+  --zen-border: #273438;
+  --zen-border-strong: #3a4b4e;
 }
 
 * { box-sizing: border-box; }
 
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-height) + 20px);
+}
+
 body {
   margin: 0;
+  min-width: 320px;
   background: var(--gz-bg);
   color: var(--gz-fg);
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
     'Hiragino Kaku Gothic ProN', 'Malgun Gothic', 'Noto Sans Arabic', 'Noto Sans Hebrew', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+button,
+select,
+input { font: inherit; }
 
 a { color: var(--gz-accent); }
 
@@ -73,7 +111,11 @@ code, pre {
   line-height: 1.65;
   direction: ltr;
   text-align: start;
-  background: #0b0d12 !important;
+  background: var(--zen-code) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }
 
 .doc-content .shiki code {

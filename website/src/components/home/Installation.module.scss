@@ -1,5 +1,8 @@
 .section {
-  padding: 5rem 0;
+  padding: 4.5rem 0;
+  border-top: 1px solid var(--zen-border);
+  border-bottom: 1px solid var(--zen-border);
+  background: var(--zen-bg-elevated);
 }
 
 .container {
@@ -13,23 +16,28 @@
 }
 
 .heading {
-  margin-bottom: 3rem;
-  text-align: center;
-  font-size: 1.875rem;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  margin: 0 0 2rem;
+  font-size: clamp(1.65rem, 4vw, 2.25rem);
+  font-weight: 740;
+  letter-spacing: -0.035em;
   color: var(--zen-text-primary);
 }
 
 .steps {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--zen-border);
+  border-radius: 14px;
+  background: var(--zen-bg-surface);
 }
 
 .step {
-  display: flex;
-  gap: 1.5rem;
+  min-width: 0;
+  padding: 1.5rem;
+  border-right: 1px solid var(--zen-border);
+
+  &:last-child { border-right: 0; }
 }
 
 .stepLeft {
@@ -45,30 +53,26 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  background: var(--zen-teal);
-  font-size: 1rem;
+  border: 1px solid var(--zen-border);
+  border-radius: 9px;
+  background: var(--zen-teal-dim);
+  font-size: 0.85rem;
   font-weight: 700;
-  color: var(--zen-bg-base);
+  color: var(--zen-teal-strong);
 }
 
-.stepLine {
-  width: 1px;
-  flex: 1;
-  margin: 0.5rem 0;
-  background: var(--zen-border);
-}
+.stepLine { display: none; }
 
 .stepContent {
   flex: 1;
-  padding-bottom: 1rem;
+  margin-top: 1.25rem;
   overflow: hidden;
 }
 
 .stepTitle {
   margin-bottom: 0.25rem;
-  font-size: 1.125rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--zen-text-primary);
 }
 
@@ -76,4 +80,25 @@
   margin-bottom: 0.75rem;
   font-size: 0.875rem;
   color: var(--zen-text-secondary);
+}
+
+.stepContent pre {
+  margin: 1rem 0 0;
+  padding: 0.8rem 0.9rem;
+  overflow-x: auto;
+  border: 1px solid var(--zen-border);
+  border-radius: 9px;
+  background: var(--zen-code);
+  color: #74e4c3;
+  font-size: 0.72rem;
+  line-height: 1.55;
+
+  code { white-space: nowrap; }
+}
+
+@media (max-width: 760px) {
+  .section { padding: 3.5rem 0; }
+  .steps { grid-template-columns: 1fr; }
+  .step { border-right: 0; border-bottom: 1px solid var(--zen-border); }
+  .step:last-child { border-bottom: 0; }
 }
